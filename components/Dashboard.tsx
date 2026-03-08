@@ -12,7 +12,7 @@ import WorkflowPanel from './WorkflowPanel';
 import SettingsModal from './SettingsModal';
 import VistaDiariaProfesional from './VistaDiariaProfesional';
 import AdminAgendaView from './AdminAgendaView';
-import GestionProfesionalesModal from './Gestionprofesionalesmodal';
+import GestionProfesionalesModal from './GestionProfesionalesModal';
 
 
 // --- ICONS ---
