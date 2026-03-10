@@ -37,7 +37,31 @@
     LostReason,
   } from '../types';
   import { ETIQUETAS_FLUJO, TIPOS_ESTUDIO, normalizeString } from '../constants';
+// ─── INTERCEPTOR DE SESIÓN ────────────────────────────────────────────────────
 
+supabase.auth.onAuthStateChange((event, session) => {
+  if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED' && !session) {
+    window.location.href = '/';
+  }
+});
+
+function handleSupabaseError(error: any): never {
+  const msg = (error?.message ?? '').toLowerCase();
+  const isAuthError =
+    error?.status === 400 ||
+    msg.includes('refresh token') ||
+    msg.includes('jwt expired') ||
+    msg.includes('invalid token') ||
+    msg.includes('not found') && msg.includes('token');
+
+  if (isAuthError) {
+    supabase.auth.signOut();
+    window.location.href = '/';
+    throw new Error('Sesión expirada. Redirigiendo al login...');
+  }
+
+  throw error;
+}
   // ─── HELPERS DE MAPEO ─────────────────────────────────────────────────────────
 
 function mapProfesional(row: any): Profesional {
@@ -294,13 +318,13 @@ function mapProfesional(row: any): Profesional {
       .select('*')
       .eq('activo', true)
       .eq('rol', UserRole.MEDICO);
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return (data ?? []).map(mapProfesional);
   }
 
   async function getProfesionalesAdmin(): Promise<Profesional[]> {
     const { data, error } = await supabase.from('profesionales').select('*');
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return (data ?? []).map(mapProfesional);
   }
 
@@ -326,7 +350,7 @@ function mapProfesional(row: any): Profesional {
       .from('profesionales')
       .upsert(upsertData, { onConflict: 'email' })
       .select();
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return (data ?? []).map(mapProfesional);
   }
 
@@ -395,7 +419,7 @@ function mapProfesional(row: any): Profesional {
       );
     }
     const { data, error } = await query;
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return (data ?? []).map(mapPaciente);
   }
 
@@ -515,7 +539,7 @@ function mapProfesional(row: any): Profesional {
       psicologo_asignado_email: psicologo?.email ?? null,
     }).select().single();
 
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
 
     if (prospectoId) {
       await supabase.from('crm_contactos')
@@ -550,7 +574,7 @@ function mapProfesional(row: any): Profesional {
 
     const { data, error } = await supabase
       .from('pacientes').update(dbUpdates).eq('id_paciente', idPaciente).select().single();
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return mapPaciente(data);
   }
 
@@ -564,7 +588,7 @@ function mapProfesional(row: any): Profesional {
 
     const { data, error } = await supabase
       .from('pacientes').update({ etiqueta_activa: newTag }).eq('id_paciente', idPaciente).select().single();
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return mapPaciente(data);
   }
 
@@ -582,7 +606,7 @@ function mapProfesional(row: any): Profesional {
       fecha_cirugia: fecha,
       etiqueta_activa: 'PERIOPERATORIO',
     }).eq('id_paciente', idPaciente).select().single();
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return mapPaciente(data);
   }
 
@@ -601,7 +625,7 @@ function mapProfesional(row: any): Profesional {
       .eq('profesional_email', profesionalEmail)
       .gte('fecha_turno', inicio.toISOString())
       .lte('fecha_turno', fin.toISOString());
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return (data ?? []).map(mapTurno);
   }
 
@@ -611,7 +635,7 @@ function mapProfesional(row: any): Profesional {
       .select(TURNO_WITH_PACIENTE)
       .eq('profesional_email', profesionalEmail)
       .order('fecha_turno');
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return (data ?? [])
       .filter((r: any) => r.pacientes)
       .map((r: any) => ({ ...mapTurno(r), paciente: mapPaciente(r.pacientes) }));
@@ -627,7 +651,7 @@ function mapProfesional(row: any): Profesional {
       .eq('profesional_email', profesionalEmail)
       .gte('fecha_turno', inicio.toISOString())
       .lte('fecha_turno', fin.toISOString());
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return (data ?? []).filter((r: any) => r.pacientes).map(mapTurnoDiario)
       .sort((a, b) => new Date(a.fechaTurno).getTime() - new Date(b.fechaTurno).getTime());
   }
@@ -642,7 +666,7 @@ function mapProfesional(row: any): Profesional {
       .gte('fecha_turno', inicio.toISOString())
       .lte('fecha_turno', fin.toISOString())
       .order('fecha_turno');
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return (data ?? []).filter((r: any) => r.pacientes).map(mapTurnoDiario);
   }
 
@@ -677,7 +701,7 @@ function mapProfesional(row: any): Profesional {
       es_sobreturno: turnoData.esSobreturno ?? false,
     }).select().single();
 
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return mapTurno(data);
   }
 
@@ -706,7 +730,7 @@ function mapProfesional(row: any): Profesional {
 
     const { data, error } = await supabase
       .from('turnos').update(dbUpdates).eq('id_turno', turnoId).select().single();
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return mapTurno(data);
   }
 
@@ -746,7 +770,7 @@ function mapProfesional(row: any): Profesional {
       fecha_consulta: evolucionData.fechaConsulta,
     }).select().single();
 
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return mapEvolucion(data);
   }
 
@@ -772,7 +796,7 @@ function mapProfesional(row: any): Profesional {
 
     const { data, error } = await supabase
       .from('evoluciones').update(dbUpdates).eq('id_evolucion', idEvolucion).select().single();
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return mapEvolucion(data);
   }
 
@@ -806,7 +830,7 @@ function mapProfesional(row: any): Profesional {
       .from('historias_clinicas')
       .upsert(dbData, { onConflict: 'id_paciente' })
       .select().single();
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return mapHistoria(data);
   }
 
@@ -827,7 +851,7 @@ function mapProfesional(row: any): Profesional {
       resultados: estudioData.resultados ?? null,
       resultado_biopsia: estudioData.resultadoBiopsia ?? null,
     }).select().single();
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
 
     // Evolución automática
     const tipoLabel = TIPOS_ESTUDIO.find((t: any) => t.value === estudioData.tipo)?.label || estudioData.tipo;
@@ -878,7 +902,7 @@ function mapProfesional(row: any): Profesional {
 
     const { data, error } = await supabase
       .from('estudios').update(dbUpdates).eq('id_estudio', idEstudio).select().single();
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return mapEstudio(data);
   }
 
@@ -900,7 +924,7 @@ function mapProfesional(row: any): Profesional {
 
     const { data, error } = await supabase
       .from('cirugias').upsert(dbData, { onConflict: 'id_paciente' }).select().single();
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
 
     if (updates.fechaProgramada) {
       await supabase.from('pacientes').update({
@@ -930,7 +954,7 @@ function mapProfesional(row: any): Profesional {
 
     const { data, error } = await supabase
       .from('nutricion_info').upsert(dbData, { onConflict: 'id_paciente' }).select().single();
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return mapNutricion(data);
   }
 
@@ -951,7 +975,7 @@ function mapProfesional(row: any): Profesional {
       psicologo_email_autor: user.email,
       notas_privadas: updates.notasPrivadas ?? '',
     }, { onConflict: 'id_paciente' }).select().single();
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return mapPsicologia(data);
   }
 
@@ -966,7 +990,7 @@ function mapProfesional(row: any): Profesional {
         tipo_informe: informeData.tipoInforme,
         fecha_ultima_edicion: new Date().toISOString(),
       }).eq('id_informe', informeData.idInforme).select().single();
-      if (error) throw error;
+      if (error) handleSupabaseError(error);
       return mapInforme(data);
     }
 
@@ -977,7 +1001,7 @@ function mapProfesional(row: any): Profesional {
       contenido: informeData.contenido,
       fecha_ultima_edicion: new Date().toISOString(),
     }).select().single();
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return mapInforme(data);
   }
 
@@ -1096,7 +1120,7 @@ function mapProfesional(row: any): Profesional {
       estado_seguimiento: ProspectoEstadoSeguimiento.NUEVO,
       prioridad: Priority.NORMAL,
     });
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return { id: newId, ...prospectoData, isPatient: false };
   }
 
@@ -1106,7 +1130,7 @@ function mapProfesional(row: any): Profesional {
       .select('id_contacto, apellido, nombres')
       .order('id_contacto', { ascending: false })
       .limit(100);
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
 
     return (data ?? []).map((row: any, i: number): CrmHistoryEntry => ({
       id: `hist-${i}`,
@@ -1124,7 +1148,7 @@ function mapProfesional(row: any): Profesional {
   async function getTasks(): Promise<Task[]> {
     const { data, error } = await supabase
       .from('tareas').select('*, pacientes(apellido, nombres)').order('fecha_vencimiento');
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return (data ?? []).map(mapTask);
   }
 
@@ -1132,7 +1156,7 @@ function mapProfesional(row: any): Profesional {
     const { data, error } = await supabase
       .from('tareas').select('*, pacientes(apellido, nombres)')
       .eq('asignado_a_email', email).eq('estado', TaskStatus.PENDIENTE).order('fecha_vencimiento');
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return (data ?? []).map(mapTask);
   }
 
@@ -1145,7 +1169,7 @@ function mapProfesional(row: any): Profesional {
       asignado_a_email: task.assigneeEmail ?? null,
       creado_por_email: task.creatorEmail ?? null,
     }).select('*, pacientes(apellido, nombres)').single();
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return mapTask(data);
   }
 
@@ -1160,7 +1184,7 @@ function mapProfesional(row: any): Profesional {
       asignado_a_email: taskData.assigneeEmail ?? null,
       creado_por_email: taskData.creatorEmail ?? null,
     }).select('*, pacientes(apellido, nombres)').single();
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return mapTask(data);
   }
 
@@ -1174,7 +1198,7 @@ function mapProfesional(row: any): Profesional {
     const { data, error } = await supabase
       .from('tareas').update(dbUpdates).eq('id_tarea', id)
       .select('*, pacientes(apellido, nombres)').single();
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return mapTask(data);
   }
 
@@ -1182,7 +1206,7 @@ function mapProfesional(row: any): Profesional {
 
   async function getFolders(): Promise<Folder[]> {
     const { data, error } = await supabase.from('carpetas_quirurgicas').select('*');
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return (data ?? []).map(mapFolder);
   }
 
@@ -1204,7 +1228,7 @@ function mapProfesional(row: any): Profesional {
       fecha_cirugia_programada: folder.scheduledSurgeryDate,
       hora_cirugia_programada: folder.scheduledSurgeryTime,
     }, { onConflict: 'id_paciente' }).select().single();
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
     return mapFolder(data);
   }
 
@@ -1213,7 +1237,7 @@ function mapProfesional(row: any): Profesional {
   async function getCrmSimpleProfessionals(): Promise<CrmSimpleProfessionals> {
     const { data, error } = await supabase
       .from('profesionales').select('email, nombres, apellido, especialidad').eq('activo', true);
-    if (error) throw error;
+    if (error) handleSupabaseError(error);
 
     const surgeons: string[] = [];
     const nutritionists: string[] = [];
@@ -1254,7 +1278,7 @@ function mapProfesional(row: any): Profesional {
       // const { data, error } = await supabase.functions.invoke('generate-whatsapp', {
       //   body: { patient, goal },
       // });
-      // if (error) throw error;
+      // if (error) handleSupabaseError(error);
       // return data.message;
 
       return `Hola ${patient.firstName}, te escribimos para: ${goal}. Quedamos a tu disposición. Saludos, el equipo de Plenus.`;

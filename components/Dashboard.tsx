@@ -734,7 +734,7 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
     const [taskStatusFilter, setTaskStatusFilter] = useState<'todos' | TaskStatus>(TaskStatus.PENDIENTE);
     const [seguimientoFilter, setSeguimientoFilter] = useState<'todos' | ProspectoEstadoSeguimiento>('todos');
     
-    const [activeModal, setActiveModal] = useState<'whatsapp' | 'whatsapp-templates' | 'email' | 'tasks' | 'history' | 'folder' | 'folders-dashboard' | 'settings' | 'schedule-surgery' | 'surgery-details' | 'lost' | 'new-prospect' | 'convert-prospect' | null>(null);
+    const [activeModal, setActiveModal] = useState<'whatsapp' | 'whatsapp-templates' | 'email' | 'tasks' | 'history' | 'folder' | 'folders-dashboard' | 'settings' | 'schedule-surgery' | 'surgery-details' | 'lost' | 'new-prospect' | 'new-patient' | 'convert-prospect' | null>(null);
     const [selectedContacto, setSelectedContacto] = useState<ContactoCRM | null>(null);
     const contactRowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
 
@@ -971,12 +971,21 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
                     }}
                     prospectoId={selectedContacto.id}
                 />
+                
             )}
+            // AGREGAR DEBAJO del bloque convert-prospect
+{activeModal === 'new-patient' && (
+    <NewPatientModal
+        onClose={() => setActiveModal(null)}
+        onSuccess={() => { fetchData(); setActiveModal(null); }}
+    />
+)}
             
             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                 <h2 className="text-2xl font-bold text-slate-800">Panel Principal</h2>
                 <div className="flex items-center gap-2">
                     <button onClick={() => setActiveModal('new-prospect')} className="flex items-center text-sm font-medium text-white bg-blue-600 px-3 py-2 rounded-md shadow-sm hover:bg-blue-700"><UserPlusIcon className="w-5 h-5 mr-1" />Ingresar Prospecto</button>
+<button onClick={() => setActiveModal('new-patient')} className="flex items-center text-sm font-medium text-white bg-green-600 px-3 py-2 rounded-md shadow-sm hover:bg-green-700"><UserPlusIcon className="w-5 h-5 mr-1" />Agregar Paciente</button>
                     <button onClick={() => setActiveModal('folders-dashboard')} className="flex items-center text-sm font-medium text-slate-700 bg-white px-3 py-2 rounded-md shadow-sm border hover:bg-slate-50"><FolderIcon />Ver Carpetas</button>
                     <button onClick={() => setActiveModal('history')} className="flex items-center text-sm font-medium text-slate-700 bg-white px-3 py-2 rounded-md shadow-sm border hover:bg-slate-50"><HistoryIcon />Historial</button>
                     <button onClick={() => setActiveModal('whatsapp-templates')} className="flex items-center text-sm font-medium text-slate-700 bg-white px-3 py-2 rounded-md shadow-sm border hover:bg-slate-50"><ClipboardCheckIcon/>Gestionar Plantillas</button>

@@ -26,7 +26,7 @@ import {
     startOfDay,
 } from 'date-fns';
 import { es } from 'date-fns/locale';
-
+import { supabase } from '../services/supabaseClient';
 
 // --- Icons ---
 const UserPhotoPlaceholderIcon = () => (
@@ -187,6 +187,7 @@ const AgendarTurnoModal = ({ onConfirm, onCancel, profesionales, pacienteId, con
         setIsLoadingCalendar(true);
         api.getTurnosParaProfesional(profesionalEmail).then(setTurnosProfesional);
     }, [profesionalEmail]);
+    
 
     useEffect(() => {
         if (!professionalConfig) return;
@@ -278,6 +279,15 @@ const AgendarTurnoModal = ({ onConfirm, onCancel, profesionales, pacienteId, con
 
         calculateAvailableSlots();
     }, [profesionalEmail, selectedDate, config, professionalConfig]);
+
+    useEffect(() => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            if (event === 'SIGNED_OUT' || (!session && event !== 'INITIAL_SESSION')) {
+                window.location.href = '/login';
+            }
+        });
+        return () => subscription.unsubscribe();
+    }, []);
 
     const handleDateSelect = (day: Date) => {
         const status = monthlyAvailability[format(day, 'yyyy-MM-dd')];
@@ -610,7 +620,7 @@ const EditarPacienteModal = ({ paciente, onClose, onSuccess }: { paciente: Pacie
 };
 
 
-// FichaModal Component (NEW)
+// FichaModal Component
 const FichaModal = ({ paciente, equipoAsignado, onClose, onEdit, canEdit }: { 
     paciente: PacienteCompleto;
     equipoAsignado: { cirujano: string; nutricionista: string; psicologo: string; };
@@ -707,8 +717,7 @@ const CreateTaskModal = ({ open, onClose, allProfesionales, onConfirm }: CreateT
         try {
             await onConfirm({ description, assigneeEmail, dueDate });
         } catch (e) {
-            // Error is handled by the parent component, which will show an alert.
-            // No need to re-throw, parent will not close modal on error.
+            // Error handled by parent
         } finally {
             setIsSaving(false);
         }
@@ -791,7 +800,7 @@ const WeightCurveChart = ({ paciente, chartRef, viewMode, surgeryDate, heightInC
         const initialPoint = {
             date: paciente.turnos && paciente.turnos.length > 0
                 ? new Date(paciente.turnos[paciente.turnos.length - 1].fechaTurno)
-                : addMonths(new Date(), -6), // Fallback date
+                : addMonths(new Date(), -6),
             weight: paciente.historiaClinica.pesoInicial
         };
         
@@ -868,26 +877,19 @@ const WeightCurveChart = ({ paciente, chartRef, viewMode, surgeryDate, heightInC
              </defs>
             <rect width={width} height={height} fill="white" />
             <g transform={`translate(${margin.left}, ${margin.top})`}>
-                {/* Grid */}
                 {yAxisTicks.map((tick, i) => (
                     <line key={`ygrid-${i}`} x1="0" y1={yScale(tick)} x2={innerWidth} y2={yScale(tick)} stroke="#e2e8f0" strokeWidth="1" />
                 ))}
                  {xAxisTicks.map((tick, i) => (
                     <line key={`xgrid-${i}`} x1={xScale(tick)} y1="0" x2={xScale(tick)} y2={innerHeight} stroke="#e2e8f0" strokeWidth="1" />
                 ))}
-
-                {/* Axes */}
                 <line x1="0" y1={innerHeight} x2={innerWidth} y2={innerHeight} stroke="#94a3b8" />
                 <line x1="0" y1="0" x2="0" y2={innerHeight} stroke="#94a3b8" />
-
-                {/* Y-axis labels */}
                 {yAxisTicks.map((tick,i) => (
                     <g key={`ylabel-${i}`} transform={`translate(0, ${yScale(tick)})`}>
                         <text x="-10" y="4" textAnchor="end" fill="#64748b" fontSize="10">{tick}</text>
                     </g>
                 ))}
-
-                {/* X-axis labels */}
                  {xAxisTicks.map((tick, i) => (
                     <g key={`xlabel-${i}`} transform={`translate(${xScale(tick)}, ${innerHeight})`}>
                         <text x="0" y="20" textAnchor="middle" fill="#64748b" fontSize="10">{format(tick, 'dd MMM yy')}</text>
@@ -895,21 +897,14 @@ const WeightCurveChart = ({ paciente, chartRef, viewMode, surgeryDate, heightInC
                 ))}
                  <text x={innerWidth / 2} y={innerHeight + 45} textAnchor="middle" fill="#64748b" fontSize="12" fontWeight="bold">Fecha</text>
                  <text transform={`translate(${-margin.left + 15}, ${innerHeight/2}) rotate(-90)`} textAnchor="middle" fill="#64748b" fontSize="12" fontWeight="bold">{yAxisTitle}</text>
-
-                {/* Area under line */}
                 <path d={areaPath} fill="url(#areaGradient)" />
-                {/* Line */}
                 <path d={`M ${linePath}`} fill="none" stroke="#4f46e5" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-
-                {/* Surgery Line */}
                 {surgeryDateObj && surgeryDateObj >= minDate && surgeryDateObj <= maxDate && (
                     <g transform={`translate(${xScale(surgeryDateObj)}, 0)`}>
                         <line y1="0" y2={innerHeight} stroke="#ef4444" strokeWidth="2" strokeDasharray="4 4" />
                         <text x="5" y="15" fill="#ef4444" fontSize="10" fontWeight="bold">Cirugía</text>
                     </g>
                 )}
-
-                {/* Points */}
                 {validDataPoints.map((d, i) => (
                     <circle key={i} cx={xScale(d.date)} cy={yScale(yAccessor(d)!)} r="4" fill="white" stroke="#4f46e5" strokeWidth="2" className="cursor-pointer">
                         <title>{`${format(d.date, 'dd/MM/yyyy')}: ${yAccessor(d)} ${yUnit}`}</title>
@@ -1120,7 +1115,7 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
                             <span><span className="font-semibold">Fecha:</span> {format(new Date(), 'dd/MM/yyyy')}</span>
                         </div>
                         <textarea
-                            value={informe.contenido}
+                            value={informe.contenido || ''}
                             onChange={(e) => setInforme(p => ({...p, contenido: e.target.value}))}
                             placeholder="Escriba el informe aquí o genere uno con IA..."
                             className="w-full h-96 p-2 border rounded-md"
@@ -1172,7 +1167,6 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
     const [config, setConfig] = useState<ConfiguracionGeneral | null>(null);
     const [allProfesionales, setAllProfesionales] = useState<Profesional[]>([]);
     
-    // States for clinical history tabs
     const chartRef = useRef<SVGSVGElement>(null);
     const [activeEstudiosTab, setActiveEstudiosTab] = useState<TipoEstudio>(TipoEstudio.LABORATORIO);
     const [isSaving, setIsSaving] = useState(false);
@@ -1279,7 +1273,6 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
         };
     }, [paciente]);
 
-    // Handlers from TabHistoriaClinica
     const handleSaveResumen = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!paciente) return;
@@ -1288,7 +1281,20 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
             await api.updateHistoriaClinica(paciente.filiatorio.idPaciente, resumenData, user.rol);
             fetchData();
             setModal(null);
-        } catch (error) { console.error(error); } finally { setIsSaving(false); }
+        } catch (error: any) {
+            const isAuthError = error?.status === 400 ||
+                error?.message?.toLowerCase().includes('refresh token') ||
+                error?.message?.toLowerCase().includes('invalid');
+            if (isAuthError) {
+                alert('Tu sesión expiró. Por favor, volvé a iniciar sesión.');
+                window.location.href = '/login';
+                return;
+            }
+            console.error(error);
+            alert('Error al guardar. Intente nuevamente.');
+        } finally {
+            setIsSaving(false);
+        }
     };
     
     const handleSaveEvolucion = async (e: React.FormEvent) => {
@@ -1397,7 +1403,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
         const svgData = new XMLSerializer().serializeToString(svg);
         const canvas = document.createElement("canvas");
         const svgSize = svg.getBoundingClientRect();
-        canvas.width = svgSize.width * 2; // Increase resolution
+        canvas.width = svgSize.width * 2;
         canvas.height = svgSize.height * 2;
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
@@ -1678,40 +1684,128 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                     onSaveSuccess={() => { setModal(null); fetchData(); }}
                 />
             )}
+
+            {/* ── editResumen modal ─────────────────────────────────────────────── */}
             {modal === 'editResumen' && (
                 <Modal title="Editar Resumen Clínico" onClose={() => setModal(null)} maxWidth="max-w-3xl">
                     <ModalForm onSave={handleSaveResumen} onCancel={() => setModal(null)} isSaving={isSaving}>
                         <div className="grid grid-cols-2 gap-4">
-                            <div><label className="block text-sm font-medium">Peso Inicial (kg)</label><input type="number" value={resumenData.pesoInicial} onChange={e => setResumenData(p => ({...p, pesoInicial: parseFloat(e.target.value)}))} className="mt-1 block w-full rounded-md border-slate-300" /></div>
-                            <div><label className="block text-sm font-medium">Talla (cm)</label><input type="number" value={resumenData.talla} onChange={e => setResumenData(p => ({...p, talla: parseInt(e.target.value)}))} className="mt-1 block w-full rounded-md border-slate-300" /></div>
+                            {/* FIX: value con fallback '' y onChange con guard para string vacío */}
+                            <div>
+                                <label className="block text-sm font-medium">Peso Inicial (kg)</label>
+                                <input
+                                    type="number"
+                                    value={resumenData.pesoInicial ?? ''}
+                                    onChange={e => setResumenData(p => ({
+                                        ...p,
+                                        pesoInicial: e.target.value === '' ? 0 : parseFloat(e.target.value)
+                                    }))}
+                                    className="mt-1 block w-full rounded-md border-slate-300"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium">Talla (cm)</label>
+                                <input
+                                    type="number"
+                                    value={resumenData.talla ?? ''}
+                                    onChange={e => setResumenData(p => ({
+                                        ...p,
+                                        talla: e.target.value === '' ? 0 : parseInt(e.target.value, 10)
+                                    }))}
+                                    className="mt-1 block w-full rounded-md border-slate-300"
+                                />
+                            </div>
                         </div>
                         <div>
                             <label className="block text-sm font-medium">Comorbilidades</label>
                              <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
                                 {COMORBILIDADES_PREDEFINIDAS.map(c => (
                                     <label key={c} className="flex items-center text-sm">
-                                        <input type="checkbox" checked={resumenData.comorbilidades?.includes(c)} onChange={e => {
-                                            const currentComorbilidades = resumenData.comorbilidades || [];
-                                            const newComorbilidades = e.target.checked ? [...currentComorbilidades, c] : currentComorbilidades.filter(item => item !== c);
-                                            setResumenData(p => ({...p, comorbilidades: newComorbilidades}));
-                                        }} className="rounded"/>
+                                        <input
+                                            type="checkbox"
+                                            checked={resumenData.comorbilidades?.includes(c) ?? false}
+                                            onChange={e => {
+                                                const currentComorbilidades = resumenData.comorbilidades || [];
+                                                const newComorbilidades = e.target.checked
+                                                    ? [...currentComorbilidades, c]
+                                                    : currentComorbilidades.filter(item => item !== c);
+                                                setResumenData(p => ({...p, comorbilidades: newComorbilidades}));
+                                            }}
+                                            className="rounded"
+                                        />
                                         <span className="ml-2">{c}</span>
                                     </label>
                                 ))}
                             </div>
                         </div>
-                        <div><label className="block text-sm font-medium">Medicación Crónica</label><textarea value={resumenData.medicacionCronica} onChange={e => setResumenData(p => ({...p, medicacionCronica: e.target.value}))} rows={2} className="mt-1 block w-full rounded-md border-slate-300"></textarea></div>
-                        <div><label className="block text-sm font-medium">Antecedentes Médicos</label><textarea value={resumenData.antecedentesMedicos} onChange={e => setResumenData(p => ({...p, antecedentesMedicos: e.target.value}))} rows={2} className="mt-1 block w-full rounded-md border-slate-300"></textarea></div>
-                        <div><label className="block text-sm font-medium">Antecedentes Quirúrgicos</label><textarea value={resumenData.antecedentesQuirurgicos} onChange={e => setResumenData(p => ({...p, antecedentesQuirurgicos: e.target.value}))} rows={2} className="mt-1 block w-full rounded-md border-slate-300"></textarea></div>
+                        {/* FIX: textareas con fallback '' para evitar uncontrolled→controlled warning */}
+                        <div>
+                            <label className="block text-sm font-medium">Medicación Crónica</label>
+                            <textarea
+                                value={resumenData.medicacionCronica ?? ''}
+                                onChange={e => setResumenData(p => ({...p, medicacionCronica: e.target.value}))}
+                                rows={2}
+                                className="mt-1 block w-full rounded-md border-slate-300"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium">Antecedentes Médicos</label>
+                            <textarea
+                                value={resumenData.antecedentesMedicos ?? ''}
+                                onChange={e => setResumenData(p => ({...p, antecedentesMedicos: e.target.value}))}
+                                rows={2}
+                                className="mt-1 block w-full rounded-md border-slate-300"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium">Antecedentes Quirúrgicos</label>
+                            <textarea
+                                value={resumenData.antecedentesQuirurgicos ?? ''}
+                                onChange={e => setResumenData(p => ({...p, antecedentesQuirurgicos: e.target.value}))}
+                                rows={2}
+                                className="mt-1 block w-full rounded-md border-slate-300"
+                            />
+                        </div>
                     </ModalForm>
                 </Modal>
             )}
+
             {(modal === 'newEvolucion' || modal === 'editEvolucion') && (
                 <Modal title={modal === 'newEvolucion' ? "Nueva Evolución" : "Editar Evolución"} onClose={() => setModal(null)} maxWidth="max-w-2xl">
                     <ModalForm onSave={modal === 'newEvolucion' ? handleSaveEvolucion : handleUpdateEvolucion} onCancel={() => setModal(null)} isSaving={isSaving}>
-                        <div><label className="block text-sm font-medium">Peso Actual (kg)</label><input type="number" step="0.1" value={evolucionData.pesoActual || ''} onChange={e => setEvolucionData(p => ({...p, pesoActual: parseFloat(e.target.value)}))} placeholder="Opcional" className="mt-1 block w-full rounded-md border-slate-300" /></div>
-                        <div><label className="block text-sm font-medium">Evolución Clínica</label><textarea value={evolucionData.evolucionClinica} onChange={e => setEvolucionData(p => ({...p, evolucionClinica: e.target.value}))} rows={5} required className="mt-1 block w-full rounded-md border-slate-300"></textarea></div>
-                        <div><label className="block text-sm font-medium">Nota Confidencial (solo visible para usted)</label><textarea value={evolucionData.notaConfidencial} onChange={e => setEvolucionData(p => ({...p, notaConfidencial: e.target.value}))} rows={3} className="mt-1 block w-full rounded-md border-slate-300"></textarea></div>
+                        <div>
+                            <label className="block text-sm font-medium">Peso Actual (kg)</label>
+                            <input
+                                type="number"
+                                step="0.1"
+                                value={evolucionData.pesoActual ?? ''}
+                                onChange={e => setEvolucionData(p => ({
+                                    ...p,
+                                    pesoActual: e.target.value === '' ? undefined : parseFloat(e.target.value)
+                                }))}
+                                placeholder="Opcional"
+                                className="mt-1 block w-full rounded-md border-slate-300"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium">Evolución Clínica</label>
+                            <textarea
+                                value={evolucionData.evolucionClinica ?? ''}
+                                onChange={e => setEvolucionData(p => ({...p, evolucionClinica: e.target.value}))}
+                                rows={5}
+                                required
+                                className="mt-1 block w-full rounded-md border-slate-300"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium">Nota Confidencial (solo visible para usted)</label>
+                            <textarea
+                                value={evolucionData.notaConfidencial ?? ''}
+                                onChange={e => setEvolucionData(p => ({...p, notaConfidencial: e.target.value}))}
+                                rows={3}
+                                className="mt-1 block w-full rounded-md border-slate-300"
+                            />
+                        </div>
                     </ModalForm>
                 </Modal>
             )}
@@ -1721,7 +1815,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-sm font-medium">Fecha</label>
-                                <input type="date" value={estudioData.fecha} onChange={e => setEstudioData(p => ({...p, fecha: e.target.value}))} className="mt-1 block w-full rounded-md border-slate-300" />
+                                <input type="date" value={estudioData.fecha ?? ''} onChange={e => setEstudioData(p => ({...p, fecha: e.target.value}))} className="mt-1 block w-full rounded-md border-slate-300" />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium">Tipo de Estudio</label>
@@ -1732,11 +1826,11 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                         </div>
                         <div>
                             <label className="block text-sm font-medium">Descripción / Título</label>
-                            <input type="text" value={estudioData.descripcion} onChange={e => setEstudioData(p => ({...p, descripcion: e.target.value}))} className="mt-1 block w-full rounded-md border-slate-300" />
+                            <input type="text" value={estudioData.descripcion ?? ''} onChange={e => setEstudioData(p => ({...p, descripcion: e.target.value}))} className="mt-1 block w-full rounded-md border-slate-300" />
                         </div>
                         <div>
                             <label className="block text-sm font-medium">Nombre de Archivo (Opcional)</label>
-                            <input type="text" value={estudioData.nombreArchivo} onChange={e => setEstudioData(p => ({...p, nombreArchivo: e.target.value}))} placeholder="ej: ecografia_juan_perez.pdf" className="mt-1 block w-full rounded-md border-slate-300" />
+                            <input type="text" value={estudioData.nombreArchivo ?? ''} onChange={e => setEstudioData(p => ({...p, nombreArchivo: e.target.value}))} placeholder="ej: ecografia_juan_perez.pdf" className="mt-1 block w-full rounded-md border-slate-300" />
                         </div>
 
                         {estudioData.tipo === TipoEstudio.LABORATORIO && (
@@ -1781,11 +1875,11 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                             <div className="pt-4 mt-4 border-t">
                                 <label className="block text-sm font-medium">Resultado de Biopsia (Opcional)</label>
                                 <textarea 
-                                    value={estudioData.resultadoBiopsia} 
+                                    value={estudioData.resultadoBiopsia ?? ''} 
                                     onChange={e => setEstudioData(p => ({...p, resultadoBiopsia: e.target.value}))} 
                                     rows={3}
                                     className="mt-1 block w-full rounded-md border-slate-300"
-                                ></textarea>
+                                />
                             </div>
                         )}
                     </ModalForm>
@@ -1809,21 +1903,24 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-sm font-medium">Fecha Programada</label>
-                                <input type="date" value={cirugiaData.fechaProgramada || ''} onChange={e => setCirugiaData(p => ({...p, fechaProgramada: e.target.value}))} className="mt-1 block w-full rounded-md border-slate-300" />
+                                <input type="date" value={cirugiaData.fechaProgramada ?? ''} onChange={e => setCirugiaData(p => ({...p, fechaProgramada: e.target.value}))} className="mt-1 block w-full rounded-md border-slate-300" />
                             </div>
                              <div>
                                 <label className="block text-sm font-medium">Fecha Realizada</label>
-                                <input type="date" value={cirugiaData.fechaRealizada || ''} onChange={e => setCirugiaData(p => ({...p, fechaRealizada: e.target.value}))} className="mt-1 block w-full rounded-md border-slate-300" />
+                                <input type="date" value={cirugiaData.fechaRealizada ?? ''} onChange={e => setCirugiaData(p => ({...p, fechaRealizada: e.target.value}))} className="mt-1 block w-full rounded-md border-slate-300" />
                             </div>
                         </div>
                         <div>
                             <label className="block text-sm font-medium">Tipo de Cirugía</label>
-                            <select value={cirugiaData.tipoCirugia || ''} onChange={e => setCirugiaData(p => ({...p, tipoCirugia: e.target.value as TipoCirugiaBariatrica}))} className="mt-1 block w-full rounded-md border-slate-300">
+                            <select value={cirugiaData.tipoCirugia ?? ''} onChange={e => setCirugiaData(p => ({...p, tipoCirugia: e.target.value as TipoCirugiaBariatrica}))} className="mt-1 block w-full rounded-md border-slate-300">
                                 <option value="">Seleccionar...</option>
                                 {TIPOS_CIRUGIA_BARIATRICA.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                             </select>
                         </div>
-                        <div><label className="block text-sm font-medium">Notas</label><textarea value={cirugiaData.notas || ''} onChange={e => setCirugiaData(p => ({...p, notas: e.target.value}))} rows={3} className="mt-1 block w-full rounded-md border-slate-300"></textarea></div>
+                        <div>
+                            <label className="block text-sm font-medium">Notas</label>
+                            <textarea value={cirugiaData.notas ?? ''} onChange={e => setCirugiaData(p => ({...p, notas: e.target.value}))} rows={3} className="mt-1 block w-full rounded-md border-slate-300" />
+                        </div>
                     </ModalForm>
                 </Modal>
             )}
@@ -1831,12 +1928,43 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                 <Modal title="Editar Seguimiento Nutricional" onClose={() => setModal(null)} maxWidth="max-w-2xl">
                     <ModalForm onSave={handleSaveNutricion} onCancel={() => setModal(null)} isSaving={isSaving}>
                         <div className="grid grid-cols-2 gap-4">
-                            <div><label className="block text-sm font-medium">Perímetro Cintura (cm)</label><input type="number" value={nutricionData.perimetroCintura || ''} onChange={e => setNutricionData(p => ({...p, perimetroCintura: e.target.valueAsNumber}))} className="mt-1 block w-full rounded-md border-slate-300" /></div>
-                            <div><label className="block text-sm font-medium">Perímetro Cuello (cm)</label><input type="number" value={nutricionData.perimetroCuello || ''} onChange={e => setNutricionData(p => ({...p, perimetroCuello: e.target.valueAsNumber}))} className="mt-1 block w-full rounded-md border-slate-300" /></div>
+                            <div>
+                                <label className="block text-sm font-medium">Perímetro Cintura (cm)</label>
+                                <input
+                                    type="number"
+                                    value={nutricionData.perimetroCintura ?? ''}
+                                    onChange={e => setNutricionData(p => ({
+                                        ...p,
+                                        perimetroCintura: e.target.value === '' ? undefined : e.target.valueAsNumber
+                                    }))}
+                                    className="mt-1 block w-full rounded-md border-slate-300"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium">Perímetro Cuello (cm)</label>
+                                <input
+                                    type="number"
+                                    value={nutricionData.perimetroCuello ?? ''}
+                                    onChange={e => setNutricionData(p => ({
+                                        ...p,
+                                        perimetroCuello: e.target.value === '' ? undefined : e.target.valueAsNumber
+                                    }))}
+                                    className="mt-1 block w-full rounded-md border-slate-300"
+                                />
+                            </div>
                         </div>
-                        <div><label className="block text-sm font-medium">Composición Corporal</label><textarea value={nutricionData.composicionCorporal || ''} onChange={e => setNutricionData(p => ({...p, composicionCorporal: e.target.value}))} rows={2} className="mt-1 block w-full rounded-md border-slate-300"></textarea></div>
-                        <div><label className="block text-sm font-medium">Hábitos Alimentarios</label><textarea value={nutricionData.habitosAlimentarios || ''} onChange={e => setNutricionData(p => ({...p, habitosAlimentarios: e.target.value}))} rows={3} className="mt-1 block w-full rounded-md border-slate-300"></textarea></div>
-                        <div><label className="block text-sm font-medium">Hábitos Ejercicio</label><textarea value={nutricionData.habitosEjercicio || ''} onChange={e => setNutricionData(p => ({...p, habitosEjercicio: e.target.value}))} rows={2} className="mt-1 block w-full rounded-md border-slate-300"></textarea></div>
+                        <div>
+                            <label className="block text-sm font-medium">Composición Corporal</label>
+                            <textarea value={nutricionData.composicionCorporal ?? ''} onChange={e => setNutricionData(p => ({...p, composicionCorporal: e.target.value}))} rows={2} className="mt-1 block w-full rounded-md border-slate-300" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium">Hábitos Alimentarios</label>
+                            <textarea value={nutricionData.habitosAlimentarios ?? ''} onChange={e => setNutricionData(p => ({...p, habitosAlimentarios: e.target.value}))} rows={3} className="mt-1 block w-full rounded-md border-slate-300" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium">Hábitos Ejercicio</label>
+                            <textarea value={nutricionData.habitosEjercicio ?? ''} onChange={e => setNutricionData(p => ({...p, habitosEjercicio: e.target.value}))} rows={2} className="mt-1 block w-full rounded-md border-slate-300" />
+                        </div>
                     </ModalForm>
                 </Modal>
             )}
@@ -1846,7 +1974,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                          <div>
                             <label className="block text-sm font-medium text-yellow-800 flex items-center"><LockClosedIcon className="w-4 h-4 mr-1"/>Notas Privadas</label>
                             <p className="text-xs text-slate-500 mb-2">Estas notas solo son visibles para usted.</p>
-                            <textarea value={psicologiaData.notasPrivadas || ''} onChange={e => setPsicologiaData(p => ({...p, notasPrivadas: e.target.value}))} rows={8} className="mt-1 block w-full rounded-md border-slate-300 bg-yellow-50"></textarea>
+                            <textarea value={psicologiaData.notasPrivadas ?? ''} onChange={e => setPsicologiaData(p => ({...p, notasPrivadas: e.target.value}))} rows={8} className="mt-1 block w-full rounded-md border-slate-300 bg-yellow-50" />
                         </div>
                     </ModalForm>
                 </Modal>
