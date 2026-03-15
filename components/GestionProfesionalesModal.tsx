@@ -6,7 +6,7 @@ import { api } from '../services/mockApi';
 
 interface HorarioBloque {
     id: string;
-    dia: number;       // 0=Dom, 1=Lun, …, 6=Sáb
+    dia: number;
     horaInicio: string;
     horaFin: string;
 }
@@ -71,8 +71,8 @@ const PlusIcon = () => (
     </svg>
 );
 
-const TrashIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+const TrashIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
         <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.124-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.077-2.09.921-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
     </svg>
 );
@@ -93,6 +93,68 @@ const CalendarIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
         <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0h18" />
     </svg>
+);
+
+// ─── Delete Confirmation Dialog ───────────────────────────────────────────────
+
+const DeleteConfirmDialog = ({
+    prof,
+    onConfirm,
+    onCancel,
+    isDeleting,
+}: {
+    prof: Profesional;
+    onConfirm: () => void;
+    onCancel: () => void;
+    isDeleting: boolean;
+}) => (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60]">
+        <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md mx-4">
+            <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                    <TrashIcon className="w-5 h-5 text-red-600" />
+                </div>
+                <div>
+                    <h3 className="text-base font-bold text-slate-800">Eliminar profesional</h3>
+                    <p className="text-sm text-slate-500">Esta acción no se puede deshacer.</p>
+                </div>
+            </div>
+            <p className="text-sm text-slate-700 bg-slate-50 rounded-lg p-3 border mb-5">
+                ¿Está seguro que desea eliminar a{' '}
+                <span className="font-semibold">{prof.apellido}, {prof.nombres}</span>
+                {' '}del sistema? Se perderán sus datos de configuración y horarios.
+            </p>
+            <div className="flex gap-3 justify-end">
+                <button
+                    onClick={onCancel}
+                    disabled={isDeleting}
+                    className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-50"
+                >
+                    Cancelar
+                </button>
+                <button
+                    onClick={onConfirm}
+                    disabled={isDeleting}
+                    className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-red-300 flex items-center gap-2"
+                >
+                    {isDeleting ? (
+                        <>
+                            <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                            </svg>
+                            Eliminando...
+                        </>
+                    ) : (
+                        <>
+                            <TrashIcon className="w-4 h-4" />
+                            Sí, eliminar
+                        </>
+                    )}
+                </button>
+            </div>
+        </div>
+    </div>
 );
 
 // ─── Schedule Builder Sub-component ──────────────────────────────────────────
@@ -127,7 +189,6 @@ const ScheduleBuilder = ({
 
     return (
         <div className="space-y-4">
-            {/* Duration */}
             <div className="flex items-center gap-3 p-3 bg-indigo-50 rounded-lg border border-indigo-100">
                 <CalendarIcon />
                 <label className="text-sm font-semibold text-indigo-800 whitespace-nowrap">
@@ -151,7 +212,6 @@ const ScheduleBuilder = ({
                 </div>
             </div>
 
-            {/* Days */}
             <div className="space-y-3">
                 {DIAS.map(dia => {
                     const bloques = config.horarios.filter(h => h.dia === dia.num);
@@ -161,28 +221,16 @@ const ScheduleBuilder = ({
                         <div
                             key={dia.num}
                             className={`rounded-lg border transition-colors ${
-                                isActive
-                                    ? 'border-green-300 bg-green-50'
-                                    : 'border-slate-200 bg-slate-50'
+                                isActive ? 'border-green-300 bg-green-50' : 'border-slate-200 bg-slate-50'
                             }`}
                         >
                             <div className="flex items-center justify-between px-3 py-2">
                                 <div className="flex items-center gap-2">
-                                    <span
-                                        className={`w-2 h-2 rounded-full ${
-                                            isActive ? 'bg-green-500' : 'bg-slate-300'
-                                        }`}
-                                    />
-                                    <span
-                                        className={`text-sm font-semibold w-24 ${
-                                            isActive ? 'text-green-800' : 'text-slate-500'
-                                        }`}
-                                    >
+                                    <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-green-500' : 'bg-slate-300'}`} />
+                                    <span className={`text-sm font-semibold w-24 ${isActive ? 'text-green-800' : 'text-slate-500'}`}>
                                         {dia.label}
                                     </span>
-                                    {!isActive && (
-                                        <span className="text-xs text-slate-400">Sin turnos</span>
-                                    )}
+                                    {!isActive && <span className="text-xs text-slate-400">Sin turnos</span>}
                                 </div>
                                 <button
                                     type="button"
@@ -197,10 +245,7 @@ const ScheduleBuilder = ({
                             {bloques.length > 0 && (
                                 <div className="px-3 pb-3 space-y-2">
                                     {bloques.map(bloque => (
-                                        <div
-                                            key={bloque.id}
-                                            className="flex items-center gap-2 bg-white rounded-md p-2 border border-green-200 shadow-sm"
-                                        >
+                                        <div key={bloque.id} className="flex items-center gap-2 bg-white rounded-md p-2 border border-green-200 shadow-sm">
                                             <span className="text-xs text-slate-500 w-6">De</span>
                                             <input
                                                 type="time"
@@ -242,7 +287,7 @@ const ProfesionalFormPanel = ({
     onSave,
     onCancel,
 }: {
-    key?: React.Key;   // ← AGREGAR
+    key?: React.Key;
     initial: ProfesionalForm;
     isNew: boolean;
     onSave: (data: ProfesionalForm) => Promise<void>;
@@ -279,7 +324,6 @@ const ProfesionalFormPanel = ({
 
     return (
         <form onSubmit={handleSubmit} className="flex flex-col h-full">
-            {/* Tabs */}
             <div className="border-b border-slate-200 px-6">
                 <nav className="-mb-px flex gap-6">
                     {([
@@ -302,7 +346,6 @@ const ProfesionalFormPanel = ({
                 </nav>
             </div>
 
-            {/* Content */}
             <div className="flex-grow overflow-y-auto p-6">
                 {activeTab === 'datos' && (
                     <div className="space-y-5">
@@ -432,7 +475,6 @@ const ProfesionalFormPanel = ({
                 )}
             </div>
 
-            {/* Footer */}
             {error && (
                 <div className="px-6 py-2 bg-red-50 border-t border-red-200">
                     <p className="text-sm text-red-600">{error}</p>
@@ -472,11 +514,13 @@ const ProfesionalCard = ({
     prof,
     isSelected,
     onSelect,
+    onDelete,
 }: {
-    key?: React.Key;   // ← AGREGAR
+    key?: React.Key;
     prof: Profesional;
     isSelected: boolean;
     onSelect: () => void;
+    onDelete: (e: React.MouseEvent) => void;
 }) => {
     const config = prof.config_turnos as ConfigTurnos | null;
     const diasActivos = config?.horarios
@@ -484,55 +528,59 @@ const ProfesionalCard = ({
         : 0;
 
     return (
-        <button
-            onClick={onSelect}
-            className={`w-full text-left p-3 rounded-lg border transition-all ${
-                isSelected
-                    ? 'bg-indigo-50 border-indigo-300 shadow-sm'
-                    : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-            }`}
-        >
-            <div className="flex items-start gap-3">
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
-                    prof.activo ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'
-                }`}>
-                    <UserIcon />
-                </div>
-                <div className="min-w-0 flex-grow">
-                    <p className={`font-semibold text-sm truncate ${isSelected ? 'text-indigo-900' : 'text-slate-800'}`}>
-                        {prof.apellido}, {prof.nombres}
-                    </p>
-                    <p className="text-xs text-slate-500 truncate">{prof.especialidad || prof.rol}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
-                            prof.activo
-                                ? 'bg-green-100 text-green-700'
-                                : 'bg-slate-100 text-slate-500'
-                        }`}>
-                            {prof.activo ? 'Activo' : 'Inactivo'}
-                        </span>
-                        {diasActivos > 0 && (
-                            <span className="text-xs text-slate-400">
-                                {diasActivos} día{diasActivos !== 1 ? 's' : ''} · {config?.duracionTurnoMinutos}min
+        <div className={`w-full text-left rounded-lg border transition-all ${
+            isSelected
+                ? 'bg-indigo-50 border-indigo-300 shadow-sm'
+                : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+        }`}>
+            <button onClick={onSelect} className="w-full text-left p-3">
+                <div className="flex items-start gap-3">
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+                        prof.activo ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'
+                    }`}>
+                        <UserIcon />
+                    </div>
+                    <div className="min-w-0 flex-grow">
+                        <p className={`font-semibold text-sm truncate ${isSelected ? 'text-indigo-900' : 'text-slate-800'}`}>
+                            {prof.apellido}, {prof.nombres}
+                        </p>
+                        <p className="text-xs text-slate-500 truncate">{prof.especialidad || prof.rol}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                                prof.activo ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
+                            }`}>
+                                {prof.activo ? 'Activo' : 'Inactivo'}
                             </span>
-                        )}
+                            {diasActivos > 0 && (
+                                <span className="text-xs text-slate-400">
+                                    {diasActivos} día{diasActivos !== 1 ? 's' : ''} · {config?.duracionTurnoMinutos}min
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                    <div className={`flex-shrink-0 text-slate-400 ${isSelected ? 'text-indigo-400' : ''}`}>
+                        <PencilIcon />
                     </div>
                 </div>
-                <div className={`flex-shrink-0 text-slate-400 ${isSelected ? 'text-indigo-400' : ''}`}>
-                    <PencilIcon />
-                </div>
+            </button>
+
+            {/* Delete button — outside the main select button to avoid event bubbling */}
+            <div className="px-3 pb-2 flex justify-end border-t border-slate-100 pt-1.5">
+                <button
+                    onClick={onDelete}
+                    title="Eliminar profesional"
+                    className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"
+                >
+                    <TrashIcon className="w-3.5 h-3.5" />
+                    Eliminar
+                </button>
             </div>
-        </button>
+        </div>
     );
 };
 
-// ─── Main Modal ───────────────────────────────────────────────────────────────
+// ─── Helper functions ─────────────────────────────────────────────────────────
 
-interface GestionProfesionalesModalProps {
-    onClose: () => void;
-}
-
-// Helper to safely parse config_turnos from the DB (which may be a raw JSON or a number)
 const parseConfigTurnos = (raw: any): ConfigTurnos => {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return defaultConfig();
     return {
@@ -543,11 +591,20 @@ const parseConfigTurnos = (raw: any): ConfigTurnos => {
     };
 };
 
+// ─── Main Modal ───────────────────────────────────────────────────────────────
+
+interface GestionProfesionalesModalProps {
+    onClose: () => void;
+}
+
 export default function GestionProfesionalesModal({ onClose }: GestionProfesionalesModalProps) {
     const [profesionales, setProfesionales] = useState<Profesional[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [selectedEmail, setSelectedEmail] = useState<string | null>(null);
     const [isCreating, setIsCreating] = useState(false);
+    const [profToDelete, setProfToDelete] = useState<Profesional | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
 
     const fetchProfesionales = useCallback(async () => {
         setIsLoading(true);
@@ -580,16 +637,12 @@ export default function GestionProfesionalesModal({ onClose }: GestionProfesiona
     });
 
     const handleSave = async (data: ProfesionalForm) => {
-        const payload = {
-            ...data,
-            config_turnos: data.config_turnos,
-        };
+        const payload = { ...data, config_turnos: data.config_turnos };
 
         if (isCreating) {
-            // Call your API create method here.
-            // Example: await api.createProfesional(payload);
-            // For now we use supabase via a generic upsert pattern:
-            await (api as any).upsertProfesional(payload);
+            // FIX: use createProfesional (plain INSERT) instead of upsert
+            // to prevent accidentally overwriting an existing record.
+            await (api as any).createProfesional(payload);
         } else {
             await (api as any).updateProfesionalConfig(data.email, payload);
         }
@@ -609,13 +662,40 @@ export default function GestionProfesionalesModal({ onClose }: GestionProfesiona
         setSelectedEmail(null);
     };
 
+    const handleDeleteClick = (e: React.MouseEvent, prof: Profesional) => {
+        e.stopPropagation();
+        setDeleteError(null);
+        setProfToDelete(prof);
+    };
+
+    const handleDeleteConfirm = async () => {
+        if (!profToDelete) return;
+        setIsDeleting(true);
+        setDeleteError(null);
+        try {
+            await (api as any).deleteProfesional(profToDelete.email);
+            // If the deleted prof was selected, clear the selection
+            if (selectedEmail === profToDelete.email) {
+                setSelectedEmail(null);
+                setIsCreating(false);
+            }
+            setProfToDelete(null);
+            await fetchProfesionales();
+        } catch (err: any) {
+            setDeleteError(err.message || 'No se pudo eliminar el profesional.');
+            setIsDeleting(false);
+        }
+        setIsDeleting(false);
+    };
+
     const showForm = isCreating || selectedEmail !== null;
 
     return (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl flex flex-col overflow-hidden"
-                 style={{ height: 'min(90vh, 720px)' }}>
-
+            <div
+                className="bg-white rounded-xl shadow-2xl w-full max-w-5xl flex flex-col overflow-hidden"
+                style={{ height: 'min(90vh, 720px)' }}
+            >
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-slate-800 to-slate-700">
                     <div>
@@ -624,10 +704,7 @@ export default function GestionProfesionalesModal({ onClose }: GestionProfesiona
                             Cree, edite y configure los horarios de su equipo
                         </p>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="text-slate-400 hover:text-white transition-colors text-2xl leading-none"
-                    >
+                    <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors text-2xl leading-none">
                         &times;
                     </button>
                 </div>
@@ -635,7 +712,7 @@ export default function GestionProfesionalesModal({ onClose }: GestionProfesiona
                 {/* Body */}
                 <div className="flex flex-grow overflow-hidden">
 
-                    {/* Left panel — professional list */}
+                    {/* Left panel */}
                     <div className="w-72 flex-shrink-0 border-r border-slate-200 flex flex-col bg-slate-50">
                         <div className="p-3 border-b border-slate-200">
                             <button
@@ -659,19 +736,23 @@ export default function GestionProfesionalesModal({ onClose }: GestionProfesiona
                                         prof={prof}
                                         isSelected={prof.email === selectedEmail}
                                         onSelect={() => { setIsCreating(false); setSelectedEmail(prof.email); }}
+                                        onDelete={(e) => handleDeleteClick(e, prof)}
                                     />
                                 ))
                             )}
                         </div>
 
                         <div className="p-3 border-t border-slate-200">
+                            {deleteError && (
+                                <p className="text-xs text-red-600 mb-2 text-center">{deleteError}</p>
+                            )}
                             <p className="text-xs text-center text-slate-400">
                                 {profesionales.length} profesional{profesionales.length !== 1 ? 'es' : ''} registrado{profesionales.length !== 1 ? 's' : ''}
                             </p>
                         </div>
                     </div>
 
-                    {/* Right panel — form */}
+                    {/* Right panel */}
                     <div className="flex-grow overflow-hidden flex flex-col">
                         {showForm ? (
                             <ProfesionalFormPanel
@@ -700,6 +781,16 @@ export default function GestionProfesionalesModal({ onClose }: GestionProfesiona
                     </div>
                 </div>
             </div>
+
+            {/* Delete confirmation dialog (rendered outside the modal box to avoid overflow clipping) */}
+            {profToDelete && (
+                <DeleteConfirmDialog
+                    prof={profToDelete}
+                    onConfirm={handleDeleteConfirm}
+                    onCancel={() => { setProfToDelete(null); setDeleteError(null); }}
+                    isDeleting={isDeleting}
+                />
+            )}
         </div>
     );
 }
