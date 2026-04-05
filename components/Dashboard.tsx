@@ -13,7 +13,7 @@ import SettingsModal from './SettingsModal';
 import VistaDiariaProfesional from './VistaDiariaProfesional';
 import AdminAgendaView from './AdminAgendaView';
 import GestionProfesionalesModal from './GestionProfesionalesModal';
-
+import { TurnHistoryModal } from './TurnHistoryModal';
 
 // --- ICONS ---
 const UsersIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m-7.5-2.962a3.75 3.75 0 1 0-7.5 0 3.75 3.75 0 0 0 7.5 0ZM10.5 1.5a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z" /></svg>);
@@ -70,84 +70,6 @@ const TurnoRow = ({ t }: { key?: React.Key; t: Turno }) => (
         <EstadoTurnoBadge estado={t.estado} />
     </div>
 );
-
-// ─── [FIX 4] HISTORIAL DE TURNOS MODAL ───────────────────────────────────────
-const TurnHistoryModal = ({ onClose, contacto }: { onClose: () => void; contacto: ContactoCRM | null }) => {
-    const authContext = useContext(AuthContext);
-    const userEmail = authContext?.user?.email ?? '';
-    const [turnos, setTurnos] = useState<Turno[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-
-    useEffect(() => {
-        if (!contacto) return;
-        setIsLoading(true);
-        setError(null);
-        api.getPacienteCompleto(contacto.id, userEmail)
-            .then(p => setTurnos(p.turnos ?? []))
-            .catch(() => setError('No se pudo cargar el historial de turnos.'))
-            .finally(() => setIsLoading(false));
-    }, [contacto, userEmail]);
-
-    if (!contacto) return null;
-
-    const now = new Date();
-    const turnosPasados = [...turnos]
-        .filter(t => new Date(t.fechaTurno) < now)
-        .sort((a, b) => new Date(b.fechaTurno).getTime() - new Date(a.fechaTurno).getTime());
-    const turnosFuturos = [...turnos]
-        .filter(t => new Date(t.fechaTurno) >= now)
-        .sort((a, b) => new Date(a.fechaTurno).getTime() - new Date(b.fechaTurno).getTime());
-
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl m-4 flex flex-col max-h-[85vh]">
-                <div className="p-4 border-b">
-                    <h2 className="text-xl font-bold text-slate-800">
-                        Historial de Turnos — {contacto.lastName}, {contacto.firstName}
-                    </h2>
-                    <p className="text-sm text-slate-500 mt-0.5">{turnos.length} turno{turnos.length !== 1 ? 's' : ''} en total</p>
-                </div>
-                <div className="flex-grow overflow-y-auto p-4 space-y-5">
-                    {isLoading && <p className="text-center text-slate-500 py-8">Cargando...</p>}
-                    {error && <p className="text-center text-red-500 py-8">{error}</p>}
-                    {!isLoading && !error && (
-                        <>
-                            {turnosFuturos.length > 0 && (
-                                <div>
-                                    <h3 className="text-sm font-bold text-indigo-700 uppercase tracking-wider mb-2 flex items-center gap-1">
-                                        <CalendarDaysIcon className="w-4 h-4" /> Próximos ({turnosFuturos.length})
-                                    </h3>
-                                    <div className="space-y-2">
-                                        {turnosFuturos.map(t => <TurnoRow key={t.idTurno} t={t} />)}
-                                    </div>
-                                </div>
-                            )}
-                            {turnosPasados.length > 0 && (
-                                <div>
-                                    <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
-                                        <HistoryIcon className="w-4 h-4 mr-0" /> Anteriores ({turnosPasados.length})
-                                    </h3>
-                                    <div className="space-y-2">
-                                        {turnosPasados.map(t => <TurnoRow key={t.idTurno} t={t} />)}
-                                    </div>
-                                </div>
-                            )}
-                            {turnos.length === 0 && (
-                                <p className="text-center text-slate-400 py-8">Este paciente no tiene turnos registrados.</p>
-                            )}
-                        </>
-                    )}
-                </div>
-                <div className="p-4 border-t flex justify-end">
-                    <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200">
-                        Cerrar
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-};
 
 // ─── WHATSAPP MODAL ───────────────────────────────────────────────────────────
 // Simulated sent message type
@@ -642,8 +564,39 @@ const FolderModal = ({ patient, folder, professionals, onSave, onClose }: { pati
         setCurrentFolder(prev => ({ ...prev, checklist: { ...prev.checklist, [item]: value as ChecklistItemStatus } }));
     };
     const handleFieldChange = (field: keyof Folder, value: string) => {
-        setCurrentFolder(prev => ({ ...prev, [field]: value }));
-    };
+    setCurrentFolder(prev => {
+        const updated = { ...prev, [field]: value || null };
+
+        // Solo auto-avanzar si el nuevo estado sería "mayor" al actual
+       const autoEstado = (() => {
+    if (field === 'authorizedDate'        && value) return FolderTrackingStatus.AUTORIZADA;
+    if (field === 'submittedDate'          && value) return FolderTrackingStatus.PRESENTADA_EN_OS;
+    if (field === 'deliveredToPatientDate' && value) return FolderTrackingStatus.ENTREGADA_AL_PACIENTE;
+    if (field === 'requestDate'            && value) return FolderTrackingStatus.PEDIDO_GENERADO;
+    return null;
+})();
+
+const orden: FolderTrackingStatus[] = [
+    FolderTrackingStatus.NO_PRESENTADA,
+    FolderTrackingStatus.PEDIDO_GENERADO,
+    FolderTrackingStatus.ENTREGADA_AL_PACIENTE,
+    FolderTrackingStatus.PRESENTADA_EN_OS,
+    FolderTrackingStatus.EN_AUDITORIA,
+    FolderTrackingStatus.AUTORIZADA,
+    FolderTrackingStatus.RECHAZADA,
+];
+
+        if (autoEstado) {
+            const idxActual = orden.indexOf(prev.trackingState);
+            const idxNuevo  = orden.indexOf(autoEstado);
+            if (idxNuevo > idxActual) {
+                updated.trackingState = autoEstado;
+            }
+        }
+
+        return updated;
+    });
+};
     const handleSave = async () => {
         setIsSaving(true);
         setSaveError(null);
@@ -728,7 +681,7 @@ const FoldersDashboardModal = ({ onClose, folders, onSelectPatient, contactos }:
                 <table className="min-w-full divide-y divide-slate-200">
                     <thead className="bg-slate-50">
                         <tr>
-                            {['Paciente', 'Obra Social', 'Estado', 'Fecha Autorizada', 'Cirujano'].map(h => (
+                            {['Paciente', 'Obra Social', 'Estado', 'Fecha Autorizada', 'Notas'].map(h => (
                                 <th key={h} className="px-4 py-2 text-left text-xs font-medium text-slate-500">{h}</th>
                             ))}
                         </tr>
@@ -742,7 +695,9 @@ const FoldersDashboardModal = ({ onClose, folders, onSelectPatient, contactos }:
                                     <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{contacto?.socialInsurance || '-'}</td>
                                     <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{folder.trackingState}</td>
                                     <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{folder.authorizedDate || '-'}</td>
-                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{folder.surgeon}</td>
+                                    <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate" title={folder.notes || ''}>
+                                     {folder.notes || '-'}
+                                    </td>   
                                 </tr>
                             );
                         })}
@@ -901,7 +856,7 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
     const [activeModal, setActiveModal] = useState<ActiveModalType>(null);
     const [selectedContacto, setSelectedContacto] = useState<ContactoCRM | null>(null);
     const contactRowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
-
+    const [convertedContacto, setConvertedContacto] = useState<ContactoCRM | null>(null);
     const fetchData = useCallback(async () => {
         setIsLoading(true);
         try {
@@ -1077,37 +1032,73 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
             {activeModal === 'lost' && <MarkAsLostModal onClose={() => setActiveModal(null)} patient={selectedContacto} onConfirm={handleMarkAsLost} />}
             {activeModal === 'new-prospect' && <NewProspectModal onClose={() => setActiveModal(null)} onSuccess={() => { fetchData(); setActiveModal(null); }} />}
             {activeModal === 'convert-prospect' && selectedContacto && (
-                <NewPatientModal
-                    onClose={() => setActiveModal(null)}
-                    // [FIX 1] After conversion: refresh data + switch to 'not-operated' view
-                    onSuccess={async () => {
-                        await fetchData();
-                        setActiveModal(null);
-                        setActiveView('not-operated');
-                        // Try to open the newly created patient's file automatically
-                        try {
-                            const userEmail = authContext?.user?.email ?? '';
-                            const paciente = await api.getPacienteCompleto(selectedContacto.id, userEmail);
-                            onSelectPatient(paciente.filiatorio);
-                        } catch {
-                            // If patient ID changed after conversion, just switch view
-                        }
-                    }}
-                    initialData={{
-                        apellido: selectedContacto.lastName,
-                        nombres: selectedContacto.firstName,
-                        telefono: selectedContacto.phone,
-                        email: selectedContacto.email,
-                    }}
-                    prospectoId={selectedContacto.id}
-                />
-            )}
-            {activeModal === 'new-patient' && (
-                <NewPatientModal
-                    onClose={() => setActiveModal(null)}
-                    onSuccess={() => { fetchData(); setActiveModal(null); }}
-                />
-            )}
+    <NewPatientModal
+        onClose={() => setActiveModal(null)}
+        onSuccess={async () => {
+            await fetchData();
+            setActiveModal(null);
+            setActiveView('not-operated');
+            // Guardamos el contacto para el modal post-conversión
+            setConvertedContacto(selectedContacto);
+            try {
+                const userEmail = authContext?.user?.email ?? '';
+                const paciente = await api.getPacienteCompleto(selectedContacto.id, userEmail);
+                onSelectPatient(paciente.filiatorio);
+            } catch {
+                // Si el ID cambió tras conversión, igual cambiamos la vista
+            }
+        }}
+        initialData={{
+            apellido: selectedContacto.lastName,
+            nombres: selectedContacto.firstName,
+            telefono: selectedContacto.phone,
+            email: selectedContacto.email,
+        }}
+        prospectoId={selectedContacto.id}
+    />
+    
+)}
+{convertedContacto && (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+            <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                </div>
+                <div>
+                    <h2 className="text-lg font-bold text-slate-800">Paciente creado con éxito</h2>
+                    <p className="text-sm text-slate-500">
+                        {convertedContacto.lastName}, {convertedContacto.firstName}
+                    </p>
+                </div>
+            </div>
+
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 mb-5">
+                <p className="font-semibold flex items-center gap-1.5 mb-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M12 3a9 9 0 100 18A9 9 0 0012 3z" />
+                    </svg>
+                    Turno pendiente
+                </p>
+                <p>
+                    Este paciente aún no tiene turno asignado. Para agendarlo, andá a la sección{' '}
+                    <strong>Agenda</strong> y buscá su nombre, o hacé clic en su ficha y agendá desde ahí.
+                </p>
+            </div>
+
+            <div className="flex justify-end gap-3">
+                <button
+                    onClick={() => setConvertedContacto(null)}
+                    className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200"
+                >
+                    Entendido
+                </button>
+            </div>
+        </div>
+    </div>
+)}
 
             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                 <h2 className="text-2xl font-bold text-slate-800">Panel Principal</h2>
@@ -1245,17 +1236,23 @@ const ProspectoRow: React.FC<ProspectoRowProps> = ({ contacto, onOpenModal, onUp
     return (
         <tr className="hover:bg-slate-50 transition-colors">
             <td className="px-4 py-4 whitespace-nowrap">
-                <div className="flex items-center gap-2">
-                    <div>
-                        <div className="text-sm font-medium text-slate-900">{displayName}</div>
-                        <div className="text-sm text-slate-500">{contactInfo}</div>
-                    </div>
-                    {/* [FIX 1] Badge + link for converted prospects */}
-                    {contacto.isPatient && (
-                        <span className="px-1.5 py-0.5 text-xs font-semibold bg-green-100 text-green-700 rounded">Paciente</span>
-                    )}
-                </div>
-            </td>
+    <div className="flex items-center gap-2">
+        {contacto.isPatient ? (
+            <button onClick={handleOpenFile} className="text-left hover:underline group">
+                <div className="text-sm font-medium text-indigo-700 group-hover:text-indigo-900">{displayName}</div>
+                <div className="text-sm text-slate-500">{contactInfo}</div>
+            </button>
+        ) : (
+            <div>
+                <div className="text-sm font-medium text-slate-900">{displayName}</div>
+                <div className="text-sm text-slate-500">{contactInfo}</div>
+            </div>
+        )}
+        {contacto.isPatient && (
+            <span className="px-1.5 py-0.5 text-xs font-semibold bg-green-100 text-green-700 rounded">Paciente</span>
+        )}
+    </div>
+</td>
             <td className="px-4 py-4 whitespace-nowrap text-sm text-slate-600">{contacto.canalOrigen || '-'}</td>
             <td className="px-4 py-4 whitespace-nowrap text-sm text-slate-500">{contacto.startDate}</td>
             <td className="px-4 py-4 whitespace-nowrap">
@@ -1674,11 +1671,15 @@ const TorreDeControl = ({ onSelectPatient }: { onSelectPatient: (patient: Pacien
     const debouncedValorUpdate = useDebouncedCallback((turnoId: string, valor: number) => { handleUpdateTurno(turnoId, { valorCobrado: valor }); }, 800);
 
     const turnosPorProfesional = useMemo(() => {
-        return profesionales.map(prof => ({
+    return profesionales
+        .map(prof => ({
             ...prof,
-            turnos: turnos.filter(t => t.profesionalEmail === prof.email).sort((a, b) => new Date(a.fechaTurno).getTime() - new Date(b.fechaTurno).getTime())
-        }));
-    }, [turnos, profesionales]);
+            turnos: turnos
+                .filter(t => t.profesionalEmail === prof.email)
+                .sort((a, b) => new Date(a.fechaTurno).getTime() - new Date(b.fechaTurno).getTime()),
+        }))
+        .filter(prof => prof.turnos.length > 0); // ← solo profesionales con turnos ese día
+}, [turnos, profesionales]);
 
     const changeDay = (offset: number) => {
         if (offset === 0) setCurrentDate(startOfDay(new Date()));

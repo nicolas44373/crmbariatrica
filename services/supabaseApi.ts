@@ -688,10 +688,25 @@ async function createPaciente(
 
   if (error) handleSupabaseError(error);
 
-  if (prospectoId) {
-    await supabase.from('crm_contactos')
-      .update({ id_contacto: data.id_paciente, is_patient: true })
+if (prospectoId) {
+    const { data: oldProspect } = await supabase
+      .from('crm_contactos')
+      .select('canal_origen, prioridad, fecha_ingreso')
+      .eq('id_contacto', prospectoId)
+      .maybeSingle();
+
+    await supabase
+      .from('crm_contactos')
+      .delete()
       .eq('id_contacto', prospectoId);
+
+    await supabase.from('crm_contactos').insert({
+      id_contacto:   data.id_paciente,
+      is_patient:    true,
+      canal_origen:  oldProspect?.canal_origen  ?? null,
+      prioridad:     oldProspect?.prioridad     ?? Priority.NORMAL,
+      fecha_ingreso: oldProspect?.fecha_ingreso ?? new Date().toISOString().split('T')[0],
+    });
   }
 
   return mapPaciente(data);
@@ -715,9 +730,10 @@ async function updatePacienteFiliatorio(
   if (updates.nroAfiliado       !== undefined) dbUpdates.nro_afiliado                = updates.nroAfiliado;
   if (updates.telefono          !== undefined) dbUpdates.telefono                    = updates.telefono;
   if (updates.email             !== undefined) dbUpdates.email                       = updates.email;
-  if (updates.cirujanoAsignado  !== undefined) dbUpdates.cirujano_asignado_email     = updates.cirujanoAsignado;
-  if (updates.nutricionistaAsignado !== undefined) dbUpdates.nutricionista_asignado_email = updates.nutricionistaAsignado;
-  if (updates.psicologoAsignado !== undefined) dbUpdates.psicologo_asignado_email    = updates.psicologoAsignado;
+  // DESPUÉS — string vacío se convierte a NULL, que sí acepta la FK
+if (updates.cirujanoAsignado      !== undefined) dbUpdates.cirujano_asignado_email      = updates.cirujanoAsignado      || null;
+if (updates.nutricionistaAsignado !== undefined) dbUpdates.nutricionista_asignado_email = updates.nutricionistaAsignado || null;
+if (updates.psicologoAsignado     !== undefined) dbUpdates.psicologo_asignado_email     = updates.psicologoAsignado     || null;
 
   const { data, error } = await supabase
     .from('pacientes').update(dbUpdates).eq('id_paciente', idPaciente).select().single();
@@ -1110,7 +1126,10 @@ async function updatePsicologiaInfo(
   updates: Partial<PsicologiaInfo>,
   user: Profesional
 ): Promise<PsicologiaInfo> {
-  if (user.especialidad !== 'Psicología') throw new Error('Solo un psicólogo puede editar estas notas.');
+// DESPUÉS — case-insensitive
+if (!user.especialidad?.toLowerCase().includes('psic')) {
+    throw new Error('Solo un psicólogo puede editar estas notas.');
+}
 
   const { data: existing } = await supabase
     .from('psicologia_info').select('psicologo_email_autor').eq('id_paciente', idPaciente).maybeSingle();

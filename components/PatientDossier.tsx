@@ -27,7 +27,8 @@ import {
 } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { supabase } from '../services/supabaseClient';
-
+import { TurnHistoryModal } from './TurnHistoryModal';
+import { PedidosRecetasModal } from './Pedidosrecetasmodal';
 // --- Icons ---
 const UserPhotoPlaceholderIcon = () => (
     <div className="w-24 h-24 rounded-full bg-slate-200 flex items-center justify-center ring-4 ring-white shadow-md">
@@ -178,7 +179,6 @@ const AgendarTurnoModal = ({ onConfirm, onCancel, profesionales, pacienteId, con
     const [turnosProfesional, setTurnosProfesional] = useState<TurnoConPaciente[]>([]);
     const [monthlyAvailability, setMonthlyAvailability] = useState<Record<string, AvailabilityStatus>>({});
     const [isLoadingCalendar, setIsLoadingCalendar] = useState(true);
-
     const selectedProfesional = profesionales.find(p => p.email === profesionalEmail);
     const professionalConfig = config.configuracionesProfesionales.find(h => h.profesionalEmail === profesionalEmail);
 
@@ -1160,8 +1160,8 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showTagDropdown, setShowTagDropdown] = useState(false);
-    
-    type ModalType = 'agendarTurno' | 'definirCirugia' | 'editarFicha' | 'verFicha' | 'createTask' | 'editResumen' | 'newEvolucion' | 'editEvolucion' | 'newEstudio' | 'weightCurve' | 'newInforme' | 'editInforme' | 'editCirugia' | 'editNutricion' | 'editPsicologia' | null;
+    const [prioridad, setPrioridad] = useState<'ALTA' | 'MEDIA' | 'NORMAL'>('NORMAL');
+   type ModalType = 'agendarTurno' | 'definirCirugia' | 'editarFicha' | 'verFicha' | 'createTask' | 'editResumen' | 'newEvolucion' | 'editEvolucion' | 'newEstudio' | 'weightCurve' | 'newInforme' | 'editInforme' | 'editCirugia' | 'editNutricion' | 'editPsicologia' | 'turnHistorial' | 'pedidosRecetas' | null;
     const [modal, setModal] = useState<ModalType>(null);
     
     const [config, setConfig] = useState<ConfiguracionGeneral | null>(null);
@@ -1186,28 +1186,36 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
     const canEdit = user.rol === UserRole.ADMINISTRATIVO || user.rol === UserRole.MEDICO;
 
     const fetchData = useCallback(() => {
-        setIsLoading(true);
-        setError(null);
-        Promise.all([
-            api.getPacienteCompleto(patientId, user.email),
-            api.getConfiguracionGeneral(user.rol),
-            api.getProfesionalesAdmin()
-        ]).then(([pacienteData, configData, profsData]) => {
-            setPaciente(pacienteData);
-            setConfig(configData);
-            setAllProfesionales(profsData);
-        }).catch(err => {
-            console.error("Error fetching patient data:", err);
-            setError("No se pudo cargar la información del paciente.");
-        }).finally(() => {
-            setIsLoading(false);
-        });
-    }, [patientId, user.email, user.rol]);
+    setIsLoading(true);
+    setError(null);
+    Promise.all([
+        api.getPacienteCompleto(patientId, user.email),
+        api.getConfiguracionGeneral(user.rol),
+        api.getProfesionalesAdmin(),
+        api.getContactosCRM(),                          // ← agregá esta línea
+    ]).then(([pacienteData, configData, profsData, contactosData]) => {  // ← y este parámetro
+        setPaciente(pacienteData);
+        setConfig(configData);
+        setAllProfesionales(profsData);
+        // Cargar prioridad del CRM
+        const contacto = contactosData.find((c: any) => c.id === patientId);
+        if (contacto) setPrioridad(contacto.priority);
+    }).catch(err => {
+        console.error("Error fetching patient data:", err);
+        setError("No se pudo cargar la información del paciente.");
+    }).finally(() => {
+        setIsLoading(false);
+    });
+}, [patientId, user.email, user.rol]);
 
     useEffect(() => {
         fetchData();
     }, [fetchData]);
 
+    const handleCambioPrioridad = async (nuevaPrioridad: 'ALTA' | 'MEDIA' | 'NORMAL') => {
+    setPrioridad(nuevaPrioridad);
+    await api.updateContactoCRM(patientId, { priority: nuevaPrioridad as any });
+};
     const handleTagChange = async (newTag: string) => {
         if (!paciente) return;
         setShowTagDropdown(false);
@@ -1532,8 +1540,37 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
 
                         <div><strong className="text-sm text-slate-600">Comorbilidades:</strong><p className="text-sm text-slate-800">{historiaClinica.comorbilidades.join(', ')}</p></div>
                         <div><strong className="text-sm text-slate-600">Medicación Crónica:</strong><p className="text-sm text-slate-800">{historiaClinica.medicacionCronica}</p></div>
+                         {/* Acordeón con datos adicionales */}
+                        <details className="group bg-slate-50 rounded-lg border border-slate-200">
+                            <summary className="flex items-center justify-between p-3 cursor-pointer text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg list-none">
+                                <span>Ver información completa</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                            </summary>
+                            <div className="p-4 border-t space-y-3 text-sm">
+                                <div>
+                                    <strong className="text-slate-600">Antecedentes Médicos:</strong>
+                                    <p className="text-slate-800 mt-0.5">{historiaClinica.antecedentesMedicos || 'No registrado.'}</p>
+                                </div>
+                                <div>
+                                    <strong className="text-slate-600">Antecedentes Quirúrgicos:</strong>
+                                    <p className="text-slate-800 mt-0.5">{historiaClinica.antecedentesQuirurgicos || 'No registrado.'}</p>
+                                </div>
+                                <div>
+                                    <strong className="text-slate-600">Medicación Crónica:</strong>
+                                    <p className="text-slate-800 mt-0.5">{historiaClinica.medicacionCronica || 'No registrado.'}</p>
+                                </div>
+                                <div>
+                                    <strong className="text-slate-600">Comorbilidades:</strong>
+                                    <p className="text-slate-800 mt-0.5">{historiaClinica.comorbilidades?.join(', ') || 'Ninguna referida.'}</p>
+                                </div>
+                            </div>
+                        </details>
+
                     </div>
                 )}
+                    
                 {activeResumenSubTab === 'cirugia' && (
                     <div>
                         <div className="flex justify-between items-center mb-4">
@@ -1565,8 +1602,19 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                     <div>
                          <div className="flex justify-between items-center mb-4">
                             <h3 className="text-xl font-bold text-slate-800">Notas de Psicología</h3>
-                            {paciente.psicologia && paciente.psicologia.psicologoEmailAutor === user.email && <button onClick={() => { setPsicologiaData(paciente.psicologia || {}); setModal('editPsicologia'); }} className="flex items-center text-sm font-medium text-white bg-indigo-600 px-3 py-2 rounded-md"><PencilIcon/>Editar</button>}
-                        </div>
+                            
+
+{user.especialidad?.toLowerCase().includes('psic') &&
+ (!paciente.psicologia || paciente.psicologia.psicologoEmailAutor === user.email) && (
+    <button
+        onClick={() => { setPsicologiaData(paciente.psicologia || {}); setModal('editPsicologia'); }}
+        className="flex items-center text-sm font-medium text-white bg-indigo-600 px-3 py-2 rounded-md"
+    >
+        <PencilIcon/>
+        {paciente.psicologia ? 'Editar' : 'Crear Notas'}
+    </button>
+)}
+                        </div>  
                         <div className="p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-r-lg">
                             <div className="flex items-center">
                                 <LockClosedIcon className="w-6 h-6 text-yellow-600 mr-3"/>
@@ -1580,6 +1628,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                 )}
             </div>
         </div>
+        
     );
 
     const renderEstudios = () => (
@@ -1667,6 +1716,61 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
         </div>
     );
 
+    const renderInformes = () => (
+    <div className="bg-white rounded-lg shadow">
+        <div className="flex justify-between items-center p-4 border-b">
+            <h3 className="text-xl font-bold text-slate-800">Informes Clínicos</h3>
+            <button
+                onClick={() => handleOpenInformeModal()}
+                className="flex items-center text-sm font-medium text-white bg-purple-600 px-4 py-2 rounded-md shadow-sm hover:bg-purple-700"
+            >
+                <DocumentPlusIcon />
+                Nuevo Informe
+            </button>
+        </div>
+        <div className="p-4">
+            {!paciente.informes || paciente.informes.length === 0 ? (
+                <p className="text-sm text-center text-slate-500 py-6">
+                    No hay informes guardados para este paciente.
+                </p>
+            ) : (
+                <div className="space-y-3">
+                    {paciente.informes.map(informe => (
+                        <div
+                            key={informe.idInforme}
+                            className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border hover:border-indigo-300 transition-colors"
+                        >
+                            <div className="flex-grow min-w-0">
+                                <p className="text-sm font-semibold text-slate-800">
+                                    {informe.tipoInforme || 'Resumen Clínico'}
+                                </p>
+                                <p className="text-xs text-slate-500 mt-0.5">
+                                    Creado: {format(new Date(informe.fechaCreacion), 'dd/MM/yyyy HH:mm')}
+                                    {informe.fechaUltimaEdicion !== informe.fechaCreacion && (
+                                        <span className="ml-2 text-slate-400">
+                                            · Editado: {format(new Date(informe.fechaUltimaEdicion), 'dd/MM/yyyy HH:mm')}
+                                        </span>
+                                    )}
+                                </p>
+                                <p className="text-xs text-slate-400 mt-0.5 truncate max-w-xl">
+                                    {informe.contenido?.substring(0, 120)}...
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => handleOpenInformeModal(informe)}
+                                title="Abrir / Editar informe"
+                                className="ml-4 flex-shrink-0 p-2 text-indigo-600 bg-indigo-50 rounded-md hover:bg-indigo-100 transition-colors"
+                            >
+                                <PencilIcon />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    </div>
+);
+
     return (
         <div>
             {/* Modals */}
@@ -1684,6 +1788,27 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                     onSaveSuccess={() => { setModal(null); fetchData(); }}
                 />
             )}
+            {modal === 'turnHistorial' && (
+    <TurnHistoryModal
+        onClose={() => setModal(null)}
+        contacto={{
+            id: filiatorio.idPaciente,
+            firstName: filiatorio.nombres,
+            lastName: filiatorio.apellido,
+            isPatient: true,
+            dni: filiatorio.dni,
+            phone: filiatorio.telefono,
+            email: filiatorio.email,
+        } as any}
+    />
+)}
+            {modal === 'pedidosRecetas' && (
+    <PedidosRecetasModal
+        paciente={paciente}
+        user={user}
+        onClose={() => setModal(null)}
+    />
+)}
 
             {/* ── editResumen modal ─────────────────────────────────────────────── */}
             {modal === 'editResumen' && (
@@ -1817,21 +1942,27 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                                 <label className="block text-sm font-medium">Fecha</label>
                                 <input type="date" value={estudioData.fecha ?? ''} onChange={e => setEstudioData(p => ({...p, fecha: e.target.value}))} className="mt-1 block w-full rounded-md border-slate-300" />
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium">Tipo de Estudio</label>
-                                <select value={estudioData.tipo} onChange={e => setEstudioData(p => ({...p, tipo: e.target.value as TipoEstudio, resultados: [], resultadoBiopsia: ''}))} className="mt-1 block w-full rounded-md border-slate-300">
-                                    {TIPOS_ESTUDIO.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                                </select>
-                            </div>
+                            
                         </div>
                         <div>
                             <label className="block text-sm font-medium">Descripción / Título</label>
                             <input type="text" value={estudioData.descripcion ?? ''} onChange={e => setEstudioData(p => ({...p, descripcion: e.target.value}))} className="mt-1 block w-full rounded-md border-slate-300" />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium">Nombre de Archivo (Opcional)</label>
-                            <input type="text" value={estudioData.nombreArchivo ?? ''} onChange={e => setEstudioData(p => ({...p, nombreArchivo: e.target.value}))} placeholder="ej: ecografia_juan_perez.pdf" className="mt-1 block w-full rounded-md border-slate-300" />
-                        </div>
+    <label className="block text-sm font-medium">Adjuntar Archivo (PDF, imagen)</label>
+    <input
+        type="file"
+        accept=".pdf,image/*"
+        onChange={e => {
+            const file = e.target.files?.[0];
+            if (file) setEstudioData(p => ({ ...p, nombreArchivo: file.name }));
+        }}
+        className="mt-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+    />
+    {estudioData.nombreArchivo && (
+        <p className="text-xs text-slate-500 mt-1">Archivo: {estudioData.nombreArchivo}</p>
+    )}
+</div>
 
                         {estudioData.tipo === TipoEstudio.LABORATORIO && (
                             <div className="pt-4 mt-4 border-t">
@@ -1989,52 +2120,97 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                  <div className="flex items-start">
                     <UserPhotoPlaceholderIcon />
                     <div className="ml-6 flex-grow">
-                         <div className="flex justify-between items-center">
-                            <h2 className="text-3xl font-bold text-slate-800">{filiatorio.apellido}, {filiatorio.nombres}</h2>
-                            <div className="relative">
-                                <button onClick={() => setShowTagDropdown(!showTagDropdown)} onBlur={() => setTimeout(() => setShowTagDropdown(false), 200)} className={`flex items-center px-3 py-2 text-sm font-semibold rounded-full ${etiquetaInfo.color}`}>
-                                    <TagIcon />
-                                    {filiatorio.etiquetaPrincipalActiva.replace(/_/g, ' ')}
-                                    <ChevronDownIcon/>
-                                </button>
-                                {showTagDropdown && (
-                                    <div className="absolute right-0 mt-2 w-64 bg-white rounded-md shadow-lg z-10 border">
-                                        {ETIQUETAS_FLUJO.map(tag => (
-                                            <button key={tag.nombreEtiquetaUnico} onClick={() => handleTagChange(tag.nombreEtiquetaUnico)} className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-100 ${filiatorio.etiquetaPrincipalActiva === tag.nombreEtiquetaUnico ? 'font-bold' : ''}`}>
-                                                {tag.nombreEtiquetaUnico.replace(/_/g, ' ')}
-                                            </button>
-                                        ))}
-                                         {filiatorio.etiquetaPrincipalActiva === 'DEFINIR_CIRUGIA' && (
-                                            <button onClick={() => setModal('definirCirugia')} className="w-full text-left px-4 py-3 bg-green-50 hover:bg-green-100 font-bold text-green-700 border-t">
-                                                Definir Fecha de Cirugía...
-                                            </button>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                         </div>
+                         
+<div className="flex justify-between items-center">
+    <h2 className="text-3xl font-bold text-slate-800">{filiatorio.apellido}, {filiatorio.nombres}</h2>
+    <div className="flex items-center gap-3">
+        {/* Selector de prioridad */}
+        <div className="flex items-center gap-1.5">
+            <span className="text-xs text-slate-500 font-medium">Prioridad:</span>
+            {(['ALTA', 'MEDIA', 'NORMAL'] as const).map(p => {
+                const cfg = {
+                    ALTA:   { color: 'bg-red-500',    label: 'Alta' },
+                    MEDIA:  { color: 'bg-yellow-500', label: 'Media' },
+                    NORMAL: { color: 'bg-blue-400',   label: 'Normal' },
+                }[p];
+                return (
+                    <button
+                        key={p}
+                        onClick={() => handleCambioPrioridad(p)}
+                        title={`Prioridad ${cfg.label}`}
+                        className={`px-2 py-1 text-xs font-semibold rounded-full transition-all ${
+                            prioridad === p
+                                ? `${cfg.color} text-white ring-2 ring-offset-1`
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                    >
+                        {cfg.label}
+                    </button>
+                );
+            })}
+        </div>
+        {/* Tag dropdown — existente */}
+        <div className="relative">
+            <button onClick={() => setShowTagDropdown(!showTagDropdown)} onBlur={() => setTimeout(() => setShowTagDropdown(false), 200)} className={`flex items-center px-3 py-2 text-sm font-semibold rounded-full ${etiquetaInfo.color}`}>
+                <TagIcon />
+                {filiatorio.etiquetaPrincipalActiva.replace(/_/g, ' ')}
+                <ChevronDownIcon/>
+            </button>
+            {showTagDropdown && (
+                <div className="absolute right-0 mt-2 w-64 bg-white rounded-md shadow-lg z-10 border">
+                    {ETIQUETAS_FLUJO.map(tag => (
+                        <button key={tag.nombreEtiquetaUnico} onClick={() => handleTagChange(tag.nombreEtiquetaUnico)} className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-100 ${filiatorio.etiquetaPrincipalActiva === tag.nombreEtiquetaUnico ? 'font-bold' : ''}`}>
+                            {tag.nombreEtiquetaUnico.replace(/_/g, ' ')}
+                        </button>
+                    ))}
+                    {filiatorio.etiquetaPrincipalActiva === 'DEFINIR_CIRUGIA' && (
+                        <button onClick={() => setModal('definirCirugia')} className="w-full text-left px-4 py-3 bg-green-50 hover:bg-green-100 font-bold text-green-700 border-t">
+                            Definir Fecha de Cirugía...
+                        </button>
+                    )}
+                </div>
+            )}
+        </div>
+    </div>
+</div>
                          <div className="flex items-center gap-6 mt-4 text-sm text-slate-600">
-                             <button onClick={() => setModal('verFicha')} className="flex items-center gap-1 hover:text-indigo-600 hover:underline"><IdentificationIcon /> Ver Ficha</button>
-                             <button onClick={() => setModal('agendarTurno')} className="flex items-center gap-1 hover:text-indigo-600 hover:underline"><CalendarDaysIcon /> Agendar Turno</button>
-                             <button onClick={() => setModal('createTask')} className="flex items-center gap-1 hover:text-indigo-600 hover:underline"><ClipboardPlusIcon />+ Crear Tarea</button>
-                             <button onClick={() => handleOpenInformeModal()} className="flex items-center gap-1 hover:text-indigo-600 hover:underline"><PencilSquareIcon /> Ver/Crear Informes</button>
+                            <button onClick={() => setModal('verFicha')} className="flex items-center gap-1 hover:text-indigo-600 hover:underline"><IdentificationIcon /> Ver Ficha</button>
+<button onClick={() => setModal('agendarTurno')} className="flex items-center gap-1 hover:text-indigo-600 hover:underline"><CalendarDaysIcon /> Agendar Turno</button>
+<button onClick={() => setModal('turnHistorial')} className="flex items-center gap-1 hover:text-cyan-600 hover:underline">
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 mr-1">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+    </svg>
+    Historial de Turnos
+</button>
+<button onClick={() => setModal('createTask')} className="flex items-center gap-1 hover:text-indigo-600 hover:underline"><ClipboardPlusIcon />+ Crear Tarea</button>
+<button onClick={() => handleOpenInformeModal()} className="flex items-center gap-1 hover:text-indigo-600 hover:underline"><PencilSquareIcon /> Ver/Crear Informes</button>
+<button onClick={() => setModal('pedidosRecetas')} className="flex items-center gap-1 hover:text-indigo-600 hover:underline">
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 mr-1">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+    </svg>
+    Pedidos / Recetas
+</button>
                         </div>
                     </div>
                 </div>
             </div>
 
             {/* Content Grid */}
-            <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-                <div className="lg:col-span-1">
-                    {renderResumenClinico()}
-                </div>
-                <div className="lg:col-span-1">
-                    {renderEstudios()}
-                </div>
-                <div className="lg:col-span-2">
-                    {renderEvoluciones()}
-                </div>
-            </div>
+           
+<div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+    <div className="lg:col-span-1">
+        {renderResumenClinico()}
+    </div>
+    <div className="lg:col-span-1">
+        {renderEstudios()}
+    </div>
+    <div className="lg:col-span-2">
+        {renderEvoluciones()}
+    </div>
+    <div className="lg:col-span-2">
+        {renderInformes()}
+    </div>
+</div>
         </div>
     );
 }

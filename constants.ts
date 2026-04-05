@@ -103,12 +103,12 @@ export const COMORBILIDADES_PREDEFINIDAS: string[] = [
     "Síndrome de Ovario Poliquístico",
 ];
 
-export const TIPOS_ESTUDIO: { value: TipoEstudio; label: string }[] = [
-    { value: TipoEstudio.LABORATORIO, label: "Laboratorio Completo" },
-    { value: TipoEstudio.ENDOSCOPIA, label: "Endoscopia Digestiva Alta" },
-    { value: TipoEstudio.ECOGRAFIA, label: "Ecografía Abdominal" },
-    { value: TipoEstudio.EVAL_CARDIOLOGICA, label: "Evaluación Cardiológica" },
-    { value: TipoEstudio.OTROS, label: "Otros Estudios" },
+export const TIPOS_ESTUDIO = [
+    { value: TipoEstudio.LABORATORIO,  label: 'Laboratorio' },
+    { value: TipoEstudio.ENDOSCOPIA,   label: 'Endoscopia' },
+    { value: TipoEstudio.ECOGRAFIA,    label: 'Ecografía' },
+    { value: TipoEstudio.EVAL_CARDIOLOGICA,  label: 'Cardiología' },
+    { value: TipoEstudio.OTROS,        label: 'Otros' },
 ];
 
 export const TIPOS_CIRUGIA_BARIATRICA: { value: TipoCirugiaBariatrica; label: string }[] = [
