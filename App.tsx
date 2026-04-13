@@ -21,6 +21,7 @@ export default function App() {
   const [selectedPatient, setSelectedPatient] = useState<PacienteFiliatorio | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeApp, setActiveApp] = useState<ActiveApp>('clinical');
+  const [returnToApp, setReturnToApp] = useState<ActiveApp>('clinical');
 
   // Al cargar la app, verificar si hay sesión activa en Supabase
   useEffect(() => {
@@ -53,10 +54,16 @@ export default function App() {
   }, []);
 
   const handleSelectPatient = (patient: PacienteFiliatorio) => {
+    setReturnToApp(activeApp);
     setSelectedPatient(patient);
+    setActiveApp('clinical');
   };
 
-  const handleBackToDashboard = () => setSelectedPatient(null);
+  const handleBackToDashboard = () => {
+    setSelectedPatient(null);
+    setActiveApp(returnToApp);
+    setReturnToApp('clinical');
+  };
   const handleNavigate = (app: ActiveApp) => setActiveApp(app);
 
   // Pantalla de carga inicial
@@ -82,7 +89,7 @@ export default function App() {
             selectedPatient ? (
               <PatientDossier patientId={selectedPatient.idPaciente} onBack={handleBackToDashboard} />
             ) : (
-              <Dashboard onSelectPatient={handleSelectPatient} />
+              <Dashboard onSelectPatient={handleSelectPatient} onNavigateToCrm={() => handleNavigate('crm')} />
             )
           ) : (
             <CrmDashboard onSelectPatient={handleSelectPatient} selectedPatient={selectedPatient} />

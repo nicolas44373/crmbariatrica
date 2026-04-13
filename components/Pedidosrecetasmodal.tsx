@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef } from 'react';
 import { PacienteCompleto, Profesional } from '../types';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -10,13 +10,15 @@ type ModalTab = 'pedido' | 'receta';
 interface PlantillaPedido {
     id: string;
     nombre: string;
-    estudios: string[];
+    estudios: { descripcion: string; diagnostico: string }[];
     especialidad: string;
+    diagnosticoDefecto: string;
 }
 
 interface ItemPedido {
     id: string;
     descripcion: string;
+    diagnostico: string;
     urgente: boolean;
     indicaciones: string;
 }
@@ -30,6 +32,14 @@ interface ItemReceta {
     indicaciones: string;
 }
 
+interface VademecumItem {
+    id: string;
+    medicamento: string;
+    dosis: string;
+    frecuencia: string;
+    duracion: string;
+}
+
 // ─── PLANTILLAS PREDEFINIDAS ──────────────────────────────────────────────────
 
 const PLANTILLAS_PEDIDO: PlantillaPedido[] = [
@@ -37,61 +47,111 @@ const PLANTILLAS_PEDIDO: PlantillaPedido[] = [
         id: 'pre-quirurgico',
         nombre: 'Pre-Quirúrgico Bariátrico',
         especialidad: 'Cirugía',
+        diagnosticoDefecto: 'Obesidad mórbida — evaluación pre-quirúrgica bariátrica',
         estudios: [
-            'Hemograma completo con recuento de plaquetas',
-            'Glucemia en ayunas',
-            'Urea y Creatinina',
-            'Hepatograma completo (TGO, TGP, Fosfatasa Alcalina, GGT, Bilirrubina)',
-            'Colesterol total, HDL, LDL y Triglicéridos',
-            'Coagulograma (KPTT, Quick, RIN)',
-            'Ionograma (Na, K, Cl)',
-            'Proteínas totales y albumina',
-            'TSH',
-            'Hemoglobina glicosilada (HbA1c)',
-            'Orina completa',
+            { descripcion: 'Hemograma completo con recuento de plaquetas', diagnostico: 'prequirúrgico' },
+            { descripcion: 'Glucemia en ayunas', diagnostico: 'prequirúrgico' },
+            { descripcion: 'Urea y Creatinina', diagnostico: 'prequirúrgico' },
+            { descripcion: 'Hepatograma completo (TGO, TGP, Fosfatasa Alcalina, GGT, Bilirrubina)', diagnostico: 'prequirúrgico' },
+            { descripcion: 'Colesterol total, HDL, LDL y Triglicéridos', diagnostico: 'prequirúrgico' },
+            { descripcion: 'Coagulograma (KPTT, Quick, RIN)', diagnostico: 'prequirúrgico' },
+            { descripcion: 'Ionograma (Na, K, Cl)', diagnostico: 'prequirúrgico' },
+            { descripcion: 'Proteínas totales y albumina', diagnostico: 'prequirúrgico' },
+            { descripcion: 'TSH', diagnostico: 'prequirúrgico' },
+            { descripcion: 'Hemoglobina glicosilada (HbA1c)', diagnostico: 'prequirúrgico' },
+            { descripcion: 'Orina completa', diagnostico: 'prequirúrgico' },
         ],
     },
     {
         id: 'control-anual',
         nombre: 'Control Anual Post-Bariátrico',
         especialidad: 'Cirugía',
+        diagnosticoDefecto: 'Seguimiento post-bariátrico',
         estudios: [
-            'Hemograma completo',
-            'Glucemia',
-            'Hepatograma',
-            'Perfil lipídico',
-            'Coagulograma',
-            'Ionograma',
-            'Proteínas totales y albumina',
-            'Ferritina y saturación de transferrina',
-            'Vitamina B12',
-            'Ácido fólico',
-            'Vitamina D (25-OH)',
-            'PTH intacta',
-            'Calcio y fósforo',
-            'Zinc sérico',
-            'Tiamina (B1)',
+            { descripcion: 'Hemograma completo', diagnostico: 'seguimiento post-bariátrico' },
+            { descripcion: 'Glucemia', diagnostico: 'seguimiento post-bariátrico' },
+            { descripcion: 'Hepatograma', diagnostico: 'seguimiento post-bariátrico' },
+            { descripcion: 'Perfil lipídico', diagnostico: 'seguimiento post-bariátrico' },
+            { descripcion: 'Coagulograma', diagnostico: 'seguimiento post-bariátrico' },
+            { descripcion: 'Ionograma', diagnostico: 'seguimiento post-bariátrico' },
+            { descripcion: 'Proteínas totales y albumina', diagnostico: 'seguimiento post-bariátrico' },
+            { descripcion: 'Ferritina y saturación de transferrina', diagnostico: 'seguimiento post-bariátrico' },
+            { descripcion: 'Vitamina B12', diagnostico: 'seguimiento post-bariátrico' },
+            { descripcion: 'Ácido fólico', diagnostico: 'seguimiento post-bariátrico' },
+            { descripcion: 'Vitamina D (25-OH)', diagnostico: 'seguimiento post-bariátrico' },
+            { descripcion: 'PTH intacta', diagnostico: 'seguimiento post-bariátrico' },
+            { descripcion: 'Calcio y fósforo', diagnostico: 'seguimiento post-bariátrico' },
+            { descripcion: 'Zinc sérico', diagnostico: 'seguimiento post-bariátrico' },
+            { descripcion: 'Tiamina (B1)', diagnostico: 'seguimiento post-bariátrico' },
         ],
     },
     {
         id: 'nutricional',
         nombre: 'Evaluación Nutricional',
         especialidad: 'Nutrición',
+        diagnosticoDefecto: 'Evaluación nutricional',
         estudios: [
-            'Hemograma',
-            'Glucemia',
-            'Colesterol y triglicéridos',
-            'Albumina y proteínas totales',
-            'Ferritina',
-            'Vitamina B12',
-            'Vitamina D',
-            'Zinc',
+            { descripcion: 'Hemograma', diagnostico: 'evaluación nutricional' },
+            { descripcion: 'Glucemia', diagnostico: 'evaluación nutricional' },
+            { descripcion: 'Colesterol y triglicéridos', diagnostico: 'evaluación nutricional' },
+            { descripcion: 'Albumina y proteínas totales', diagnostico: 'evaluación nutricional' },
+            { descripcion: 'Ferritina', diagnostico: 'evaluación nutricional' },
+            { descripcion: 'Vitamina B12', diagnostico: 'evaluación nutricional' },
+            { descripcion: 'Vitamina D', diagnostico: 'evaluación nutricional' },
+            { descripcion: 'Zinc', diagnostico: 'evaluación nutricional' },
+        ],
+    },
+    {
+        id: 'ecg-riesgo-quirurgico',
+        nombre: 'ECG y Riesgo Quirúrgico',
+        especialidad: 'Cardiología',
+        diagnosticoDefecto: 'prequirúrgico',
+        estudios: [
+            { descripcion: 'Electrocardiograma (ECG) de reposo', diagnostico: 'prequirúrgico' },
+            { descripcion: 'Evaluación de riesgo quirúrgico cardiovascular', diagnostico: 'prequirúrgico' },
+        ],
+    },
+    {
+        id: 'ecografia-abdominal',
+        nombre: 'Ecografía Abdominal',
+        especialidad: 'Ecografía',
+        diagnosticoDefecto: 'esteatosis',
+        estudios: [
+            { descripcion: 'Ecografía abdominal completa', diagnostico: 'esteatosis' },
+        ],
+    },
+    {
+        id: 'veda',
+        nombre: 'VEDA con Sedación',
+        especialidad: 'Gastroenterología',
+        diagnosticoDefecto: 'gastritis',
+        estudios: [
+            { descripcion: 'Videoendoscopía digestiva alta (VEDA) con sedación', diagnostico: 'gastritis' },
+        ],
+    },
+    {
+        id: 'rx-torax',
+        nombre: 'RX de Tórax FyP',
+        especialidad: 'Radiología',
+        diagnosticoDefecto: 'control respiratorio',
+        estudios: [
+            { descripcion: 'Radiografía de Tórax frente y perfil (FyP)', diagnostico: 'control respiratorio' },
+        ],
+    },
+    {
+        id: 'segd',
+        nombre: 'SEGD',
+        especialidad: 'Radiología',
+        diagnosticoDefecto: 'RGE',
+        estudios: [
+            { descripcion: 'Serie esófago-gástrica-duodenal (SEGD)', diagnostico: 'RGE' },
         ],
     },
     {
         id: 'vacio',
-        nombre: 'Pedido libre',
+        nombre: 'Pedido libre (OTROS)',
         especialidad: '',
+        diagnosticoDefecto: '',
         estudios: [],
     },
 ];
@@ -105,10 +165,10 @@ const PRINT_STYLES = `
     #print-area {
         position: fixed !important;
         left: 0; top: 0;
-        width: 100%;
-        padding: 2cm;
+        width: 105mm;
+        padding: 1.2cm 1.5cm;
         font-family: Arial, sans-serif;
-        font-size: 11pt;
+        font-size: 10pt;
         color: #000;
     }
     .no-print { display: none !important; }
@@ -194,7 +254,8 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
         const p = PLANTILLAS_PEDIDO.find(p => p.id === 'pre-quirurgico');
         return (p?.estudios || []).map((e, i) => ({
             id: `item-${i}`,
-            descripcion: e,
+            descripcion: e.descripcion,
+            diagnostico: e.diagnostico,
             urgente: false,
             indicaciones: '',
         }));
@@ -208,10 +269,12 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
     const loadPlantilla = (id: string) => {
         setSelectedPlantilla(id);
         const p = PLANTILLAS_PEDIDO.find(p => p.id === id);
+        setDiagnostico(p?.diagnosticoDefecto || '');
         setItems(
             (p?.estudios || []).map((e, i) => ({
                 id: `item-${i}-${Date.now()}`,
-                descripcion: e,
+                descripcion: e.descripcion,
+                diagnostico: e.diagnostico,
                 urgente: false,
                 indicaciones: '',
             }))
@@ -221,7 +284,7 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
     const addItem = () => {
         setItems(prev => [
             ...prev,
-            { id: `item-${Date.now()}`, descripcion: '', urgente: false, indicaciones: '' },
+            { id: `item-${Date.now()}`, descripcion: '', diagnostico: '', urgente: false, indicaciones: '' },
         ]);
     };
 
@@ -234,6 +297,17 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
     };
 
     const handlePrint = () => window.print();
+
+    const handleWhatsApp = () => {
+        const { filiatorio } = paciente;
+        const itemsText = items
+            .filter(i => i.descripcion.trim())
+            .map((item, idx) => `${idx + 1}. ${item.urgente ? '[URGENTE] ' : ''}${item.descripcion}${item.diagnostico ? ` — Dx: ${item.diagnostico}` : ''}`)
+            .join('\n');
+        const text = `*PEDIDO DE ESTUDIOS*\n\nPaciente: ${filiatorio.apellido}, ${filiatorio.nombres}\nDNI: ${filiatorio.dni}\n${diagnostico ? `Diagnóstico: ${diagnostico}\n` : ''}\n*Se solicita:*\n${itemsText}\n\n_${firmaNombre}${showSignature ? ` - ${firmaMatricula}` : ''}_`;
+        const phone = filiatorio.telefono?.replace(/\D/g, '') || '';
+        window.open(`https://wa.me/${phone ? '549' + phone : ''}?text=${encodeURIComponent(text)}`, '_blank');
+    };
 
     const today = format(new Date(), "dd 'de' MMMM 'de' yyyy", { locale: es });
     const { filiatorio } = paciente;
@@ -262,7 +336,7 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
                 </div>
 
                 <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Diagnóstico / Motivo</label>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Diagnóstico / Motivo general</label>
                     <input
                         type="text"
                         value={diagnostico}
@@ -293,6 +367,13 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
                                         onChange={e => updateItem(item.id, 'descripcion', e.target.value)}
                                         className="w-full rounded border-slate-300 text-sm"
                                         placeholder="Nombre del estudio..."
+                                    />
+                                    <input
+                                        type="text"
+                                        value={item.diagnostico}
+                                        onChange={e => updateItem(item.id, 'diagnostico', e.target.value)}
+                                        className="w-full rounded border-slate-300 text-xs bg-amber-50"
+                                        placeholder="Dx: diagnóstico..."
                                     />
                                     <div className="flex items-center gap-3">
                                         <label className="flex items-center gap-1 text-xs text-slate-600 cursor-pointer">
@@ -346,16 +427,24 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
                 </div>
             </div>
 
-            {/* RIGHT — Preview + Print */}
+            {/* RIGHT — Preview + Actions */}
             <div className="w-full lg:w-1/2 p-5 bg-slate-50 flex flex-col overflow-y-auto">
-                <div className="flex items-center justify-between mb-3 no-print">
-                    <h4 className="text-sm font-semibold text-slate-600">Vista previa</h4>
-                    <button
-                        onClick={handlePrint}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700"
-                    >
-                        🖨️ Imprimir / PDF
-                    </button>
+                <div className="flex items-center justify-between mb-3 no-print gap-2 flex-wrap">
+                    <h4 className="text-sm font-semibold text-slate-600">Vista previa (½ A4)</h4>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={handlePrint}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700"
+                        >
+                            🖨️ Imprimir / PDF
+                        </button>
+                        <button
+                            onClick={handleWhatsApp}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700"
+                        >
+                            📲 WhatsApp
+                        </button>
+                    </div>
                 </div>
 
                 {/* PRINT AREA */}
@@ -363,12 +452,14 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
                     id="print-area"
                     ref={printRef}
                     className="bg-white border rounded-lg p-6 text-sm space-y-4 shadow-sm flex-grow"
+                    style={{ maxWidth: '105mm' }}
                 >
-                    {/* Header del documento */}
+                    {/* Logo Plenus */}
                     <div className="border-b pb-3 mb-2">
                         <div className="flex justify-between items-start">
                             <div>
-                                <p className="font-bold text-base text-slate-900">PEDIDO DE ESTUDIOS COMPLEMENTARIOS</p>
+                                <p className="font-bold text-base text-slate-900 uppercase tracking-wide">Plenus</p>
+                                <p className="font-bold text-xs text-slate-700 mt-0.5">PEDIDO DE ESTUDIOS</p>
                                 <p className="text-slate-500 text-xs mt-0.5">{user.especialidad || 'Medicina'}</p>
                             </div>
                             <p className="text-xs text-slate-500 text-right">{today}</p>
@@ -383,10 +474,10 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
                         <div><span className="text-slate-500">Nro Afiliado:</span> {filiatorio.nroAfiliado || '-'}</div>
                     </div>
 
-                    {/* Diagnóstico */}
+                    {/* Diagnóstico general */}
                     {diagnostico && (
                         <div className="text-xs">
-                            <span className="text-slate-500 font-medium">Diagnóstico/Motivo: </span>
+                            <span className="text-slate-500 font-medium">Diagnóstico: </span>
                             <span className="text-slate-800">{diagnostico}</span>
                         </div>
                     )}
@@ -394,19 +485,24 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
                     {/* Lista de estudios */}
                     <div>
                         <p className="font-semibold text-slate-800 mb-2 text-xs uppercase tracking-wide">Se solicita:</p>
-                        <ol className="space-y-1.5">
+                        <ol className="space-y-2">
                             {items.filter(i => i.descripcion.trim()).map((item, idx) => (
-                                <li key={item.id} className="flex items-start gap-2 text-xs">
-                                    <span className="text-slate-400 w-4 flex-shrink-0">{idx + 1}.</span>
-                                    <span className="flex-grow">
-                                        {item.urgente && (
-                                            <span className="bg-red-100 text-red-700 text-xs font-bold px-1 py-0.5 rounded mr-1">URGENTE</span>
-                                        )}
-                                        <strong>{item.descripcion}</strong>
-                                        {item.indicaciones && (
-                                            <span className="text-slate-500 ml-1">— {item.indicaciones}</span>
-                                        )}
-                                    </span>
+                                <li key={item.id} className="text-xs border-l-2 border-slate-300 pl-2">
+                                    <div className="flex items-start gap-1">
+                                        <span className="text-slate-400 flex-shrink-0">{idx + 1}.</span>
+                                        <div>
+                                            {item.urgente && (
+                                                <span className="bg-red-100 text-red-700 text-xs font-bold px-1 py-0.5 rounded mr-1">URGENTE</span>
+                                            )}
+                                            <strong>{item.descripcion}</strong>
+                                            {item.indicaciones && (
+                                                <span className="text-slate-500 ml-1">— {item.indicaciones}</span>
+                                            )}
+                                            {item.diagnostico && (
+                                                <p className="text-slate-500 italic mt-0.5">Dx: {item.diagnostico}</p>
+                                            )}
+                                        </div>
+                                    </div>
                                 </li>
                             ))}
                         </ol>
@@ -428,6 +524,22 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
     );
 };
 
+// ─── VADEMECUM STORAGE ────────────────────────────────────────────────────────
+
+const VADEMECUM_KEY = 'plenus_vademecum';
+
+function loadVademecum(): VademecumItem[] {
+    try {
+        return JSON.parse(localStorage.getItem(VADEMECUM_KEY) || '[]');
+    } catch {
+        return [];
+    }
+}
+
+function saveVademecum(items: VademecumItem[]) {
+    localStorage.setItem(VADEMECUM_KEY, JSON.stringify(items));
+}
+
 // ─── PANEL RECETA MÉDICA ──────────────────────────────────────────────────────
 
 const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> = ({
@@ -442,6 +554,8 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
     const [showSignature, setShowSignature] = useState(true);
     const [firmaMatricula, setFirmaMatricula] = useState('M.P. ');
     const [showMRxInfo, setShowMRxInfo] = useState(false);
+    const [vademecum, setVademecum] = useState<VademecumItem[]>(() => loadVademecum());
+    const [showVademecum, setShowVademecum] = useState(false);
 
     const addItem = () => {
         setItems(prev => [
@@ -457,6 +571,47 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
 
     const updateItem = (id: string, field: keyof ItemReceta, value: string) => {
         setItems(prev => prev.map(i => (i.id === id ? { ...i, [field]: value } : i)));
+    };
+
+    const handleSaveToVademecum = (item: ItemReceta) => {
+        if (!item.medicamento.trim()) return;
+        const newEntry: VademecumItem = {
+            id: `vad-${Date.now()}`,
+            medicamento: item.medicamento,
+            dosis: item.dosis,
+            frecuencia: item.frecuencia,
+            duracion: item.duracion,
+        };
+        const updated = [newEntry, ...vademecum.filter(v => v.medicamento !== item.medicamento)].slice(0, 20);
+        setVademecum(updated);
+        saveVademecum(updated);
+    };
+
+    const handleLoadFromVademecum = (vItem: VademecumItem) => {
+        const emptyItem = items.find(i => !i.medicamento.trim());
+        if (emptyItem) {
+            setItems(prev => prev.map(i => i.id === emptyItem.id ? { ...i, medicamento: vItem.medicamento, dosis: vItem.dosis, frecuencia: vItem.frecuencia, duracion: vItem.duracion } : i));
+        } else {
+            setItems(prev => [...prev, { id: `${Date.now()}`, medicamento: vItem.medicamento, dosis: vItem.dosis, frecuencia: vItem.frecuencia, duracion: vItem.duracion, indicaciones: '' }]);
+        }
+        setShowVademecum(false);
+    };
+
+    const handleRemoveFromVademecum = (id: string) => {
+        const updated = vademecum.filter(v => v.id !== id);
+        setVademecum(updated);
+        saveVademecum(updated);
+    };
+
+    const handleWhatsApp = () => {
+        const { filiatorio } = paciente;
+        const itemsText = items
+            .filter(i => i.medicamento.trim())
+            .map((item, idx) => `${idx + 1}. ${item.medicamento}${item.dosis ? ` — ${item.dosis}` : ''}${item.frecuencia ? `, ${item.frecuencia}` : ''}${item.duracion ? ` por ${item.duracion}` : ''}${item.indicaciones ? `\n   _${item.indicaciones}_` : ''}`)
+            .join('\n');
+        const text = `*RECETA MÉDICA*\n\nPaciente: ${filiatorio.apellido}, ${filiatorio.nombres}\nDNI: ${filiatorio.dni}\n${diagnostico ? `Diagnóstico: ${diagnostico}\n` : ''}\n${itemsText}${indicacionesGenerales ? `\n\nIndicaciones: ${indicacionesGenerales}` : ''}\n\n_Dr/a. ${user.apellido}, ${user.nombres}${showSignature ? ` — ${firmaMatricula}` : ''}_`;
+        const phone = filiatorio.telefono?.replace(/\D/g, '') || '';
+        window.open(`https://wa.me/${phone ? '549' + phone : ''}?text=${encodeURIComponent(text)}`, '_blank');
     };
 
     const today = format(new Date(), "dd 'de' MMMM 'de' yyyy", { locale: es });
@@ -486,7 +641,6 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
                     {showMRxInfo && (
                         <div className="mt-3 space-y-2 text-xs text-blue-700 border-t border-blue-200 pt-2">
                             <p><strong>MRx Digital</strong> es una plataforma oficial con vademécum completo, validación de obra social y firma digital certificada.</p>
-                            <p>Para integrar: una vez que tengas acceso a la API de MRx, se puede agregar un botón "Generar en MRx" que prefille los datos del paciente automáticamente.</p>
                             <a
                                 href="https://www.mrx.com.ar"
                                 target="_blank"
@@ -495,6 +649,41 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
                             >
                                 Ir a MRx Digital →
                             </a>
+                        </div>
+                    )}
+                </div>
+
+                {/* Vademecum */}
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold text-amber-800">⭐ Vademécum personal</p>
+                        <button
+                            onClick={() => setShowVademecum(!showVademecum)}
+                            className="text-xs font-medium text-amber-700 bg-amber-100 px-2 py-1 rounded hover:bg-amber-200"
+                        >
+                            {showVademecum ? 'Cerrar' : `Ver (${vademecum.length})`}
+                        </button>
+                    </div>
+                    {showVademecum && (
+                        <div className="mt-3 border-t border-amber-200 pt-2">
+                            {vademecum.length === 0 ? (
+                                <p className="text-xs text-amber-700">No hay medicamentos guardados. Usá el botón ⭐ en cada ítem para guardar.</p>
+                            ) : (
+                                <div className="space-y-1.5">
+                                    {vademecum.map(v => (
+                                        <div key={v.id} className="flex items-center justify-between bg-white rounded p-2 text-xs border border-amber-100">
+                                            <div>
+                                                <p className="font-semibold text-slate-800">{v.medicamento}</p>
+                                                <p className="text-slate-500">{[v.dosis, v.frecuencia, v.duracion].filter(Boolean).join(' · ')}</p>
+                                            </div>
+                                            <div className="flex gap-1">
+                                                <button onClick={() => handleLoadFromVademecum(v)} className="px-2 py-1 bg-amber-100 text-amber-800 rounded hover:bg-amber-200 font-medium">Usar</button>
+                                                <button onClick={() => handleRemoveFromVademecum(v.id)} className="px-2 py-1 bg-red-50 text-red-600 rounded hover:bg-red-100">✕</button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -525,9 +714,18 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
                             <div key={item.id} className="p-3 bg-slate-50 rounded-lg border space-y-2">
                                 <div className="flex items-center justify-between">
                                     <span className="text-xs font-semibold text-slate-500">#{idx + 1}</span>
-                                    {items.length > 1 && (
-                                        <button onClick={() => removeItem(item.id)} className="text-red-400 hover:text-red-600 text-xs">✕ Quitar</button>
-                                    )}
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => handleSaveToVademecum(item)}
+                                            title="Guardar en vademécum"
+                                            className="text-xs text-amber-600 hover:text-amber-800"
+                                        >
+                                            ⭐ Guardar
+                                        </button>
+                                        {items.length > 1 && (
+                                            <button onClick={() => removeItem(item.id)} className="text-red-400 hover:text-red-600 text-xs">✕ Quitar</button>
+                                        )}
+                                    </div>
                                 </div>
                                 <input
                                     type="text"
@@ -615,24 +813,34 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
 
             {/* RIGHT — Preview */}
             <div className="w-full lg:w-1/2 p-5 bg-slate-50 flex flex-col overflow-y-auto">
-                <div className="flex items-center justify-between mb-3 no-print">
-                    <h4 className="text-sm font-semibold text-slate-600">Vista previa</h4>
-                    <button
-                        onClick={() => window.print()}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700"
-                    >
-                        🖨️ Imprimir / PDF
-                    </button>
+                <div className="flex items-center justify-between mb-3 no-print gap-2 flex-wrap">
+                    <h4 className="text-sm font-semibold text-slate-600">Vista previa (½ A4)</h4>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => window.print()}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700"
+                        >
+                            🖨️ Imprimir / PDF
+                        </button>
+                        <button
+                            onClick={handleWhatsApp}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700"
+                        >
+                            📲 WhatsApp
+                        </button>
+                    </div>
                 </div>
 
                 <div
                     id="print-area"
                     className="bg-white border rounded-lg p-6 text-sm space-y-4 shadow-sm flex-grow"
+                    style={{ maxWidth: '105mm' }}
                 >
                     <div className="border-b pb-3">
                         <div className="flex justify-between items-start">
                             <div>
-                                <p className="font-bold text-base text-slate-900">RECETA MÉDICA</p>
+                                <p className="font-bold text-base text-slate-900 uppercase tracking-wide">Plenus</p>
+                                <p className="font-bold text-xs text-slate-700 mt-0.5">RECETA MÉDICA</p>
                                 <p className="text-slate-500 text-xs mt-0.5">{user.especialidad || 'Medicina'}</p>
                             </div>
                             <p className="text-xs text-slate-500 text-right">{today}</p>

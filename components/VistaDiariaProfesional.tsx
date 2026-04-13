@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext, useCallback, useRef, useMemo } 
 import { PacienteFiliatorio, TurnoDiario, EstadoTurnoDia, UserRole, Turno, Profesional } from '../types';
 import { api } from '../services/mockApi';
 import { AuthContext } from '../App';
-import { ESTADO_TURNO_MAP } from '../constants';
+import { ESTADO_TURNO_MAP, ETIQUETAS_FLUJO } from '../constants';
 import { format, isToday } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -123,7 +123,7 @@ export default function VistaDiariaProfesional({ onSelectPatient, date }: VistaD
                 
                 {/* 2. Paciente */}
                 <div className="col-span-12 sm:col-span-3">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                         <button onClick={() => onSelectPatient(turno.paciente)} className="block text-left font-semibold text-indigo-700 hover:underline">
                             {turno.paciente.apellido}, {turno.paciente.nombres}
                         </button>
@@ -131,6 +131,15 @@ export default function VistaDiariaProfesional({ onSelectPatient, date }: VistaD
                         {turno.esSobreturno && <span title="Sobreturno"><PlusCircleIcon /></span>}
                     </div>
                     <p className="text-sm text-slate-500">DNI: {turno.paciente.dni}</p>
+                    {turno.paciente.etiquetaPrincipalActiva && (() => {
+                        const etiqueta = ETIQUETAS_FLUJO.find(e => e.nombreEtiquetaUnico === turno.paciente.etiquetaPrincipalActiva);
+                        if (!etiqueta) return null;
+                        return (
+                            <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-semibold ${etiqueta.color}`}>
+                                {etiqueta.nombreEtiquetaUnico.replace(/_/g, ' ')}
+                            </span>
+                        );
+                    })()}
                 </div>
                 
                 {/* 3. Tiempos (Llegada/Atención) */}

@@ -225,7 +225,7 @@ export default function AgendaProfesional({ onDateSelect, selectedDate }: Agenda
                             case 'disponible': cellClasses += ' bg-green-50 hover:bg-green-100 text-green-800 cursor-pointer'; dotClasses += ' bg-green-600'; break;
                             case 'completo': cellClasses += ' bg-red-50 hover:bg-red-100 text-red-800 cursor-pointer'; dotClasses += ' bg-red-600'; break;
                             case 'bloqueado': cellClasses += ' bg-slate-200 text-slate-500 line-through cursor-not-allowed'; break;
-                            case 'pasado': cellClasses += ' bg-white text-slate-400 cursor-not-allowed'; break;
+                            case 'pasado': cellClasses += ' bg-white text-slate-400 cursor-pointer hover:bg-slate-50'; dotClasses += ' bg-slate-400'; break;
                             default: cellClasses += ' bg-white hover:bg-slate-100 cursor-pointer'; dotClasses += ' bg-indigo-500'; break;
                         }
                     }
@@ -242,7 +242,7 @@ export default function AgendaProfesional({ onDateSelect, selectedDate }: Agenda
                         <div 
                             key={dayKey}
                             className={cellClasses}
-                            onClick={() => (status !== 'bloqueado' && status !== 'pasado' && !(viewMode === 'month' && !isCurrentMonth)) && onDateSelect(day)}
+                            onClick={() => (status !== 'bloqueado' && !(viewMode === 'month' && !isCurrentMonth)) && onDateSelect(day)}
                         >
                             {viewMode === 'week' ? (
                                 <>

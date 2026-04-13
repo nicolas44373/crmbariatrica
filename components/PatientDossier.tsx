@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
-import { PacienteCompleto, EtiquetaFlujo, UserRole, CirugiaTipo, Profesional, Turno, ConfiguracionGeneral, DiaSemana, TurnoConPaciente, EstadoTurnoDia, PacienteFiliatorio, HistoriaClinicaEstatica, TipoEstudio, EvolucionClinica, EstudioRealizado, ResultadoLaboratorio, PlantillaLaboratorioParametro, CirugiaInfo, TipoCirugiaBariatrica, NutricionInfo, PsicologiaInfo, InformeClinico, Task } from '../types';
+import { PacienteCompleto, EtiquetaFlujo, UserRole, CirugiaTipo, Profesional, Turno, ConfiguracionGeneral, DiaSemana, TurnoConPaciente, EstadoTurnoDia, PacienteFiliatorio, HistoriaClinicaEstatica, TipoEstudio, EvolucionClinica, EstudioRealizado, ResultadoLaboratorio, PlantillaLaboratorioParametro, CirugiaInfo, TipoCirugiaBariatrica, NutricionInfo, PsicologiaInfo, InformeClinico, Task, Priority } from '../types';
 import { api } from '../services/mockApi';
 import { AuthContext } from '../App';
 import { ETIQUETAS_FLUJO, PROFESIONALES, DIAS_SEMANA_MAP, ESTADO_TURNO_MAP, COMORBILIDADES_PREDEFINIDAS, TIPOS_ESTUDIO, TIPOS_CIRUGIA_BARIATRICA } from '../constants';
@@ -997,6 +997,35 @@ const EvolucionItem = ({ evolucion, allProfesionales, user, onEdit }: {
     );
 };
 
+const INFORME_TIPOS_POR_ROL: Record<string, { tipo: string; plantilla: string }[]> = {
+    cirugia: [
+        { tipo: 'Informe Quirúrgico', plantilla: `INFORME QUIRÚRGICO\n\nFecha de cirugía: \nCirujano interviniente: \nAnestesista: \n\nTécnica quirúrgica utilizada:\n\nHallazgos intraoperatorios:\n\nComplicaciones intraoperatorias: Sin complicaciones / (describir)\n\nDesarrollo del acto quirúrgico:\n\nEstado postoperatorio inmediato:\n\nIndicaciones postoperatorias:\n\nFirma y sello del cirujano:` },
+        { tipo: 'Epicrisis / Resumen de Alta', plantilla: `EPICRISIS\n\nFecha de ingreso: \nFecha de alta: \n\nDiagnóstico de ingreso:\nDiagnóstico de egreso:\n\nResumen de la internación:\n\nProcedimientos realizados:\n\nMedicación al alta:\n\nIndicaciones al alta:\n\nTurnos de seguimiento:\n\nFirma y sello del médico tratante:` },
+        { tipo: 'Informe de Consulta', plantilla: `INFORME DE CONSULTA\n\nMotivo de consulta:\n\nAntecedentes relevantes:\n\nExamen físico:\nPeso: \nTalla: \nIMC: \nTA: \n\nImpresión diagnóstica:\n\nPlan de tratamiento:\n\nPróximo control:\n\nFirma y sello:` },
+    ],
+    nutricion: [
+        { tipo: 'Informe Nutricional', plantilla: `INFORME NUTRICIONAL\n\nEvaluación nutricional:\n\nAntropometría:\n- Peso actual: \n- Talla: \n- IMC: \n- Perímetro cintura: \n- Perímetro cuello: \n\nComposición corporal:\n\nHábitos alimentarios actuales:\n\nHábitos de ejercicio:\n\nDiagnóstico nutricional:\n\nPlan alimentario indicado:\n\nObjetivos del tratamiento:\n\nPróxima consulta:\n\nFirma y sello de la Lic. en Nutrición:` },
+        { tipo: 'Plan Alimentario', plantilla: `PLAN ALIMENTARIO\n\nPaciente: \nFecha: \n\nObjetivo calórico: \nDistribución de macronutrientes:\n\nComidas permitidas:\n\nAlimentos a evitar:\n\nPautas generales:\n\nSuplementación indicada:\n\nFirma y sello:` },
+    ],
+    psicologia: [
+        { tipo: 'Informe Psicológico', plantilla: `INFORME PSICOLÓGICO\n\nMotivo de consulta:\n\nEvaluación psicológica:\n- Estado afectivo: \n- Nivel de ansiedad: \n- Adherencia al tratamiento: \n- Red de apoyo social: \n\nTécnicas aplicadas:\n\nImpresión diagnóstica:\n\nObjetivos terapéuticos:\n\nConclusiones y recomendaciones:\n\nFirma y sello de la/el Lic. en Psicología:\n\n⚠️ Documento confidencial — solo para uso del equipo tratante.` },
+        { tipo: 'Apto Psicológico', plantilla: `CERTIFICADO DE APTO PSICOLÓGICO\n\nPor medio del presente se certifica que el/la paciente:\n\nNombre: \nDNI: \n\nFue evaluado/a psicológicamente y se encuentra en condiciones de:\n☐ Iniciar tratamiento bariátrico\n☐ Ser intervenido/a quirúrgicamente\n\nObservaciones:\n\nFirma y sello:` },
+    ],
+    general: [
+        { tipo: 'Resumen Clínico', plantilla: `RESUMEN CLÍNICO\n\nMotivo:\n\nAntecedentes:\n\nEstado actual:\n\nPlan:\n\nFirma:` },
+        { tipo: 'Presupuesto', plantilla: `PRESUPUESTO MÉDICO\n\nFecha: \n\nPaciente:\nDNI:\n\nProcedimiento / Servicio:\n\nDetalle de honorarios:\n\n- Consulta inicial: $\n- Estudios preoperatorios: $\n- Cirugía (honorarios): $\n- Internación estimada: $\n- Seguimiento postoperatorio: $\n\nTotal estimado: $\n\nFormas de pago aceptadas:\n\nVigencia del presupuesto: 30 días desde la fecha\n\nFirma y sello:` },
+        { tipo: 'Certificado Médico', plantilla: `CERTIFICADO MÉDICO\n\nSe certifica que el/la paciente:\n\nNombre completo: \nDNI: \nFecha de nacimiento: \n\n\n\n\n\nCiudad y fecha: \n\nFirma y sello del profesional:` },
+    ],
+};
+
+function getInformeTipos(user: Profesional) {
+    const esp = (user.especialidad || '').toLowerCase();
+    if (esp.includes('ciruj') || esp.includes('bariat')) return [...INFORME_TIPOS_POR_ROL.cirugia, ...INFORME_TIPOS_POR_ROL.general];
+    if (esp.includes('nutri')) return [...INFORME_TIPOS_POR_ROL.nutricion, ...INFORME_TIPOS_POR_ROL.general];
+    if (esp.includes('psic')) return [...INFORME_TIPOS_POR_ROL.psicologia, ...INFORME_TIPOS_POR_ROL.general];
+    return INFORME_TIPOS_POR_ROL.general;
+}
+
 const InformeModal = ({
     paciente,
     user,
@@ -1010,10 +1039,12 @@ const InformeModal = ({
     onClose: () => void;
     onSaveSuccess: () => void;
 }) => {
-    const [informe, setInforme] = useState(initialInforme);
+    const informeTipos = getInformeTipos(user);
+    const [informe, setInforme] = useState({ ...initialInforme, tipoInforme: initialInforme.tipoInforme || informeTipos[0]?.tipo || 'Resumen Clínico' });
     const [isSaving, setIsSaving] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
     const [clipboardStatus, setClipboardStatus] = useState('');
+    const [showTemplates, setShowTemplates] = useState(!initialInforme.contenido);
     const printRef = useRef<HTMLDivElement>(null);
 
     const handleGenerateInforme = async () => {
@@ -1104,12 +1135,52 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl m-4 flex flex-col max-h-[90vh]">
                 <div className="p-4 border-b flex justify-between items-center no-print">
-                    <h2 className="text-xl font-bold text-slate-800">Editor de Informes</h2>
-                     <button onClick={onClose} className="text-slate-500 hover:text-slate-700 text-2xl font-bold">&times;</button>
+                    <div className="flex items-center gap-4 flex-wrap">
+                        <h2 className="text-xl font-bold text-slate-800">Editor de Informes</h2>
+                        <div className="flex items-center gap-2">
+                            <label className="text-sm font-medium text-slate-600">Tipo:</label>
+                            <select
+                                value={informe.tipoInforme || ''}
+                                onChange={e => setInforme(p => ({ ...p, tipoInforme: e.target.value }))}
+                                className="rounded-md border-slate-300 text-sm py-1"
+                            >
+                                {informeTipos.map(t => <option key={t.tipo} value={t.tipo}>{t.tipo}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="text-slate-500 hover:text-slate-700 text-2xl font-bold">&times;</button>
                 </div>
+
+                {/* Template picker */}
+                {showTemplates && (
+                    <div className="px-6 pt-4 pb-2 bg-indigo-50 border-b no-print">
+                        <p className="text-xs font-semibold text-indigo-700 mb-2 uppercase tracking-wide">Usar plantilla estructurada</p>
+                        <div className="flex flex-wrap gap-2">
+                            {informeTipos.map(t => (
+                                <button
+                                    key={t.tipo}
+                                    onClick={() => {
+                                        setInforme(p => ({ ...p, tipoInforme: t.tipo, contenido: t.plantilla }));
+                                        setShowTemplates(false);
+                                    }}
+                                    className="px-3 py-1.5 text-xs font-medium rounded-md border border-indigo-300 bg-white text-indigo-700 hover:bg-indigo-100 transition-colors"
+                                >
+                                    📄 {t.tipo}
+                                </button>
+                            ))}
+                            <button
+                                onClick={() => setShowTemplates(false)}
+                                className="px-3 py-1.5 text-xs font-medium rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                            >
+                                Redactar libre
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 <div className="p-6 flex-grow overflow-y-auto" ref={printRef}>
                     <div className="print-section">
-                        <h3 className="text-lg font-bold text-center">Informe Clínico</h3>
+                        <h3 className="text-lg font-bold text-center">{informe.tipoInforme || 'Informe Clínico'}</h3>
                         <div className="flex justify-between text-sm mt-4 mb-6 border-y py-2">
                             <span><span className="font-semibold">Paciente:</span> {paciente.filiatorio.nombres} {paciente.filiatorio.apellido}</span>
                             <span><span className="font-semibold">Fecha:</span> {format(new Date(), 'dd/MM/yyyy')}</span>
@@ -1117,21 +1188,29 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
                         <textarea
                             value={informe.contenido || ''}
                             onChange={(e) => setInforme(p => ({...p, contenido: e.target.value}))}
-                            placeholder="Escriba el informe aquí o genere uno con IA..."
-                            className="w-full h-96 p-2 border rounded-md"
+                            placeholder="Escriba el informe aquí, elija una plantilla arriba, o genere con IA..."
+                            className="w-full h-96 p-3 border rounded-md font-mono text-sm leading-relaxed"
                             disabled={isGenerating}
                         />
                     </div>
                 </div>
-                <div className="p-4 bg-slate-50 border-t flex justify-between items-center no-print">
-                     <button
-                        onClick={handleGenerateInforme}
-                        disabled={isGenerating}
-                        className="flex items-center px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-md hover:bg-purple-700 disabled:bg-purple-300"
-                    >
-                        <AiSparklesIcon/>
-                        {isGenerating ? 'Generando...' : 'Generar Resumen con IA'}
-                    </button>
+                <div className="p-4 bg-slate-50 border-t flex flex-wrap justify-between items-center gap-3 no-print">
+                    <div className="flex gap-2 flex-wrap">
+                        <button
+                            onClick={() => setShowTemplates(v => !v)}
+                            className="flex items-center px-3 py-2 text-sm font-medium text-indigo-700 bg-indigo-50 rounded-md hover:bg-indigo-100 border border-indigo-200"
+                        >
+                            📄 Plantillas
+                        </button>
+                        <button
+                            onClick={handleGenerateInforme}
+                            disabled={isGenerating}
+                            className="flex items-center px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-md hover:bg-purple-700 disabled:bg-purple-300"
+                        >
+                            <AiSparklesIcon/>
+                            {isGenerating ? 'Generando...' : 'Generar con IA'}
+                        </button>
+                    </div>
                     <div className="flex items-center space-x-3">
                          <button onClick={handleCopy} className="flex items-center px-4 py-2 text-sm font-medium text-slate-700 bg-slate-200 rounded-md hover:bg-slate-300">
                              <ClipboardIcon/>
@@ -1142,7 +1221,7 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
                              Imprimir
                          </button>
                         <button onClick={onClose} disabled={isSaving} className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200">Cancelar</button>
-                        <button onClick={handleSave} disabled={isSaving || isGenerating} className="flex items-center px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:bg-indigo-300">
+                        <button onClick={handleSave} disabled={isSaving || isGenerating || !informe.contenido?.trim()} className="flex items-center px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:bg-indigo-300">
                             <SaveIcon/>
                             {isSaving ? 'Guardando...' : 'Guardar Informe'}
                         </button>
@@ -1160,7 +1239,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showTagDropdown, setShowTagDropdown] = useState(false);
-    const [prioridad, setPrioridad] = useState<'ALTA' | 'MEDIA' | 'NORMAL'>('NORMAL');
+    const [prioridad, setPrioridad] = useState<Priority>(Priority.NORMAL);
    type ModalType = 'agendarTurno' | 'definirCirugia' | 'editarFicha' | 'verFicha' | 'createTask' | 'editResumen' | 'newEvolucion' | 'editEvolucion' | 'newEstudio' | 'weightCurve' | 'newInforme' | 'editInforme' | 'editCirugia' | 'editNutricion' | 'editPsicologia' | 'turnHistorial' | 'pedidosRecetas' | null;
     const [modal, setModal] = useState<ModalType>(null);
     
@@ -1212,10 +1291,10 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
         fetchData();
     }, [fetchData]);
 
-    const handleCambioPrioridad = async (nuevaPrioridad: 'ALTA' | 'MEDIA' | 'NORMAL') => {
-    setPrioridad(nuevaPrioridad);
-    await api.updateContactoCRM(patientId, { priority: nuevaPrioridad as any });
-};
+    const handleCambioPrioridad = async (nuevaPrioridad: Priority) => {
+        setPrioridad(nuevaPrioridad);
+        await api.updateContactoCRM(patientId, { priority: nuevaPrioridad });
+    };
     const handleTagChange = async (newTag: string) => {
         if (!paciente) return;
         setShowTagDropdown(false);
@@ -1434,10 +1513,11 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
             setCurrentInforme(informe);
             setModal('editInforme');
         } else {
+            const tipos = getInformeTipos(user);
             setCurrentInforme({
                 idPaciente: paciente!.filiatorio.idPaciente,
                 emailProfesionalAutor: user.email,
-                tipoInforme: 'Resumen Clínico',
+                tipoInforme: tipos[0]?.tipo || 'Resumen Clínico',
                 contenido: '',
             });
             setModal('newInforme');
@@ -1591,11 +1671,29 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                             <h3 className="text-xl font-bold text-slate-800">Seguimiento Nutricional</h3>
                             {user.rol === UserRole.MEDICO && <button onClick={() => { setNutricionData(paciente.nutricion || {}); setModal('editNutricion'); }} className="flex items-center text-sm font-medium text-white bg-indigo-600 px-3 py-2 rounded-md"><PencilIcon/>Editar</button>}
                         </div>
-                         <div className="space-y-2 text-sm">
+                        <div className="space-y-2 text-sm">
                             <p><strong>Perímetro Cintura:</strong> {paciente.nutricion?.perimetroCintura ? `${paciente.nutricion.perimetroCintura} cm` : 'N/A'}</p>
                             <p><strong>Perímetro Cuello:</strong> {paciente.nutricion?.perimetroCuello ? `${paciente.nutricion.perimetroCuello} cm` : 'N/A'}</p>
                             <p><strong>Composición Corporal:</strong> {paciente.nutricion?.composicionCorporal || 'N/A'}</p>
                         </div>
+                        <details className="mt-4 group bg-slate-50 rounded-lg border border-slate-200">
+                            <summary className="flex items-center justify-between p-3 cursor-pointer text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg list-none">
+                                <span>Ver información completa</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                            </summary>
+                            <div className="p-4 border-t space-y-3 text-sm">
+                                <div>
+                                    <strong className="text-slate-600">Hábitos Alimentarios:</strong>
+                                    <p className="text-slate-800 mt-0.5 whitespace-pre-wrap">{paciente.nutricion?.habitosAlimentarios || 'No registrado.'}</p>
+                                </div>
+                                <div>
+                                    <strong className="text-slate-600">Hábitos de Ejercicio:</strong>
+                                    <p className="text-slate-800 mt-0.5 whitespace-pre-wrap">{paciente.nutricion?.habitosEjercicio || 'No registrado.'}</p>
+                                </div>
+                            </div>
+                        </details>
                     </div>
                 )}
                 {activeResumenSubTab === 'psicologia' && (
@@ -1639,8 +1737,8 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                     <button onClick={() => {
                         setEstudioData({
                             fecha: format(new Date(), 'yyyy-MM-dd'),
-                            tipo: TipoEstudio.LABORATORIO,
-                            resultados: [],
+                            tipo: activeEstudiosTab,
+                            resultados: activeEstudiosTab === TipoEstudio.LABORATORIO ? [] : undefined,
                         });
                         setModal('newEstudio');
                     }} className="flex items-center text-sm font-medium text-white bg-green-600 px-4 py-2 rounded-md shadow-sm hover:bg-green-700"><DocumentPlusIcon/>Registrar</button>
@@ -1670,20 +1768,50 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                 </nav>
             </div>
              <div className="p-4 space-y-3">
-                {(paciente.estudios || []).filter(e => e.tipo === activeEstudiosTab).length > 0 ? (
-                    (paciente.estudios || []).filter(e => e.tipo === activeEstudiosTab).map(estudio => (
-                        <div key={estudio.idEstudio} className="bg-slate-50 p-3 rounded-md border">
-                            <p className="font-semibold text-sm">{format(new Date(estudio.fecha.replace(/-/g, '/')), 'dd/MM/yyyy')} - {estudio.descripcion || estudio.tipo}</p>
-                            {estudio.nombreArchivo && <a href="#" className="text-xs text-indigo-600 hover:underline">{estudio.nombreArchivo}</a>}
-                            {estudio.resultados && (
-                                <div className="mt-2 text-xs grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1">
-                                    {estudio.resultados.map(r => <div key={r.parametro}><strong>{r.parametro}:</strong> {r.valor} {r.unidad}</div>)}
+                {(paciente.estudios || []).filter(e => e.tipo === activeEstudiosTab).length > 0 ? (() => {
+                    const estudiosFiltrados = (paciente.estudios || []).filter(e => e.tipo === activeEstudiosTab);
+                    const PREVIEW_COUNT = 3;
+                    const visibleEstudios = estudiosFiltrados.slice(0, PREVIEW_COUNT);
+                    const hiddenEstudios = estudiosFiltrados.slice(PREVIEW_COUNT);
+                    return (
+                        <>
+                            {visibleEstudios.map(estudio => (
+                                <div key={estudio.idEstudio} className="bg-slate-50 p-3 rounded-md border">
+                                    <p className="font-semibold text-sm">{format(new Date(estudio.fecha.replace(/-/g, '/')), 'dd/MM/yyyy')} - {estudio.descripcion || estudio.tipo}</p>
+                                    {estudio.nombreArchivo && <a href="#" className="text-xs text-indigo-600 hover:underline">{estudio.nombreArchivo}</a>}
+                                    {estudio.resultados && (
+                                        <div className="mt-2 text-xs grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1">
+                                            {estudio.resultados.map(r => <div key={r.parametro}><strong>{r.parametro}:</strong> {r.valor} {r.unidad}</div>)}
+                                        </div>
+                                    )}
+                                    {estudio.resultadoBiopsia && <p className="mt-2 text-xs"><strong>Biopsia:</strong> {estudio.resultadoBiopsia}</p>}
                                 </div>
+                            ))}
+                            {hiddenEstudios.length > 0 && (
+                                <details className="group">
+                                    <summary className="flex items-center gap-2 p-2 cursor-pointer text-sm font-medium text-indigo-600 hover:text-indigo-800 list-none">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                                        Ver {hiddenEstudios.length} estudio{hiddenEstudios.length > 1 ? 's' : ''} más
+                                    </summary>
+                                    <div className="space-y-3 pt-2">
+                                        {hiddenEstudios.map(estudio => (
+                                            <div key={estudio.idEstudio} className="bg-slate-50 p-3 rounded-md border">
+                                                <p className="font-semibold text-sm">{format(new Date(estudio.fecha.replace(/-/g, '/')), 'dd/MM/yyyy')} - {estudio.descripcion || estudio.tipo}</p>
+                                                {estudio.nombreArchivo && <a href="#" className="text-xs text-indigo-600 hover:underline">{estudio.nombreArchivo}</a>}
+                                                {estudio.resultados && (
+                                                    <div className="mt-2 text-xs grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1">
+                                                        {estudio.resultados.map(r => <div key={r.parametro}><strong>{r.parametro}:</strong> {r.valor} {r.unidad}</div>)}
+                                                    </div>
+                                                )}
+                                                {estudio.resultadoBiopsia && <p className="mt-2 text-xs"><strong>Biopsia:</strong> {estudio.resultadoBiopsia}</p>}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </details>
                             )}
-                            {estudio.resultadoBiopsia && <p className="mt-2 text-xs"><strong>Biopsia:</strong> {estudio.resultadoBiopsia}</p>}
-                        </div>
-                    ))
-                ) : (
+                        </>
+                    );
+                })() : (
                      <p className="text-sm text-center text-slate-500 py-4">No hay estudios de este tipo.</p>
                 )}
             </div>
@@ -1942,7 +2070,21 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                                 <label className="block text-sm font-medium">Fecha</label>
                                 <input type="date" value={estudioData.fecha ?? ''} onChange={e => setEstudioData(p => ({...p, fecha: e.target.value}))} className="mt-1 block w-full rounded-md border-slate-300" />
                             </div>
-                            
+                            <div>
+                                <label className="block text-sm font-medium">Tipo de Estudio</label>
+                                <select
+                                    value={estudioData.tipo ?? TipoEstudio.LABORATORIO}
+                                    onChange={e => setEstudioData(p => ({
+                                        ...p,
+                                        tipo: e.target.value as TipoEstudio,
+                                        resultados: e.target.value === TipoEstudio.LABORATORIO ? (p.resultados || []) : undefined,
+                                        resultadoBiopsia: e.target.value === TipoEstudio.ENDOSCOPIA ? (p.resultadoBiopsia || '') : undefined,
+                                    }))}
+                                    className="mt-1 block w-full rounded-md border-slate-300"
+                                >
+                                    {TIPOS_ESTUDIO.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                                </select>
+                            </div>
                         </div>
                         <div>
                             <label className="block text-sm font-medium">Descripción / Título</label>
@@ -2127,11 +2269,11 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
         {/* Selector de prioridad */}
         <div className="flex items-center gap-1.5">
             <span className="text-xs text-slate-500 font-medium">Prioridad:</span>
-            {(['ALTA', 'MEDIA', 'NORMAL'] as const).map(p => {
+            {([Priority.ALTA, Priority.MEDIA, Priority.NORMAL] as const).map(p => {
                 const cfg = {
-                    ALTA:   { color: 'bg-red-500',    label: 'Alta' },
-                    MEDIA:  { color: 'bg-yellow-500', label: 'Media' },
-                    NORMAL: { color: 'bg-blue-400',   label: 'Normal' },
+                    [Priority.ALTA]:   { color: 'bg-red-500',    label: 'Alta' },
+                    [Priority.MEDIA]:  { color: 'bg-yellow-500', label: 'Media' },
+                    [Priority.NORMAL]: { color: 'bg-blue-400',   label: 'Normal' },
                 }[p];
                 return (
                     <button

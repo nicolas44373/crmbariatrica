@@ -853,6 +853,7 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
     const [tagFilter, setTagFilter] = useState<'todos' | ContactoTag>('todos');
     const [taskStatusFilter, setTaskStatusFilter] = useState<'todos' | TaskStatus>(TaskStatus.PENDIENTE);
     const [seguimientoFilter, setSeguimientoFilter] = useState<'todos' | ProspectoEstadoSeguimiento>('todos');
+    const [postOpStageFilter, setPostOpStageFilter] = useState<'todos' | PostOpStage>('todos');
     const [activeModal, setActiveModal] = useState<ActiveModalType>(null);
     const [selectedContacto, setSelectedContacto] = useState<ContactoCRM | null>(null);
     const contactRowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
@@ -965,12 +966,13 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
 
     const handleUpdateContacto = useCallback(async (id: string, updates: Partial<ContactoCRM>) => {
         try {
-            const updated = await api.updateContactoCRM(id, updates);
-            setContactos(prev => prev.map(c => c.id === id ? { ...c, ...updated } : c));
+            await api.updateContactoCRM(id, updates);
+            // Refresh from DB to show the saved value
+            fetchData();
         } catch (error) {
-            console.error("Failed to update contact:", error);
+            console.error('[CRM] updateContactoCRM failed:', error);
         }
-    }, []);
+    }, [fetchData]);
 
     const filteredContactos = contactos.filter(c => {
         const searchLower = searchTerm.toLowerCase();
@@ -980,12 +982,13 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
         const matchesStatus = statusFilter === 'todos' || calculatedStatus === statusFilter;
         const matchesTag = tagFilter === 'todos' || c.tag === tagFilter;
         const matchesSeguimiento = seguimientoFilter === 'todos' || c.estadoSeguimiento === seguimientoFilter;
+        const matchesPostOpStage = postOpStageFilter === 'todos' || getPostOpStage(c.surgeryDate) === postOpStageFilter;
 
         if (activeView === 'prospects') return !c.isPatient && matchesSearch && matchesSeguimiento;
-        if (!matchesSearch || !matchesStatus || !matchesTag) return false;
+        if (!matchesSearch) return false;
         switch (activeView) {
-            case 'not-operated': return c.isPatient && c.tag !== ContactoTag.POSBARIATRICO;
-            case 'operated': return c.isPatient && c.tag === ContactoTag.POSBARIATRICO;
+            case 'not-operated': return c.isPatient && c.tag !== ContactoTag.POSBARIATRICO && matchesStatus && matchesTag;
+            case 'operated': return c.isPatient && c.tag === ContactoTag.POSBARIATRICO && matchesStatus && matchesPostOpStage;
             default: return true;
         }
     });
@@ -1031,6 +1034,7 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
             {activeModal === 'surgery-details' && <SurgeryDetailsModal onClose={() => setActiveModal(null)} patient={selectedContacto} />}
             {activeModal === 'lost' && <MarkAsLostModal onClose={() => setActiveModal(null)} patient={selectedContacto} onConfirm={handleMarkAsLost} />}
             {activeModal === 'new-prospect' && <NewProspectModal onClose={() => setActiveModal(null)} onSuccess={() => { fetchData(); setActiveModal(null); }} />}
+            {activeModal === 'new-patient' && <NewPatientModal onClose={() => setActiveModal(null)} onSuccess={() => { fetchData(); setActiveModal(null); setActiveView('not-operated'); }} />}
             {activeModal === 'convert-prospect' && selectedContacto && (
     <NewPatientModal
         onClose={() => setActiveModal(null)}
@@ -1120,25 +1124,7 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
                         <NavButton view="tasks" label="Tareas" icon={<ClipboardCheckIcon />} />
                     </div>
                     <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                        {activeView === 'prospects' ? (
-                            <select value={seguimientoFilter} onChange={(e) => setSeguimientoFilter(e.target.value as any)} className="block w-full sm:w-auto rounded-md border-slate-300 shadow-sm text-sm">
-                                <option value="todos">Todos los Seguimientos</option>
-                                {Object.values(ProspectoEstadoSeguimiento).map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                        ) : activeView !== 'tasks' ? (
-                            <>
-                                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} className="block w-full sm:w-auto rounded-md border-slate-300 shadow-sm text-sm">
-                                    <option value="todos">Todos los Estados</option>
-                                    <option value={ContactoStatus.ACTIVO}>Activo</option>
-                                    <option value={ContactoStatus.INACTIVO}>Inactivo</option>
-                                    <option value={ContactoStatus.PERDIDO}>Perdido</option>
-                                </select>
-                                <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value as any)} className="block w-full sm:w-auto rounded-md border-slate-300 shadow-sm text-sm">
-                                    <option value="todos">Todas las Etiquetas</option>
-                                    {Object.values(ContactoTag).map(tag => <option key={tag} value={tag}>{tag}</option>)}
-                                </select>
-                            </>
-                        ) : (
+                        {activeView === 'tasks' && (
                             <select value={taskStatusFilter} onChange={(e) => setTaskStatusFilter(e.target.value as any)} className="block w-full sm:w-auto rounded-md border-slate-300 shadow-sm text-sm">
                                 <option value="todos">Todas las Tareas</option>
                                 <option value={TaskStatus.PENDIENTE}>Pendiente</option>
@@ -1166,10 +1152,12 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
                                 onUpdateContacto={handleUpdateContacto}
                                 onReactivate={handleReactivate}
                                 onSelectPatient={onSelectPatient}
+                                seguimientoFilter={seguimientoFilter}
+                                onSeguimientoFilterChange={setSeguimientoFilter}
                             />
                         )}
-                        {activeView === 'not-operated' && <ContactoTable contactos={filteredContactos} onOpenModal={handleOpenModal} onReactivate={handleReactivate} onSelectPatient={onSelectPatient} onUpdateContacto={handleUpdateContacto} contactRowRefs={contactRowRefs} selectedPatientId={selectedPatient?.idPaciente} folders={folders} tasks={tasks} />}
-                        {activeView === 'operated' && <OperatedContactoTable contactos={filteredContactos} onOpenModal={handleOpenModal} onReactivate={handleReactivate} onSelectPatient={onSelectPatient} onUpdateContacto={handleUpdateContacto} contactRowRefs={contactRowRefs} selectedPatientId={selectedPatient?.idPaciente} folders={folders} tasks={tasks} />}
+                        {activeView === 'not-operated' && <ContactoTable contactos={filteredContactos} onOpenModal={handleOpenModal} onReactivate={handleReactivate} onSelectPatient={onSelectPatient} onUpdateContacto={handleUpdateContacto} contactRowRefs={contactRowRefs} selectedPatientId={selectedPatient?.idPaciente} folders={folders} tasks={tasks} tagFilter={tagFilter} onTagFilterChange={setTagFilter} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} />}
+                        {activeView === 'operated' && <OperatedContactoTable contactos={filteredContactos} onOpenModal={handleOpenModal} onReactivate={handleReactivate} onSelectPatient={onSelectPatient} onUpdateContacto={handleUpdateContacto} contactRowRefs={contactRowRefs} selectedPatientId={selectedPatient?.idPaciente} folders={folders} tasks={tasks} postOpStageFilter={postOpStageFilter} onPostOpStageFilterChange={setPostOpStageFilter} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} />}
                         {activeView === 'tasks' && <TasksView tasks={filteredTasks} onUpdateTask={handleUpdateTask} onSelectPatient={onSelectPatient} contactos={contactos} onOpenModal={handleOpenModal} />}
                     </div>
                 )}
@@ -1179,23 +1167,35 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
 }
 
 // ─── [FIX 1 + 5] ProspectoTable now receives onSelectPatient ─────────────────
-const ProspectoTable = ({ contactos, onOpenModal, onUpdateContacto, onReactivate, onSelectPatient }: {
+const ProspectoTable = ({ contactos, onOpenModal, onUpdateContacto, onReactivate, onSelectPatient, seguimientoFilter, onSeguimientoFilterChange }: {
     contactos: ContactoCRM[];
     onOpenModal: (modal: ActiveModalType, contacto: ContactoCRM) => void;
     onUpdateContacto: (id: string, updates: Partial<ContactoCRM>) => void;
     onReactivate: (contacto: ContactoCRM) => void;
     onSelectPatient: (p: PacienteFiliatorio) => void;
+    seguimientoFilter: 'todos' | ProspectoEstadoSeguimiento;
+    onSeguimientoFilterChange: (v: 'todos' | ProspectoEstadoSeguimiento) => void;
 }) => (
     <table className="min-w-full divide-y divide-slate-200">
         <thead className="bg-slate-50">
             <tr>
-                {['Contacto', 'Canal de Origen', 'Fecha Ingreso', 'Estado Seguimiento', 'Acciones'].map(header => (
-                    <th key={header} scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">{header}</th>
-                ))}
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Contacto</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Canal de Origen</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Fecha Ingreso</th>
+                <th scope="col" className="px-4 py-2 text-left">
+                    <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Estado Seguimiento</div>
+                    <select value={seguimientoFilter} onChange={e => onSeguimientoFilterChange(e.target.value as any)} className="block w-full rounded border-slate-300 text-xs py-1 shadow-sm bg-white">
+                        <option value="todos">Todos</option>
+                        {Object.values(ProspectoEstadoSeguimiento).map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                </th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Acciones</th>
             </tr>
         </thead>
         <tbody className="bg-white divide-y divide-slate-200">
-            {contactos.map(contacto => (
+            {contactos.length === 0 ? (
+                <tr><td colSpan={5} className="text-center py-8 text-slate-500 text-sm">No hay prospectos que coincidan con el filtro.</td></tr>
+            ) : contactos.map(contacto => (
                 <ProspectoRow key={contacto.id} contacto={contacto} onOpenModal={onOpenModal} onUpdateContacto={onUpdateContacto} onReactivate={onReactivate} onSelectPatient={onSelectPatient} />
             ))}
         </tbody>
@@ -1328,26 +1328,73 @@ const ProspectoRow: React.FC<ProspectoRowProps> = ({ contacto, onOpenModal, onUp
 
 // ─── CONTACT TABLES ───────────────────────────────────────────────────────────
 
-const ContactoTable = ({ contactos, onOpenModal, onReactivate, onSelectPatient, onUpdateContacto, contactRowRefs, selectedPatientId, folders, tasks }: { contactos: ContactoCRM[], onOpenModal: (modal: ActiveModalType, contacto: ContactoCRM) => void, onReactivate: (contacto: ContactoCRM) => void, onSelectPatient: (p: any) => void, onUpdateContacto: (id: string, updates: Partial<ContactoCRM>) => void, contactRowRefs: React.MutableRefObject<Record<string, HTMLTableRowElement | null>>, selectedPatientId?: string | null, folders: Folder[], tasks: Task[] }) => (
+const ContactoTable = ({ contactos, onOpenModal, onReactivate, onSelectPatient, onUpdateContacto, contactRowRefs, selectedPatientId, folders, tasks, tagFilter, onTagFilterChange, statusFilter, onStatusFilterChange }: { contactos: ContactoCRM[], onOpenModal: (modal: ActiveModalType, contacto: ContactoCRM) => void, onReactivate: (contacto: ContactoCRM) => void, onSelectPatient: (p: any) => void, onUpdateContacto: (id: string, updates: Partial<ContactoCRM>) => void, contactRowRefs: React.MutableRefObject<Record<string, HTMLTableRowElement | null>>, selectedPatientId?: string | null, folders: Folder[], tasks: Task[], tagFilter: 'todos' | ContactoTag, onTagFilterChange: (v: 'todos' | ContactoTag) => void, statusFilter: 'todos' | ContactoStatus, onStatusFilterChange: (v: 'todos' | ContactoStatus) => void }) => (
     <table className="min-w-full divide-y divide-slate-200">
         <thead className="bg-slate-50">
-            <tr>{['Contacto', 'Etiqueta', 'Prioridad', 'Estado', 'Consultas', 'Acciones'].map(h => <th key={h} scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">{h}</th>)}</tr>
+            <tr>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Contacto</th>
+                <th scope="col" className="px-4 py-2 text-left">
+                    <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Etiqueta</div>
+                    <select value={tagFilter} onChange={e => onTagFilterChange(e.target.value as any)} className="block w-full rounded border-slate-300 text-xs py-1 shadow-sm bg-white">
+                        <option value="todos">Todas</option>
+                        {Object.values(ContactoTag).filter(t => t !== ContactoTag.POSBARIATRICO).map(tag => <option key={tag} value={tag}>{tag.replace(/_/g, ' ')}</option>)}
+                    </select>
+                </th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Prioridad</th>
+                <th scope="col" className="px-4 py-2 text-left">
+                    <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Estado</div>
+                    <select value={statusFilter} onChange={e => onStatusFilterChange(e.target.value as any)} className="block w-full rounded border-slate-300 text-xs py-1 shadow-sm bg-white">
+                        <option value="todos">Todos</option>
+                        <option value={ContactoStatus.ACTIVO}>Activo</option>
+                        <option value={ContactoStatus.INACTIVO}>Inactivo</option>
+                        <option value={ContactoStatus.PERDIDO}>Perdido</option>
+                    </select>
+                </th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Consultas</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Acciones</th>
+            </tr>
         </thead>
         <tbody className="bg-white divide-y divide-slate-200">
-            {contactos.map(contacto => (
+            {contactos.length === 0 ? (
+                <tr><td colSpan={6} className="text-center py-8 text-slate-500 text-sm">No hay pacientes que coincidan con los filtros.</td></tr>
+            ) : contactos.map(contacto => (
                 <ContactoRow key={contacto.id} contacto={contacto} onOpenModal={onOpenModal} onReactivate={onReactivate} onSelectPatient={onSelectPatient} onUpdateContacto={onUpdateContacto} ref={el => { contactRowRefs.current[contacto.id] = el; }} isSelected={selectedPatientId === contacto.id} hasFolder={folders.some(f => f.patientId === contacto.id)} hasPendingTasks={tasks.some(t => t.patientId === contacto.id && t.status === TaskStatus.PENDIENTE)} />
             ))}
         </tbody>
     </table>
 );
 
-const OperatedContactoTable = ({ contactos, onOpenModal, onReactivate, onSelectPatient, onUpdateContacto, contactRowRefs, selectedPatientId, folders, tasks }: { contactos: ContactoCRM[], onOpenModal: (modal: ActiveModalType, contacto: ContactoCRM) => void, onReactivate: (contacto: ContactoCRM) => void, onSelectPatient: (p: any) => void, onUpdateContacto: (id: string, updates: Partial<ContactoCRM>) => void, contactRowRefs: React.MutableRefObject<Record<string, HTMLTableRowElement | null>>, selectedPatientId?: string | null, folders: Folder[], tasks: Task[] }) => (
+const OperatedContactoTable = ({ contactos, onOpenModal, onReactivate, onSelectPatient, onUpdateContacto, contactRowRefs, selectedPatientId, folders, tasks, postOpStageFilter, onPostOpStageFilterChange, statusFilter, onStatusFilterChange }: { contactos: ContactoCRM[], onOpenModal: (modal: ActiveModalType, contacto: ContactoCRM) => void, onReactivate: (contacto: ContactoCRM) => void, onSelectPatient: (p: any) => void, onUpdateContacto: (id: string, updates: Partial<ContactoCRM>) => void, contactRowRefs: React.MutableRefObject<Record<string, HTMLTableRowElement | null>>, selectedPatientId?: string | null, folders: Folder[], tasks: Task[], postOpStageFilter: 'todos' | PostOpStage, onPostOpStageFilterChange: (v: 'todos' | PostOpStage) => void, statusFilter: 'todos' | ContactoStatus, onStatusFilterChange: (v: 'todos' | ContactoStatus) => void }) => (
     <table className="min-w-full divide-y divide-slate-200">
         <thead className="bg-slate-50">
-            <tr>{['Contacto', 'Etapa Post-Op', 'Prioridad', 'Fecha Cx', 'Consultas', 'Acciones'].map(h => <th key={h} scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">{h}</th>)}</tr>
+            <tr>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Contacto</th>
+                <th scope="col" className="px-4 py-2 text-left">
+                    <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Etapa Post-Op</div>
+                    <select value={postOpStageFilter} onChange={e => onPostOpStageFilterChange(e.target.value as any)} className="block w-full rounded border-slate-300 text-xs py-1 shadow-sm bg-white">
+                        <option value="todos">Todas las etapas</option>
+                        {Object.values(PostOpStage).map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                </th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Prioridad</th>
+                <th scope="col" className="px-4 py-2 text-left">
+                    <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Estado</div>
+                    <select value={statusFilter} onChange={e => onStatusFilterChange(e.target.value as any)} className="block w-full rounded border-slate-300 text-xs py-1 shadow-sm bg-white">
+                        <option value="todos">Todos</option>
+                        <option value={ContactoStatus.ACTIVO}>Activo</option>
+                        <option value={ContactoStatus.INACTIVO}>Inactivo</option>
+                        <option value={ContactoStatus.PERDIDO}>Perdido</option>
+                    </select>
+                </th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Fecha Cx</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Consultas</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Acciones</th>
+            </tr>
         </thead>
         <tbody className="bg-white divide-y divide-slate-200">
-            {contactos.map(contacto => (
+            {contactos.length === 0 ? (
+                <tr><td colSpan={7} className="text-center py-8 text-slate-500 text-sm">No hay operados que coincidan con los filtros.</td></tr>
+            ) : contactos.map(contacto => (
                 <ContactoRow key={contacto.id} contacto={contacto} onOpenModal={onOpenModal} onReactivate={onReactivate} onSelectPatient={onSelectPatient} onUpdateContacto={onUpdateContacto} isOperatedView={true} ref={el => { contactRowRefs.current[contacto.id] = el; }} isSelected={selectedPatientId === contacto.id} hasFolder={folders.some(f => f.patientId === contacto.id)} hasPendingTasks={tasks.some(t => t.patientId === contacto.id && t.status === TaskStatus.PENDIENTE)} />
             ))}
         </tbody>
@@ -1541,6 +1588,7 @@ function getPostOpStage(surgeryDate: string | null): PostOpStage | 'N/A' {
 
 interface DashboardProps {
     onSelectPatient: (patient: PacienteFiliatorio) => void;
+    onNavigateToCrm?: () => void;
 }
 
 const LiquidacionDiariaModal = ({ onClose }: { onClose: () => void }) => {
@@ -1799,7 +1847,7 @@ const TorreDeControl = ({ onSelectPatient }: { onSelectPatient: (patient: Pacien
     );
 };
 
-const TareasPendientesWidget = ({ onSelectPatient, allPatients }: { onSelectPatient: (patient: PacienteFiliatorio) => void, allPatients: PacienteFiliatorio[] }) => {
+const TareasPendientesWidget = ({ onSelectPatient, allPatients, onNavigateToCrm }: { onSelectPatient: (patient: PacienteFiliatorio) => void, allPatients: PacienteFiliatorio[], onNavigateToCrm?: () => void }) => {
     const [tasks, setTasks] = useState<Task[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const authContext = useContext(AuthContext);
@@ -1835,7 +1883,10 @@ const TareasPendientesWidget = ({ onSelectPatient, allPatients }: { onSelectPati
                                         <p className="font-medium text-slate-800">{task.description}</p>
                                         <button onClick={() => handleSelectPatient(task.patientId)} className="text-sm text-indigo-600 hover:underline">Paciente: {task.patientName}</button>
                                     </div>
-                                    <button className="flex-shrink-0 ml-4 px-3 py-1 text-xs font-semibold text-white bg-green-600 rounded-full hover:bg-green-700">Marcar como Hecha</button>
+                                    <button onClick={onNavigateToCrm} className="flex-shrink-0 ml-4 px-3 py-1 text-xs font-semibold text-white bg-indigo-600 rounded-full hover:bg-indigo-700 flex items-center gap-1">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" /></svg>
+                                        Hacer Tarea
+                                    </button>
                                 </div>
                                 <p className={`text-xs mt-1 font-semibold ${isOverdue ? 'text-red-600' : 'text-slate-500'}`}>
                                     Vence: {format(new Date(task.dueDate.replace(/-/g, '/')), 'dd/MM/yyyy')}
@@ -1849,7 +1900,7 @@ const TareasPendientesWidget = ({ onSelectPatient, allPatients }: { onSelectPati
     );
 };
 
-function MedicoDashboard({ onSelectPatient }: DashboardProps) {
+function MedicoDashboard({ onSelectPatient, onNavigateToCrm }: DashboardProps) {
     const [selectedDate, setSelectedDate] = useState(startOfDay(new Date()));
     const [allPatients, setAllPatients] = useState<PacienteFiliatorio[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -1900,7 +1951,7 @@ function MedicoDashboard({ onSelectPatient }: DashboardProps) {
         <div className="space-y-6">
             <h2 className="text-2xl font-bold text-slate-800">Panel del Profesional</h2>
             <PatientSearchBar />
-            <TareasPendientesWidget onSelectPatient={onSelectPatient} allPatients={allPatients} />
+            <TareasPendientesWidget onSelectPatient={onSelectPatient} allPatients={allPatients} onNavigateToCrm={onNavigateToCrm} />
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6" style={{ minHeight: 'calc(100vh - 18rem)' }}>
                 <div className="xl:col-span-1"><AgendaProfesional onDateSelect={setSelectedDate} selectedDate={selectedDate} /></div>
                 <div className="xl:col-span-2"><VistaDiariaProfesional onSelectPatient={onSelectPatient} date={selectedDate} /></div>
@@ -1909,14 +1960,14 @@ function MedicoDashboard({ onSelectPatient }: DashboardProps) {
     );
 }
 
-export default function Dashboard({ onSelectPatient }: DashboardProps) {
+export default function Dashboard({ onSelectPatient, onNavigateToCrm }: DashboardProps) {
     const authContext = useContext(AuthContext);
     const user = authContext!.user!;
     return (
         <div>
             {user.rol === UserRole.ADMINISTRATIVO
                 ? <TorreDeControl onSelectPatient={onSelectPatient} />
-                : <MedicoDashboard onSelectPatient={onSelectPatient} />
+                : <MedicoDashboard onSelectPatient={onSelectPatient} onNavigateToCrm={onNavigateToCrm} />
             }
         </div>
     );

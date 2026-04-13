@@ -38,6 +38,12 @@ import {
 } from '../types';
 import { ETIQUETAS_FLUJO, TIPOS_ESTUDIO, normalizeString } from '../constants';
 
+// The DB enum prioridad_crm and the TS Priority enum both use Title Case ('Alta','Media','Normal').
+// No conversion needed — pass values through directly.
+const prioridadToDB   = (p: Priority): string => p as string;        // 'Alta' → 'Alta'
+const prioridadFromDB = (p: string | undefined | null): Priority =>
+  (p ?? Priority.NORMAL) as Priority;                                 // 'Alta' → Priority.ALTA
+
 // ─── INTERCEPTOR DE SESIÓN ────────────────────────────────────────────────────
 
 supabase.auth.onAuthStateChange((event, session) => {
@@ -263,7 +269,7 @@ function mapContacto(row: any): ContactoCRM {
     phone: row.telefono ?? '',
     email: row.email ?? '',
     socialInsurance: row.obra_social ?? '',
-    priority: (row.prioridad as Priority) ?? Priority.NORMAL,
+    priority: prioridadFromDB(row.prioridad),
     startDate: row.fecha_ingreso ?? '',
     isPatient: row.is_patient ?? false,
     canalOrigen: (row.canal_origen as ProspectoCanalOrigen) ?? undefined,
@@ -688,7 +694,11 @@ async function createPaciente(
 
   if (error) handleSupabaseError(error);
 
-if (prospectoId) {
+  let canalOrigen: string | null = null;
+  let prioridad: string = prioridadToDB(Priority.NORMAL);
+  let fechaIngreso: string = new Date().toISOString().split('T')[0];
+
+  if (prospectoId) {
     const { data: oldProspect } = await supabase
       .from('crm_contactos')
       .select('canal_origen, prioridad, fecha_ingreso')
@@ -700,14 +710,18 @@ if (prospectoId) {
       .delete()
       .eq('id_contacto', prospectoId);
 
-    await supabase.from('crm_contactos').insert({
-      id_contacto:   data.id_paciente,
-      is_patient:    true,
-      canal_origen:  oldProspect?.canal_origen  ?? null,
-      prioridad:     oldProspect?.prioridad     ?? Priority.NORMAL,
-      fecha_ingreso: oldProspect?.fecha_ingreso ?? new Date().toISOString().split('T')[0],
-    });
+    canalOrigen  = oldProspect?.canal_origen  ?? null;
+    prioridad    = oldProspect?.prioridad     ?? prioridadToDB(Priority.NORMAL);
+    fechaIngreso = oldProspect?.fecha_ingreso ?? fechaIngreso;
   }
+
+  await supabase.from('crm_contactos').insert({
+    id_contacto:   data.id_paciente,
+    is_patient:    true,
+    canal_origen:  canalOrigen,
+    prioridad,
+    fecha_ingreso: fechaIngreso,
+  });
 
   return mapPaciente(data);
 }
@@ -1216,7 +1230,7 @@ async function getContactosCRM(): Promise<ContactoCRM[]> {
       .sort((a: any, b: any) => new Date(a.fecha_turno).getTime() - new Date(b.fecha_turno).getTime())[0];
     const cirugia = (cirugias ?? []).find((c: any) => c.id_paciente === pac.id_paciente);
 
-    let priority: Priority = (crm.prioridad as Priority) ?? Priority.NORMAL;
+    let priority: Priority = prioridadFromDB(crm.prioridad);
     if (priority === Priority.NORMAL) {
       if (['DEFINIR_CIRUGIA', 'PERIOPERATORIO'].includes(pac.etiqueta_activa)) priority = Priority.ALTA;
       else if (pac.etiqueta_activa === 'PREBARIATRICO_AVANZADO') priority = Priority.MEDIA;
@@ -1260,14 +1274,22 @@ async function getContactosCRM(): Promise<ContactoCRM[]> {
 
 async function updateContactoCRM(id: string, updates: Partial<ContactoCRM>): Promise<Partial<ContactoCRM>> {
   const dbUpdates: any = {};
-  if (updates.priority          !== undefined) dbUpdates.prioridad         = updates.priority;
+  if (updates.priority          !== undefined) dbUpdates.prioridad         = prioridadToDB(updates.priority);
   if (updates.estadoSeguimiento !== undefined) dbUpdates.estado_seguimiento = updates.estadoSeguimiento;
   if (updates.lostReason        !== undefined) dbUpdates.motivo_perdida    = updates.lostReason;
   if (updates.lostTimestamp     !== undefined) dbUpdates.fecha_perdida     = updates.lostTimestamp;
 
-  await supabase.from('crm_contactos').upsert(
-    { id_contacto: id, ...dbUpdates }, { onConflict: 'id_contacto' }
-  );
+  // Simple UPDATE — only touch the columns that changed
+  const { error } = await supabase
+    .from('crm_contactos')
+    .update(dbUpdates)
+    .eq('id_contacto', id);
+
+  if (error) {
+    console.error('[CRM] update error:', error);
+    throw new Error(error.message);
+  }
+
   return updates;
 }
 
@@ -1284,7 +1306,7 @@ async function createProspecto(
     canal_origen:      prospectoData.canalOrigen ?? null,
     is_patient:        false,
     estado_seguimiento: ProspectoEstadoSeguimiento.NUEVO,
-    prioridad:         Priority.NORMAL,
+    prioridad:         prioridadToDB(Priority.NORMAL),
   });
   if (error) handleSupabaseError(error);
   return { id: newId, ...prospectoData, isPatient: false };
