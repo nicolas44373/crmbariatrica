@@ -5,7 +5,7 @@ import {
   isToday, isSameMonth, getDay, isBefore, startOfDay,
 } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { PacienteFiliatorio, Profesional, UserRole } from '../types';
+import { PacienteFiliatorio, Profesional, UserRole, Turno } from '../types';
 import { api } from '../services/supabaseApi';
 
 // Definido localmente hasta que se exporte desde supabaseApi
@@ -28,6 +28,7 @@ interface AgendarTurnoModalProps {
   profesionalPreseleccionado?: Profesional | null;
   fechaPreseleccionada?: Date | null;
   creadoPorEmail: string;
+  turnoAEditar?: Turno | null;
 }
 
 type Step = 'profesional' | 'fecha' | 'hora' | 'confirmar';
@@ -39,9 +40,10 @@ export default function AgendarTurnoModal({
   profesionalPreseleccionado,
   fechaPreseleccionada,
   creadoPorEmail,
+  turnoAEditar,
 }: AgendarTurnoModalProps) {
   // ─── State ────────────────────────────────────────────────────────────────
-  const [step, setStep] = useState<Step>('profesional');
+  const [step, setStep] = useState<Step>(turnoAEditar ? 'fecha' : 'profesional');
   const [profesionales, setProfesionales] = useState<Profesional[]>([]);
   const [profesionalSeleccionado, setProfesionalSeleccionado] = useState<Profesional | null>(
     profesionalPreseleccionado ?? null
@@ -60,9 +62,9 @@ export default function AgendarTurnoModal({
     pacientePreseleccionado ?? null
   );
 
-  const [esVideoconsulta, setEsVideoconsulta] = useState(false);
-  const [esSobreturno, setEsSobreturno] = useState(false);
-  const [nota, setNota] = useState('');
+  const [esVideoconsulta, setEsVideoconsulta] = useState(turnoAEditar?.esVideoconsulta ?? false);
+  const [esSobreturno, setEsSobreturno] = useState(turnoAEditar?.esSobreturno ?? false);
+  const [nota, setNota] = useState(turnoAEditar?.notaInterna ?? '');
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -274,13 +276,29 @@ export default function AgendarTurnoModal({
 
   // ─── Guardar turno ────────────────────────────────────────────────────────
   const handleGuardar = async () => {
-    if (!pacienteSeleccionado || !profesionalSeleccionado || !slotSeleccionado) {
-      setError('Completá todos los datos antes de confirmar.');
+    if (!slotSeleccionado) {
+      setError('Seleccioná una fecha y horario.');
       return;
     }
     setIsSaving(true);
     setError(null);
     try {
+      if (turnoAEditar) {
+        const user = await api.getProfesional(creadoPorEmail);
+        await api.updateDetallesTurno(turnoAEditar.idTurno, {
+          fechaTurno: slotSeleccionado.horaInicio,
+          notaInterna: nota || undefined,
+          esVideoconsulta,
+          esSobreturno,
+        }, user);
+        onSuccess();
+        return;
+      }
+      if (!pacienteSeleccionado || !profesionalSeleccionado) {
+        setError('Completá todos los datos antes de confirmar.');
+        setIsSaving(false);
+        return;
+      }
       await api.createTurno({
         idPaciente: pacienteSeleccionado.idPaciente,
         profesionalEmail: profesionalSeleccionado.email,
@@ -315,7 +333,7 @@ export default function AgendarTurnoModal({
         {/* Header */}
         <div className="p-5 border-b bg-slate-50 rounded-t-2xl">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-slate-800">Agendar Turno</h2>
+            <h2 className="text-lg font-bold text-slate-800">{turnoAEditar ? 'Reagendar Turno' : 'Agendar Turno'}</h2>
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
           </div>
           {/* Breadcrumb */}
@@ -476,7 +494,7 @@ export default function AgendarTurnoModal({
                       <p className="font-semibold text-slate-800 text-sm">{pacienteSeleccionado.apellido}, {pacienteSeleccionado.nombres}</p>
                       <p className="text-xs text-slate-500">DNI: {pacienteSeleccionado.dni}</p>
                     </div>
-                    <button onClick={() => { setPacienteSeleccionado(null); setPacienteBusqueda(''); }} className="text-xs text-red-500 hover:text-red-700">Cambiar</button>
+                    {!turnoAEditar && <button onClick={() => { setPacienteSeleccionado(null); setPacienteBusqueda(''); }} className="text-xs text-red-500 hover:text-red-700">Cambiar</button>}
                   </div>
                 ) : (
                   <div className="relative">
@@ -558,10 +576,10 @@ export default function AgendarTurnoModal({
           {step === 'confirmar' && (
             <button
               onClick={handleGuardar}
-              disabled={isSaving || !pacienteSeleccionado}
+              disabled={isSaving || (!turnoAEditar && !pacienteSeleccionado)}
               className="px-6 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 rounded-xl shadow-sm"
             >
-              {isSaving ? 'Guardando...' : '✓ Confirmar Turno'}
+              {isSaving ? 'Guardando...' : turnoAEditar ? '✓ Confirmar Reagendar' : '✓ Confirmar Turno'}
             </button>
           )}
         </div>

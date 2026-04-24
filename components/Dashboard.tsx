@@ -41,6 +41,7 @@ const ESTADO_TURNO_BADGE_MAP: Partial<Record<EstadoTurnoDia, { text: string; col
     [EstadoTurnoDia.EN_ESPERA]:  { text: 'En espera',   color: 'bg-yellow-100 text-yellow-800' },
     [EstadoTurnoDia.ATENDIDO]:   { text: 'Atendido',    color: 'bg-green-100 text-green-800' },
     [EstadoTurnoDia.CANCELADO]:  { text: 'Cancelado',   color: 'bg-slate-100 text-slate-500' },
+    [EstadoTurnoDia.AUSENTE]:    { text: 'Ausente',     color: 'bg-orange-100 text-orange-800' },
 };
 const EstadoTurnoBadge = ({ estado }: { estado: EstadoTurnoDia }) => {
     const info = ESTADO_TURNO_BADGE_MAP[estado] ?? { text: estado, color: 'bg-slate-100 text-slate-700' };
@@ -415,9 +416,10 @@ const EmailModal = ({ onClose }: { onClose: () => void; }) => (
     </div>
 );
 
-const TasksModal = ({ onClose, patient, tasks, onUpdate, onAdd }: { onClose: () => void; patient: ContactoCRM | null; tasks: Task[]; onUpdate: (id: string, updates: Partial<Task>) => void; onAdd: (task: Task) => void; }) => {
+const TasksModal = ({ onClose, patient, tasks, onUpdate, onAdd, profesionales }: { onClose: () => void; patient: ContactoCRM | null; tasks: Task[]; onUpdate: (id: string, updates: Partial<Task>) => void; onAdd: (task: Task) => void; profesionales: { nombre: string; email: string }[]; }) => {
     const [newTask, setNewTask] = useState('');
     const [newDueDate, setNewDueDate] = useState('');
+    const [newAssignee, setNewAssignee] = useState('');
 
     if (!patient) return null;
 
@@ -452,10 +454,12 @@ const TasksModal = ({ onClose, patient, tasks, onUpdate, onAdd }: { onClose: () 
             status: TaskStatus.PENDIENTE,
             createdAt: new Date().toISOString(),
             completedAt: null,
+            assigneeEmail: newAssignee || undefined,
         };
         onAdd(task);
         setNewTask('');
         setNewDueDate('');
+        setNewAssignee('');
     };
 
     const handleStatusChange = (task: Task) => {
@@ -481,10 +485,18 @@ const TasksModal = ({ onClose, patient, tasks, onUpdate, onAdd }: { onClose: () 
                             </div>
                         )) : <p className="text-sm text-center text-slate-500">No hay tareas.</p>}
                     </div>
-                    <div className="flex gap-2 border-t pt-4">
-                        <input type="text" value={newTask} onChange={e => setNewTask(e.target.value)} placeholder="Nueva tarea..." className="flex-grow rounded-md border-slate-300" />
-                        <input type="date" value={newDueDate} onChange={e => setNewDueDate(e.target.value)} className="rounded-md border-slate-300" />
-                        <button onClick={handleAddTask} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">Añadir</button>
+                    <div className="border-t pt-4 space-y-2">
+                        <div className="flex gap-2">
+                            <input type="text" value={newTask} onChange={e => setNewTask(e.target.value)} placeholder="Nueva tarea..." className="flex-grow rounded-md border-slate-300 text-sm" />
+                            <input type="date" value={newDueDate} onChange={e => setNewDueDate(e.target.value)} className="rounded-md border-slate-300 text-sm" />
+                        </div>
+                        <div className="flex gap-2">
+                            <select value={newAssignee} onChange={e => setNewAssignee(e.target.value)} className="flex-grow rounded-md border-slate-300 text-sm text-slate-700">
+                                <option value="">Sin asignar (yo)</option>
+                                {profesionales.map(p => <option key={p.email} value={p.email}>{p.nombre}</option>)}
+                            </select>
+                            <button onClick={handleAddTask} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">Añadir</button>
+                        </div>
                     </div>
                 </div>
                 <div className="flex justify-end pt-6">
@@ -673,41 +685,72 @@ const orden: FolderTrackingStatus[] = [
     );
 };
 
-const FoldersDashboardModal = ({ onClose, folders, onSelectPatient, contactos }: { onClose: () => void; folders: Folder[]; onSelectPatient: (patientId: string) => void; contactos: ContactoCRM[]; }) => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-5xl">
-            <h2 className="text-xl font-bold text-slate-800 mb-4">Dashboard de Carpetas</h2>
-            <div className="max-h-[70vh] overflow-y-auto">
-                <table className="min-w-full divide-y divide-slate-200">
-                    <thead className="bg-slate-50">
-                        <tr>
-                            {['Paciente', 'Obra Social', 'Estado', 'Fecha Autorizada', 'Notas'].map(h => (
-                                <th key={h} className="px-4 py-2 text-left text-xs font-medium text-slate-500">{h}</th>
-                            ))}
-                        </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-slate-200">
-                        {folders.map(folder => {
-                            const contacto = contactos.find(c => c.id === folder.patientId);
-                            return (
-                                <tr key={folder.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => onSelectPatient(folder.patientId)}>
-                                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-slate-800">{contacto ? `${contacto.lastName}, ${contacto.firstName}` : folder.patientId}</td>
-                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{contacto?.socialInsurance || '-'}</td>
-                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{folder.trackingState}</td>
-                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{folder.authorizedDate || '-'}</td>
-                                    <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate" title={folder.notes || ''}>
-                                     {folder.notes || '-'}
-                                    </td>   
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
+const FoldersDashboardModal = ({ onClose, folders, onSelectPatient, contactos }: { onClose: () => void; folders: Folder[]; onSelectPatient: (patientId: string) => void; contactos: ContactoCRM[]; }) => {
+    const [osFilter, setOsFilter] = useState('');
+    const [stateFilter, setStateFilter] = useState<FolderTrackingStatus | ''>('');
+
+    const obrasSociales = Array.from(new Set(
+        folders.map(f => contactos.find(c => c.id === f.patientId)?.socialInsurance).filter(Boolean)
+    )).sort() as string[];
+
+    const filtered = folders.filter(f => {
+        const contacto = contactos.find(c => c.id === f.patientId);
+        const matchesOS = !osFilter || (contacto?.socialInsurance === osFilter);
+        const matchesState = !stateFilter || f.trackingState === stateFilter;
+        return matchesOS && matchesState;
+    });
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-5xl">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+                    <h2 className="text-xl font-bold text-slate-800">Dashboard de Carpetas</h2>
+                    <div className="flex flex-wrap gap-2">
+                        <select value={osFilter} onChange={e => setOsFilter(e.target.value)} className="rounded-md border-slate-300 text-sm">
+                            <option value="">Todas las obras sociales</option>
+                            {obrasSociales.map(os => <option key={os} value={os}>{os}</option>)}
+                        </select>
+                        <select value={stateFilter} onChange={e => setStateFilter(e.target.value as FolderTrackingStatus | '')} className="rounded-md border-slate-300 text-sm">
+                            <option value="">Todos los estados</option>
+                            {Object.values(FolderTrackingStatus).map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                    </div>
+                </div>
+                <p className="text-sm text-slate-500 mb-3">{filtered.length} carpeta{filtered.length !== 1 ? 's' : ''}</p>
+                <div className="max-h-[65vh] overflow-y-auto">
+                    <table className="min-w-full divide-y divide-slate-200">
+                        <thead className="bg-slate-50 sticky top-0">
+                            <tr>
+                                {['Paciente', 'Obra Social', 'Estado', 'Fecha Autorizada', 'Notas'].map(h => (
+                                    <th key={h} className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">{h}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-slate-200">
+                            {filtered.length === 0 ? (
+                                <tr><td colSpan={5} className="text-center py-8 text-slate-500 text-sm">No hay carpetas que coincidan con el filtro.</td></tr>
+                            ) : filtered.map(folder => {
+                                const contacto = contactos.find(c => c.id === folder.patientId);
+                                return (
+                                    <tr key={folder.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => onSelectPatient(folder.patientId)}>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-slate-800">{contacto ? `${contacto.lastName}, ${contacto.firstName}` : folder.patientId}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{contacto?.socialInsurance || '-'}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800">{folder.trackingState}</span>
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{folder.authorizedDate || '-'}</td>
+                                        <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate" title={folder.notes || ''}>{folder.notes || '-'}</td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+                <div className="flex justify-end pt-6"><button onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200">Cerrar</button></div>
             </div>
-            <div className="flex justify-end pt-6"><button onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200">Cerrar</button></div>
         </div>
-    </div>
-);
+    );
+};
 
 const SettingsCrmModal = ({ onClose }: { onClose: () => void; professionals: CrmSimpleProfessionals; templates: MessageTemplate[]; onSaveProfessionals: (p: CrmSimpleProfessionals) => Promise<void>; onSaveTemplates: (t: MessageTemplate[]) => Promise<void>; }) => (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -845,7 +888,7 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
     const [history, setHistory] = useState<CrmHistoryEntry[]>([]);
     const [tasks, setTasks] = useState<Task[]>([]);
     const [folders, setFolders] = useState<Folder[]>([]);
-    const [professionals, setProfessionals] = useState<CrmSimpleProfessionals>({ surgeons: [], nutritionists: [], psychologists: [] });
+    const [professionals, setProfessionals] = useState<CrmSimpleProfessionals>({ surgeons: [], nutritionists: [], psychologists: [], todos: [] });
     const [messageTemplates, setMessageTemplates] = useState<MessageTemplate[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -854,6 +897,7 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
     const [taskStatusFilter, setTaskStatusFilter] = useState<'todos' | TaskStatus>(TaskStatus.PENDIENTE);
     const [seguimientoFilter, setSeguimientoFilter] = useState<'todos' | ProspectoEstadoSeguimiento>('todos');
     const [postOpStageFilter, setPostOpStageFilter] = useState<'todos' | PostOpStage>('todos');
+    const [socialInsuranceFilter, setSocialInsuranceFilter] = useState('');
     const [activeModal, setActiveModal] = useState<ActiveModalType>(null);
     const [selectedContacto, setSelectedContacto] = useState<ContactoCRM | null>(null);
     const contactRowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
@@ -974,6 +1018,10 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
         }
     }, [fetchData]);
 
+    const uniqueObrasSociales = Array.from(new Set(
+        contactos.filter(c => c.isPatient && c.socialInsurance).map(c => c.socialInsurance)
+    )).sort() as string[];
+
     const filteredContactos = contactos.filter(c => {
         const searchLower = searchTerm.toLowerCase();
         const contactName = `${c.firstName || ''} ${c.lastName || ''}`.toLowerCase();
@@ -983,12 +1031,13 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
         const matchesTag = tagFilter === 'todos' || c.tag === tagFilter;
         const matchesSeguimiento = seguimientoFilter === 'todos' || c.estadoSeguimiento === seguimientoFilter;
         const matchesPostOpStage = postOpStageFilter === 'todos' || getPostOpStage(c.surgeryDate) === postOpStageFilter;
+        const matchesOS = !socialInsuranceFilter || c.socialInsurance === socialInsuranceFilter;
 
         if (activeView === 'prospects') return !c.isPatient && matchesSearch && matchesSeguimiento;
         if (!matchesSearch) return false;
         switch (activeView) {
-            case 'not-operated': return c.isPatient && c.tag !== ContactoTag.POSBARIATRICO && matchesStatus && matchesTag;
-            case 'operated': return c.isPatient && c.tag === ContactoTag.POSBARIATRICO && matchesStatus && matchesPostOpStage;
+            case 'not-operated': return c.isPatient && c.tag !== ContactoTag.POSBARIATRICO && matchesStatus && matchesTag && matchesOS;
+            case 'operated': return c.isPatient && c.tag === ContactoTag.POSBARIATRICO && matchesStatus && matchesPostOpStage && matchesOS;
             default: return true;
         }
     });
@@ -1012,7 +1061,7 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
             {activeModal === 'whatsapp' && <WhatsAppModal onClose={() => setActiveModal(null)} patient={selectedContacto} templates={messageTemplates} />}
             {activeModal === 'whatsapp-templates' && <WhatsAppTemplatesModal onClose={() => setActiveModal(null)} currentTemplates={messageTemplates} onSave={handleSaveTemplates} />}
             {activeModal === 'email' && <EmailModal onClose={() => setActiveModal(null)} />}
-            {activeModal === 'tasks' && <TasksModal onClose={() => setActiveModal(null)} patient={selectedContacto} tasks={tasks} onUpdate={handleUpdateTask} onAdd={handleAddTask} />}
+            {activeModal === 'tasks' && <TasksModal onClose={() => setActiveModal(null)} patient={selectedContacto} tasks={tasks} onUpdate={handleUpdateTask} onAdd={handleAddTask} profesionales={professionals.todos} />}
             {/* [FIX 5b] History modal now filtered by selected contact */}
             {activeModal === 'history' && (
                 <HistoryModal
@@ -1156,8 +1205,8 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
                                 onSeguimientoFilterChange={setSeguimientoFilter}
                             />
                         )}
-                        {activeView === 'not-operated' && <ContactoTable contactos={filteredContactos} onOpenModal={handleOpenModal} onReactivate={handleReactivate} onSelectPatient={onSelectPatient} onUpdateContacto={handleUpdateContacto} contactRowRefs={contactRowRefs} selectedPatientId={selectedPatient?.idPaciente} folders={folders} tasks={tasks} tagFilter={tagFilter} onTagFilterChange={setTagFilter} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} />}
-                        {activeView === 'operated' && <OperatedContactoTable contactos={filteredContactos} onOpenModal={handleOpenModal} onReactivate={handleReactivate} onSelectPatient={onSelectPatient} onUpdateContacto={handleUpdateContacto} contactRowRefs={contactRowRefs} selectedPatientId={selectedPatient?.idPaciente} folders={folders} tasks={tasks} postOpStageFilter={postOpStageFilter} onPostOpStageFilterChange={setPostOpStageFilter} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} />}
+                        {activeView === 'not-operated' && <ContactoTable contactos={filteredContactos} onOpenModal={handleOpenModal} onReactivate={handleReactivate} onSelectPatient={onSelectPatient} onUpdateContacto={handleUpdateContacto} contactRowRefs={contactRowRefs} selectedPatientId={selectedPatient?.idPaciente} folders={folders} tasks={tasks} tagFilter={tagFilter} onTagFilterChange={setTagFilter} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} osFilter={socialInsuranceFilter} onOsFilterChange={setSocialInsuranceFilter} obrasSociales={uniqueObrasSociales} />}
+                        {activeView === 'operated' && <OperatedContactoTable contactos={filteredContactos} onOpenModal={handleOpenModal} onReactivate={handleReactivate} onSelectPatient={onSelectPatient} onUpdateContacto={handleUpdateContacto} contactRowRefs={contactRowRefs} selectedPatientId={selectedPatient?.idPaciente} folders={folders} tasks={tasks} postOpStageFilter={postOpStageFilter} onPostOpStageFilterChange={setPostOpStageFilter} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} osFilter={socialInsuranceFilter} onOsFilterChange={setSocialInsuranceFilter} obrasSociales={uniqueObrasSociales} />}
                         {activeView === 'tasks' && <TasksView tasks={filteredTasks} onUpdateTask={handleUpdateTask} onSelectPatient={onSelectPatient} contactos={contactos} onOpenModal={handleOpenModal} />}
                     </div>
                 )}
@@ -1328,7 +1377,7 @@ const ProspectoRow: React.FC<ProspectoRowProps> = ({ contacto, onOpenModal, onUp
 
 // ─── CONTACT TABLES ───────────────────────────────────────────────────────────
 
-const ContactoTable = ({ contactos, onOpenModal, onReactivate, onSelectPatient, onUpdateContacto, contactRowRefs, selectedPatientId, folders, tasks, tagFilter, onTagFilterChange, statusFilter, onStatusFilterChange }: { contactos: ContactoCRM[], onOpenModal: (modal: ActiveModalType, contacto: ContactoCRM) => void, onReactivate: (contacto: ContactoCRM) => void, onSelectPatient: (p: any) => void, onUpdateContacto: (id: string, updates: Partial<ContactoCRM>) => void, contactRowRefs: React.MutableRefObject<Record<string, HTMLTableRowElement | null>>, selectedPatientId?: string | null, folders: Folder[], tasks: Task[], tagFilter: 'todos' | ContactoTag, onTagFilterChange: (v: 'todos' | ContactoTag) => void, statusFilter: 'todos' | ContactoStatus, onStatusFilterChange: (v: 'todos' | ContactoStatus) => void }) => (
+const ContactoTable = ({ contactos, onOpenModal, onReactivate, onSelectPatient, onUpdateContacto, contactRowRefs, selectedPatientId, folders, tasks, tagFilter, onTagFilterChange, statusFilter, onStatusFilterChange, osFilter, onOsFilterChange, obrasSociales }: { contactos: ContactoCRM[], onOpenModal: (modal: ActiveModalType, contacto: ContactoCRM) => void, onReactivate: (contacto: ContactoCRM) => void, onSelectPatient: (p: any) => void, onUpdateContacto: (id: string, updates: Partial<ContactoCRM>) => void, contactRowRefs: React.MutableRefObject<Record<string, HTMLTableRowElement | null>>, selectedPatientId?: string | null, folders: Folder[], tasks: Task[], tagFilter: 'todos' | ContactoTag, onTagFilterChange: (v: 'todos' | ContactoTag) => void, statusFilter: 'todos' | ContactoStatus, onStatusFilterChange: (v: 'todos' | ContactoStatus) => void, osFilter: string, onOsFilterChange: (v: string) => void, obrasSociales: string[] }) => (
     <table className="min-w-full divide-y divide-slate-200">
         <thead className="bg-slate-50">
             <tr>
@@ -1350,13 +1399,20 @@ const ContactoTable = ({ contactos, onOpenModal, onReactivate, onSelectPatient, 
                         <option value={ContactoStatus.PERDIDO}>Perdido</option>
                     </select>
                 </th>
+                <th scope="col" className="px-4 py-2 text-left">
+                    <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Obra Social</div>
+                    <select value={osFilter} onChange={e => onOsFilterChange(e.target.value)} className="block w-full rounded border-slate-300 text-xs py-1 shadow-sm bg-white">
+                        <option value="">Todas</option>
+                        {obrasSociales.map(os => <option key={os} value={os}>{os}</option>)}
+                    </select>
+                </th>
                 <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Consultas</th>
                 <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Acciones</th>
             </tr>
         </thead>
         <tbody className="bg-white divide-y divide-slate-200">
             {contactos.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-8 text-slate-500 text-sm">No hay pacientes que coincidan con los filtros.</td></tr>
+                <tr><td colSpan={7} className="text-center py-8 text-slate-500 text-sm">No hay pacientes que coincidan con los filtros.</td></tr>
             ) : contactos.map(contacto => (
                 <ContactoRow key={contacto.id} contacto={contacto} onOpenModal={onOpenModal} onReactivate={onReactivate} onSelectPatient={onSelectPatient} onUpdateContacto={onUpdateContacto} ref={el => { contactRowRefs.current[contacto.id] = el; }} isSelected={selectedPatientId === contacto.id} hasFolder={folders.some(f => f.patientId === contacto.id)} hasPendingTasks={tasks.some(t => t.patientId === contacto.id && t.status === TaskStatus.PENDIENTE)} />
             ))}
@@ -1364,7 +1420,7 @@ const ContactoTable = ({ contactos, onOpenModal, onReactivate, onSelectPatient, 
     </table>
 );
 
-const OperatedContactoTable = ({ contactos, onOpenModal, onReactivate, onSelectPatient, onUpdateContacto, contactRowRefs, selectedPatientId, folders, tasks, postOpStageFilter, onPostOpStageFilterChange, statusFilter, onStatusFilterChange }: { contactos: ContactoCRM[], onOpenModal: (modal: ActiveModalType, contacto: ContactoCRM) => void, onReactivate: (contacto: ContactoCRM) => void, onSelectPatient: (p: any) => void, onUpdateContacto: (id: string, updates: Partial<ContactoCRM>) => void, contactRowRefs: React.MutableRefObject<Record<string, HTMLTableRowElement | null>>, selectedPatientId?: string | null, folders: Folder[], tasks: Task[], postOpStageFilter: 'todos' | PostOpStage, onPostOpStageFilterChange: (v: 'todos' | PostOpStage) => void, statusFilter: 'todos' | ContactoStatus, onStatusFilterChange: (v: 'todos' | ContactoStatus) => void }) => (
+const OperatedContactoTable = ({ contactos, onOpenModal, onReactivate, onSelectPatient, onUpdateContacto, contactRowRefs, selectedPatientId, folders, tasks, postOpStageFilter, onPostOpStageFilterChange, statusFilter, onStatusFilterChange, osFilter, onOsFilterChange, obrasSociales }: { contactos: ContactoCRM[], onOpenModal: (modal: ActiveModalType, contacto: ContactoCRM) => void, onReactivate: (contacto: ContactoCRM) => void, onSelectPatient: (p: any) => void, onUpdateContacto: (id: string, updates: Partial<ContactoCRM>) => void, contactRowRefs: React.MutableRefObject<Record<string, HTMLTableRowElement | null>>, selectedPatientId?: string | null, folders: Folder[], tasks: Task[], postOpStageFilter: 'todos' | PostOpStage, onPostOpStageFilterChange: (v: 'todos' | PostOpStage) => void, statusFilter: 'todos' | ContactoStatus, onStatusFilterChange: (v: 'todos' | ContactoStatus) => void, osFilter: string, onOsFilterChange: (v: string) => void, obrasSociales: string[] }) => (
     <table className="min-w-full divide-y divide-slate-200">
         <thead className="bg-slate-50">
             <tr>
@@ -1387,13 +1443,20 @@ const OperatedContactoTable = ({ contactos, onOpenModal, onReactivate, onSelectP
                     </select>
                 </th>
                 <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Fecha Cx</th>
+                <th scope="col" className="px-4 py-2 text-left">
+                    <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Obra Social</div>
+                    <select value={osFilter} onChange={e => onOsFilterChange(e.target.value)} className="block w-full rounded border-slate-300 text-xs py-1 shadow-sm bg-white">
+                        <option value="">Todas</option>
+                        {obrasSociales.map(os => <option key={os} value={os}>{os}</option>)}
+                    </select>
+                </th>
                 <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Consultas</th>
                 <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Acciones</th>
             </tr>
         </thead>
         <tbody className="bg-white divide-y divide-slate-200">
             {contactos.length === 0 ? (
-                <tr><td colSpan={7} className="text-center py-8 text-slate-500 text-sm">No hay operados que coincidan con los filtros.</td></tr>
+                <tr><td colSpan={8} className="text-center py-8 text-slate-500 text-sm">No hay operados que coincidan con los filtros.</td></tr>
             ) : contactos.map(contacto => (
                 <ContactoRow key={contacto.id} contacto={contacto} onOpenModal={onOpenModal} onReactivate={onReactivate} onSelectPatient={onSelectPatient} onUpdateContacto={onUpdateContacto} isOperatedView={true} ref={el => { contactRowRefs.current[contacto.id] = el; }} isSelected={selectedPatientId === contacto.id} hasFolder={folders.some(f => f.patientId === contacto.id)} hasPendingTasks={tasks.some(t => t.patientId === contacto.id && t.status === TaskStatus.PENDIENTE)} />
             ))}
@@ -1455,7 +1518,9 @@ const ContactoRow = React.forwardRef<HTMLTableRowElement, { contacto: ContactoCR
                     </div>
                 </td>
 
-                <td className="px-4 py-4 whitespace-nowrap">{isOperatedView ? (contacto.surgeryDate || '-') : <StatusBadge status={getContactoCalculatedStatus(contacto)} />}</td>
+                <td className="px-4 py-4 whitespace-nowrap"><StatusBadge status={getContactoCalculatedStatus(contacto)} /></td>
+                {isOperatedView && <td className="px-4 py-4 whitespace-nowrap text-sm text-slate-500">{contacto.surgeryDate || '-'}</td>}
+                <td className="px-4 py-4 whitespace-nowrap text-sm text-slate-500">{contacto.socialInsurance || '-'}</td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm text-slate-500">
                     <div>Última: {contacto.lastConsultationDate || '-'}</div>
                     <div>Próxima: {contacto.nextConsultation?.date || '-'}</div>
@@ -1496,6 +1561,9 @@ const TasksView = ({ tasks, onUpdateTask, onSelectPatient, contactos, onOpenModa
                         <div className="col-span-12 md:col-span-5">
                             <p className="font-semibold text-slate-800">{task.description}</p>
                             <button onClick={() => contacto && api.getPacienteCompleto(contacto.id, '').then(p => onSelectPatient(p.filiatorio))} className="text-sm font-medium text-indigo-600 hover:underline">{task.patientName}</button>
+                            {task.assigneeEmail && (
+                                <p className="text-xs text-slate-500 mt-0.5">Asignado a: <span className="font-medium">{task.assigneeEmail}</span></p>
+                            )}
                         </div>
                         <div className="col-span-6 md:col-span-2">
                             <p className={`text-sm font-medium ${isOverdue ? 'text-red-600' : 'text-slate-600'}`}>{task.dueDate}</p>
@@ -1503,7 +1571,7 @@ const TasksView = ({ tasks, onUpdateTask, onSelectPatient, contactos, onOpenModa
                         </div>
                         <div className="col-span-6 md:col-span-2"><TaskStatusBadge status={task.status} /></div>
                         <div className="col-span-12 md:col-span-3 flex items-center justify-start md:justify-end space-x-2">
-                            {task.status !== TaskStatus.HECHO && <button onClick={() => onUpdateTask(task.id, { status: TaskStatus.HECHO, completedAt: new Date().toISOString() })} className="px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded-md hover:bg-green-700">Completar</button>}
+                            {task.status !== TaskStatus.HECHO && <button onClick={() => { if (window.confirm('¿Confirma que desea marcar esta tarea como completada?')) onUpdateTask(task.id, { status: TaskStatus.HECHO, completedAt: new Date().toISOString() }); }} className="px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded-md hover:bg-green-700">Completar</button>}
                             {task.status === TaskStatus.PENDIENTE && <button onClick={() => onUpdateTask(task.id, { status: TaskStatus.POSPUESTO })} className="px-3 py-1.5 text-xs font-semibold text-white bg-amber-500 rounded-md hover:bg-amber-600">Posponer</button>}
                             {contacto && (
                                 <>
@@ -1595,12 +1663,17 @@ const LiquidacionDiariaModal = ({ onClose }: { onClose: () => void }) => {
     const [turnos, setTurnos] = useState<TurnoDiario[]>([]);
     const [fecha, setFecha] = useState(new Date());
     const [isLoading, setIsLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [profesionales, setProfesionales] = useState<Profesional[]>([]);
 
-    useEffect(() => { api.getProfesionalesAdmin().then(setProfesionales); }, []);
+    useEffect(() => { api.getProfesionalesAdmin().then(setProfesionales).catch(() => {}); }, []);
     useEffect(() => {
         setIsLoading(true);
-        api.getTurnosDiariosTodosProfesionales(fecha).then(setTurnos).finally(() => setIsLoading(false));
+        setLoadError(null);
+        api.getTurnosDiariosTodosProfesionales(fecha)
+            .then(setTurnos)
+            .catch(err => setLoadError(err?.message || 'No se pudieron cargar los datos. Verificá tu conexión.'))
+            .finally(() => setIsLoading(false));
     }, [fecha]);
 
     const getProfesionalNombre = (email: string) => {
@@ -1631,7 +1704,18 @@ const LiquidacionDiariaModal = ({ onClose }: { onClose: () => void }) => {
                         </div>
                     </div>
                     <div className="border-b pb-4 mb-4"><h3 className="text-2xl font-bold text-center">Liquidación del {format(fecha, 'dd/MM/yyyy')}</h3></div>
-                    {isLoading ? <p>Cargando...</p> : (
+                    {isLoading ? (
+                        <div className="flex items-center justify-center py-12 text-slate-500">
+                            <svg className="animate-spin w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+                            Cargando datos...
+                        </div>
+                    ) : loadError ? (
+                        <div className="flex flex-col items-center justify-center py-12 text-center">
+                            <p className="text-red-600 font-medium mb-2">Error al cargar los datos</p>
+                            <p className="text-sm text-slate-500 mb-4">{loadError}</p>
+                            <button onClick={() => { setIsLoading(true); setLoadError(null); api.getTurnosDiariosTodosProfesionales(fecha).then(setTurnos).catch(err => setLoadError(err?.message || 'Error.')).finally(() => setIsLoading(false)); }} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md">Reintentar</button>
+                        </div>
+                    ) : (
                         <div>
                             <h4 className="text-lg font-semibold mb-2">Resumen General</h4>
                             <div className="grid grid-cols-2 gap-4 mb-6">
@@ -1648,19 +1732,23 @@ const LiquidacionDiariaModal = ({ onClose }: { onClose: () => void }) => {
                                 ))}
                             </div>
                             <h4 className="text-lg font-semibold mb-2">Listado de Turnos Atendidos y Cobrados</h4>
-                            <table className="min-w-full divide-y divide-slate-200 text-sm">
-                                <thead className="bg-slate-100"><tr><th className="px-4 py-2 text-left">Hora</th><th className="px-4 py-2 text-left">Paciente</th><th className="px-4 py-2 text-left">Profesional</th><th className="px-4 py-2 text-right">Valor</th></tr></thead>
-                                <tbody>
-                                    {turnosAtendidos.filter(t => t.valorCobrado && t.valorCobrado > 0).map(t => (
-                                        <tr key={t.idTurno}>
-                                            <td className="px-4 py-2">{format(new Date(t.fechaTurno), 'HH:mm')}</td>
-                                            <td className="px-4 py-2">{t.paciente.apellido}, {t.paciente.nombres}</td>
-                                            <td className="px-4 py-2">{getProfesionalNombre(t.profesionalEmail)}</td>
-                                            <td className="px-4 py-2 text-right">${(t.valorCobrado || 0).toLocaleString('es-AR')}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                            {turnosAtendidos.length === 0 ? (
+                                <p className="text-sm text-slate-400 text-center py-6 border border-dashed rounded-lg">Sin turnos atendidos para esta fecha.</p>
+                            ) : (
+                                <table className="min-w-full divide-y divide-slate-200 text-sm">
+                                    <thead className="bg-slate-100"><tr><th className="px-4 py-2 text-left">Hora</th><th className="px-4 py-2 text-left">Paciente</th><th className="px-4 py-2 text-left">Profesional</th><th className="px-4 py-2 text-right">Valor</th></tr></thead>
+                                    <tbody>
+                                        {turnosAtendidos.filter(t => t.valorCobrado && t.valorCobrado > 0).map(t => (
+                                            <tr key={t.idTurno}>
+                                                <td className="px-4 py-2">{format(new Date(t.fechaTurno), 'HH:mm')}</td>
+                                                <td className="px-4 py-2">{t.paciente.apellido}, {t.paciente.nombres}</td>
+                                                <td className="px-4 py-2">{getProfesionalNombre(t.profesionalEmail)}</td>
+                                                <td className="px-4 py-2 text-right">${(t.valorCobrado || 0).toLocaleString('es-AR')}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
                         </div>
                     )}
                 </div>
@@ -1808,7 +1896,7 @@ const TorreDeControl = ({ onSelectPatient }: { onSelectPatient: (patient: Pacien
                                                     <div className="flex gap-1">
                                                         <div className="relative flex-grow">
                                                             <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-1.5"><span className="text-gray-500">$</span></div>
-                                                            <input type="number" defaultValue={turno.valorCobrado || ''} onChange={e => debouncedValorUpdate(turno.idTurno, e.target.valueAsNumber)} placeholder="Valor" className="w-full p-1 pl-4 rounded border-slate-300" />
+                                                            <input type="text" inputMode="decimal" defaultValue={turno.valorCobrado || ''} onChange={e => debouncedValorUpdate(turno.idTurno, parseFloat(e.target.value) || 0)} placeholder="Valor" className="w-full p-1 pl-4 rounded border-slate-300" />
                                                         </div>
                                                         <select value={turno.metodoPago || ''} onChange={e => handleUpdateTurno(turno.idTurno, { metodoPago: e.target.value as any })} className="p-1 rounded border-slate-300">
                                                             <option value="">...</option>

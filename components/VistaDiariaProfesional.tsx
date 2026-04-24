@@ -178,10 +178,11 @@ export default function VistaDiariaProfesional({ onSelectPatient, date }: VistaD
                            <span className="text-gray-500 sm:text-sm">$</span>
                         </div>
                         <input
-                            type="number"
+                            type="text"
+                            inputMode="decimal"
                             id={`valor-${turno.idTurno}`}
                             defaultValue={turno.valorCobrado || ''}
-                            onChange={(e) => debouncedValorUpdate(turno.idTurno, e.target.valueAsNumber)}
+                            onChange={(e) => debouncedValorUpdate(turno.idTurno, parseFloat(e.target.value) || 0)}
                             placeholder="0"
                             className="block w-full text-sm p-2 pl-7 rounded-md border-slate-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
                          />

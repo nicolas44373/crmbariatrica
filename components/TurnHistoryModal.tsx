@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useContext } from 'react';
-import { ContactoCRM, Turno, EstadoTurnoDia } from '../types';
+import { ContactoCRM, Turno, EstadoTurnoDia, PacienteFiliatorio, Profesional } from '../types';
 import { api } from '../services/mockApi';
 import { AuthContext } from '../App';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import AgendarTurnoModal from './Agendarturnomodal';
 
 // ─── Íconos locales ───────────────────────────────────────────────────────────
 const CalendarDaysIcon = ({ className }: { className?: string }) => (
@@ -25,6 +26,7 @@ const ESTADO_BADGE_MAP: Partial<Record<EstadoTurnoDia, { text: string; color: st
     [EstadoTurnoDia.EN_ESPERA]:  { text: 'En espera',  color: 'bg-yellow-100 text-yellow-800' },
     [EstadoTurnoDia.ATENDIDO]:   { text: 'Atendido',   color: 'bg-green-100 text-green-800' },
     [EstadoTurnoDia.CANCELADO]:  { text: 'Cancelado',  color: 'bg-slate-100 text-slate-500' },
+    [EstadoTurnoDia.AUSENTE]:    { text: 'Ausente',    color: 'bg-orange-100 text-orange-800' },
 };
 
 const EstadoTurnoBadge = ({ estado }: { estado: EstadoTurnoDia }) => {
@@ -46,19 +48,24 @@ export const TurnHistoryModal = ({ onClose, contacto }: TurnHistoryModalProps) =
     const authContext = useContext(AuthContext);
     const userEmail = authContext?.user?.email ?? '';
 
-    const [turnos, setTurnos]           = useState<Turno[]>([]);
-    const [isLoading, setIsLoading]     = useState(true);
-    const [error, setError]             = useState<string | null>(null);
-    const [editingTurno, setEditingTurno] = useState<Turno | null>(null);
-    const [isSaving, setIsSaving]       = useState(false);
-    const [saveError, setSaveError]     = useState<string | null>(null);
+    const [turnos, setTurnos]                           = useState<Turno[]>([]);
+    const [pacienteFiliatorio, setPacienteFiliatorio]   = useState<PacienteFiliatorio | null>(null);
+    const [isLoading, setIsLoading]                     = useState(true);
+    const [error, setError]                             = useState<string | null>(null);
+    const [isSaving, setIsSaving]                       = useState(false);
+    const [saveError, setSaveError]                     = useState<string | null>(null);
+
+    // Reagendar state
+    const [turnoAReagendar, setTurnoAReagendar]             = useState<Turno | null>(null);
+    const [profesionalParaReagendar, setProfesionalParaReagendar] = useState<Profesional | null>(null);
+    const [loadingReagendar, setLoadingReagendar]           = useState(false);
 
     const fetchTurnos = useCallback(() => {
         if (!contacto) return;
         setIsLoading(true);
         setError(null);
         api.getPacienteCompleto(contacto.id, userEmail)
-            .then(p => setTurnos(p.turnos ?? []))
+            .then(p => { setTurnos(p.turnos ?? []); setPacienteFiliatorio(p.filiatorio); })
             .catch(() => setError('No se pudo cargar el historial de turnos.'))
             .finally(() => setIsLoading(false));
     }, [contacto, userEmail]);
@@ -90,95 +97,31 @@ export const TurnHistoryModal = ({ onClose, contacto }: TurnHistoryModalProps) =
         }
     };
 
-    const handleGuardarEdicion = async () => {
-        if (!editingTurno) return;
-        setIsSaving(true);
+    const handleOpenReagendar = async (turno: Turno) => {
+        setLoadingReagendar(true);
         setSaveError(null);
         try {
-            const user = await api.getProfesional(userEmail);
-            await api.updateDetallesTurno(editingTurno.idTurno, {
-                fechaTurno:  editingTurno.fechaTurno,
-                estado:      editingTurno.estado,
-                notaInterna: editingTurno.notaInterna,
-            }, user);
-            setEditingTurno(null);
-            fetchTurnos();
-        } catch (e: any) {
-            setSaveError(e?.message || 'No se pudo guardar los cambios.');
+            const prof = await api.getProfesional(turno.profesionalEmail);
+            setProfesionalParaReagendar(prof);
+            setTurnoAReagendar(turno);
+        } catch {
+            setSaveError('No se pudo cargar el profesional para reagendar.');
         } finally {
-            setIsSaving(false);
+            setLoadingReagendar(false);
         }
     };
 
-    // ── Modal de edición ──────────────────────────────────────────────────────
-    if (editingTurno) {
+    // ── Reagendar via almanac ─────────────────────────────────────────────────
+    if (turnoAReagendar && pacienteFiliatorio && profesionalParaReagendar) {
         return (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                <div className="bg-white rounded-lg shadow-xl w-full max-w-md m-4">
-                    <div className="p-4 border-b">
-                        <h2 className="text-lg font-bold text-slate-800">Editar Turno</h2>
-                        <p className="text-sm text-slate-500 mt-0.5">
-                            {contacto.lastName}, {contacto.firstName}
-                        </p>
-                    </div>
-                    <div className="p-5 space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Fecha y hora</label>
-                            <input
-                                type="datetime-local"
-                                value={format(new Date(editingTurno.fechaTurno), "yyyy-MM-dd'T'HH:mm")}
-                                onChange={e => setEditingTurno(prev =>
-                                    prev ? { ...prev, fechaTurno: new Date(e.target.value).toISOString() } : prev
-                                )}
-                                className="w-full rounded-md border-slate-300 text-sm"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Estado</label>
-                            <select
-                                value={editingTurno.estado}
-                                onChange={e => setEditingTurno(prev =>
-                                    prev ? { ...prev, estado: e.target.value as EstadoTurnoDia } : prev
-                                )}
-                                className="w-full rounded-md border-slate-300 text-sm"
-                            >
-                                {Object.values(EstadoTurnoDia).map(e => (
-                                    <option key={e} value={e}>{e}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Nota interna</label>
-                            <textarea
-                                value={editingTurno.notaInterna ?? ''}
-                                onChange={e => setEditingTurno(prev =>
-                                    prev ? { ...prev, notaInterna: e.target.value } : prev
-                                )}
-                                rows={3}
-                                className="w-full rounded-md border-slate-300 text-sm resize-none"
-                                placeholder="Nota opcional..."
-                            />
-                        </div>
-                        {saveError && <p className="text-sm text-red-600">{saveError}</p>}
-                    </div>
-                    <div className="p-4 border-t flex justify-end gap-3">
-                        <button
-                            onClick={() => { setEditingTurno(null); setSaveError(null); }}
-                            disabled={isSaving}
-                            className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200"
-                        >
-                            Cancelar
-                        </button>
-                        <button
-                            onClick={handleGuardarEdicion}
-                            disabled={isSaving}
-                            className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:bg-indigo-300"
-                        >
-                            {isSaving ? 'Guardando...' : 'Guardar cambios'}
-                        </button>
-                    </div>
-                </div>
-            </div>
+            <AgendarTurnoModal
+                onClose={() => { setTurnoAReagendar(null); setProfesionalParaReagendar(null); }}
+                onSuccess={() => { setTurnoAReagendar(null); setProfesionalParaReagendar(null); fetchTurnos(); }}
+                pacientePreseleccionado={pacienteFiliatorio}
+                profesionalPreseleccionado={profesionalParaReagendar}
+                creadoPorEmail={userEmail}
+                turnoAEditar={turnoAReagendar}
+            />
         );
     }
 
@@ -208,12 +151,13 @@ export const TurnHistoryModal = ({ onClose, contacto }: TurnHistoryModalProps) =
             </div>
             <div className="flex flex-col items-end gap-2 flex-shrink-0">
                 <EstadoTurnoBadge estado={t.estado} />
-                {t.estado !== EstadoTurnoDia.CANCELADO && t.estado !== EstadoTurnoDia.ATENDIDO && (
+                {t.estado !== EstadoTurnoDia.CANCELADO && t.estado !== EstadoTurnoDia.ATENDIDO && t.estado !== EstadoTurnoDia.AUSENTE && (
                     <div className="flex items-center gap-1.5">
                         <button
-                            onClick={() => { setSaveError(null); setEditingTurno(t); }}
-                            title="Editar / reagendar"
-                            className="p-1.5 text-indigo-600 bg-indigo-50 rounded-md hover:bg-indigo-100 transition-colors"
+                            onClick={() => handleOpenReagendar(t)}
+                            disabled={loadingReagendar || isSaving}
+                            title="Reagendar"
+                            className="p-1.5 text-indigo-600 bg-indigo-50 rounded-md hover:bg-indigo-100 transition-colors disabled:opacity-50"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 11l6-6 3 3-6 6H9v-3z" />
@@ -222,7 +166,7 @@ export const TurnHistoryModal = ({ onClose, contacto }: TurnHistoryModalProps) =
                         <button
                             onClick={() => handleCancelar(t)}
                             title="Cancelar turno"
-                            disabled={isSaving}
+                            disabled={isSaving || loadingReagendar}
                             className="p-1.5 text-red-600 bg-red-50 rounded-md hover:bg-red-100 transition-colors disabled:opacity-50"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

@@ -33,6 +33,7 @@ export enum EstadoTurnoDia {
     EN_CONSULTA = 'EN_CONSULTA',
     ATENDIDO = 'ATENDIDO',
     CANCELADO = 'CANCELADO',
+    AUSENTE = 'AUSENTE',
 }
 
 export enum TipoCirugiaBariatrica {
@@ -61,6 +62,7 @@ export interface PacienteFiliatorio {
   psicologoAsignado: string;
   fechaCirugia?: string; // YYYY-MM-DD
   tipoCirugia?: CirugiaTipo;
+  fotoPerfil?: string;
 }
 
 // Corresponds to: Tabla 2: HISTORIA_CLINICA_ESTATICA
@@ -273,6 +275,7 @@ export interface CrmSimpleProfessionals {
     surgeons: string[];
     nutritionists: string[];
     psychologists: string[];
+    todos: { nombre: string; email: string }[];
 }
 
 export interface MessageTemplate {

@@ -328,12 +328,12 @@ const ProfesionalFormPanel = ({
                 <nav className="-mb-px flex gap-6">
                     {([
                         { id: 'datos',    label: 'Datos del Profesional' },
-                        { id: 'horarios', label: 'Días y Horarios' },
+                        ...(form.rol === UserRole.MEDICO ? [{ id: 'horarios', label: 'Días y Horarios' }] : []),
                     ] as const).map(tab => (
                         <button
                             key={tab.id}
                             type="button"
-                            onClick={() => setActiveTab(tab.id)}
+                            onClick={() => setActiveTab(tab.id as 'datos' | 'horarios')}
                             className={`py-3 text-sm font-medium border-b-2 transition-colors ${
                                 activeTab === tab.id
                                     ? 'border-indigo-500 text-indigo-600'
@@ -401,39 +401,43 @@ const ProfesionalFormPanel = ({
                                     <option value={UserRole.ADMINISTRATIVO}>Administrativo</option>
                                 </select>
                             </div>
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-600 mb-1">Especialidad</label>
-                                <input
-                                    type="text"
-                                    value={form.especialidad}
-                                    onChange={e => set('especialidad', e.target.value)}
-                                    placeholder="Ej: Cirugía Bariátrica"
-                                    className="w-full rounded-md border-slate-300 shadow-sm text-sm"
-                                />
-                            </div>
+                            {form.rol === UserRole.MEDICO && (
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-600 mb-1">Especialidad</label>
+                                    <input
+                                        type="text"
+                                        value={form.especialidad}
+                                        onChange={e => set('especialidad', e.target.value)}
+                                        placeholder="Ej: Cirugía Bariátrica"
+                                        className="w-full rounded-md border-slate-300 shadow-sm text-sm"
+                                    />
+                                </div>
+                            )}
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-600 mb-1">Matrícula</label>
-                                <input
-                                    type="text"
-                                    value={form.matricula}
-                                    onChange={e => set('matricula', e.target.value)}
-                                    placeholder="Ej: MP-12345"
-                                    className="w-full rounded-md border-slate-300 shadow-sm text-sm"
-                                />
+                        {form.rol === UserRole.MEDICO && (
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-600 mb-1">Matrícula</label>
+                                    <input
+                                        type="text"
+                                        value={form.matricula}
+                                        onChange={e => set('matricula', e.target.value)}
+                                        placeholder="Ej: MP-12345"
+                                        className="w-full rounded-md border-slate-300 shadow-sm text-sm"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-600 mb-1">Teléfono</label>
+                                    <input
+                                        type="tel"
+                                        value={form.telefono}
+                                        onChange={e => set('telefono', e.target.value)}
+                                        className="w-full rounded-md border-slate-300 shadow-sm text-sm"
+                                    />
+                                </div>
                             </div>
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-600 mb-1">Teléfono</label>
-                                <input
-                                    type="tel"
-                                    value={form.telefono}
-                                    onChange={e => set('telefono', e.target.value)}
-                                    className="w-full rounded-md border-slate-300 shadow-sm text-sm"
-                                />
-                            </div>
-                        </div>
+                        )}
 
                         <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border">
                             <label className="relative inline-flex items-center cursor-pointer">
@@ -482,9 +486,11 @@ const ProfesionalFormPanel = ({
             )}
             <div className="px-6 py-4 bg-slate-50 border-t flex justify-between items-center">
                 <div className="text-xs text-slate-400">
-                    {form.config_turnos.horarios.length === 0
-                        ? 'Sin días de atención configurados'
-                        : `${[...new Set(form.config_turnos.horarios.map(h => h.dia))].length} día(s) activo(s) · ${form.config_turnos.duracionTurnoMinutos} min/turno`}
+                    {form.rol === UserRole.MEDICO && (
+                        form.config_turnos.horarios.length === 0
+                            ? 'Sin días de atención configurados'
+                            : `${[...new Set(form.config_turnos.horarios.map(h => h.dia))].length} día(s) activo(s) · ${form.config_turnos.duracionTurnoMinutos} min/turno`
+                    )}
                 </div>
                 <div className="flex gap-3">
                     <button

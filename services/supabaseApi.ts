@@ -105,6 +105,7 @@ function mapPaciente(row: any): PacienteFiliatorio {
     psicologoAsignado: row.psicologo_asignado_email ?? '',
     fechaCirugia: row.fecha_cirugia ?? undefined,
     tipoCirugia: row.tipo_gestion_cirugia ?? undefined,
+    fotoPerfil: row.foto_perfil ?? undefined,
   };
 }
 
@@ -748,6 +749,7 @@ async function updatePacienteFiliatorio(
 if (updates.cirujanoAsignado      !== undefined) dbUpdates.cirujano_asignado_email      = updates.cirujanoAsignado      || null;
 if (updates.nutricionistaAsignado !== undefined) dbUpdates.nutricionista_asignado_email = updates.nutricionistaAsignado || null;
 if (updates.psicologoAsignado     !== undefined) dbUpdates.psicologo_asignado_email     = updates.psicologoAsignado     || null;
+if (updates.fotoPerfil            !== undefined) dbUpdates.foto_perfil                 = updates.fotoPerfil            || null;
 
   const { data, error } = await supabase
     .from('pacientes').update(dbUpdates).eq('id_paciente', idPaciente).select().single();
@@ -891,12 +893,15 @@ async function updateDetallesTurno(
     .from('turnos').select('estado, hora_llegada, hora_atencion').eq('id_turno', turnoId).single();
 
   const dbUpdates: any = {};
-  if (updates.estado       !== undefined) dbUpdates.estado        = updates.estado;
-  if (updates.valorCobrado !== undefined) dbUpdates.valor_cobrado = updates.valorCobrado;
-  if (updates.metodoPago   !== undefined) dbUpdates.metodo_pago   = updates.metodoPago;
-  if (updates.notaInterna  !== undefined) dbUpdates.nota_interna  = updates.notaInterna;
-  if (updates.horaLlegada  !== undefined) dbUpdates.hora_llegada  = updates.horaLlegada;
-  if (updates.horaAtencion !== undefined) dbUpdates.hora_atencion = updates.horaAtencion;
+  if (updates.estado          !== undefined) dbUpdates.estado           = updates.estado;
+  if (updates.valorCobrado    !== undefined) dbUpdates.valor_cobrado    = updates.valorCobrado;
+  if (updates.metodoPago      !== undefined) dbUpdates.metodo_pago      = updates.metodoPago;
+  if (updates.notaInterna     !== undefined) dbUpdates.nota_interna     = updates.notaInterna;
+  if (updates.horaLlegada     !== undefined) dbUpdates.hora_llegada     = updates.horaLlegada;
+  if (updates.horaAtencion    !== undefined) dbUpdates.hora_atencion    = updates.horaAtencion;
+  if (updates.fechaTurno      !== undefined) dbUpdates.fecha_turno      = updates.fechaTurno;
+  if (updates.esSobreturno    !== undefined) dbUpdates.es_sobreturno    = updates.esSobreturno;
+  if (updates.esVideoconsulta !== undefined) dbUpdates.es_videoconsulta = updates.esVideoconsulta;
 
   if (updates.estado && current) {
     if (updates.estado === EstadoTurnoDia.EN_ESPERA && !current.hora_llegada)
@@ -913,6 +918,17 @@ async function updateDetallesTurno(
 
 async function simulateDailyTrigger(): Promise<{ message: string; changes: number }> {
   const today = new Date().toISOString().split('T')[0];
+
+  // Mark missed appointments as AUSENTE
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayEnd = yesterday.toISOString().split('T')[0] + 'T23:59:59';
+  await supabase
+    .from('turnos')
+    .update({ estado: EstadoTurnoDia.AUSENTE })
+    .in('estado', [EstadoTurnoDia.AGENDADO, EstadoTurnoDia.CONFIRMADO])
+    .lt('fecha_turno', yesterdayEnd);
+
   const { data: pacientes } = await supabase
     .from('pacientes').select('id_paciente')
     .eq('etiqueta_activa', 'PERIOPERATORIO').lt('fecha_cirugia', today);
@@ -1296,17 +1312,19 @@ async function updateContactoCRM(id: string, updates: Partial<ContactoCRM>): Pro
 async function createProspecto(
   prospectoData: Pick<ContactoCRM, 'firstName' | 'lastName' | 'phone' | 'email' | 'canalOrigen'>
 ): Promise<Partial<ContactoCRM>> {
-  const newId = `PR-${Date.now()}`;
+  const newId = crypto.randomUUID();
+  const today = new Date().toISOString().split('T')[0];
   const { error } = await supabase.from('crm_contactos').insert({
-    id_contacto:       newId,
-    nombres:           prospectoData.firstName,
-    apellido:          prospectoData.lastName,
-    telefono:          prospectoData.phone,
-    email:             prospectoData.email,
-    canal_origen:      prospectoData.canalOrigen ?? null,
-    is_patient:        false,
+    id_contacto:        newId,
+    nombres:            prospectoData.firstName,
+    apellido:           prospectoData.lastName,
+    telefono:           prospectoData.phone,
+    email:              prospectoData.email,
+    canal_origen:       prospectoData.canalOrigen ?? null,
+    is_patient:         false,
     estado_seguimiento: ProspectoEstadoSeguimiento.NUEVO,
-    prioridad:         prioridadToDB(Priority.NORMAL),
+    prioridad:          prioridadToDB(Priority.NORMAL),
+    fecha_ingreso:      today,
   });
   if (error) handleSupabaseError(error);
   return { id: newId, ...prospectoData, isPatient: false };
@@ -1447,16 +1465,18 @@ async function getCrmSimpleProfessionals(): Promise<CrmSimpleProfessionals> {
   const surgeons: string[]     = [];
   const nutritionists: string[] = [];
   const psychologists: string[] = [];
+  const todos: { nombre: string; email: string }[] = [];
 
   (data ?? []).forEach((p: any) => {
     const name = `${p.nombres} ${p.apellido}`;
     const esp  = (p.especialidad ?? '').toLowerCase();
+    todos.push({ nombre: name, email: p.email });
     if (esp.includes('cirug'))      surgeons.push(name);
     else if (esp.includes('nutri')) nutritionists.push(name);
     else if (esp.includes('psic'))  psychologists.push(name);
   });
 
-  return { surgeons, nutritionists, psychologists };
+  return { surgeons, nutritionists, psychologists, todos };
 }
 
 async function updateCrmSimpleProfessionals(p: CrmSimpleProfessionals): Promise<CrmSimpleProfessionals> {

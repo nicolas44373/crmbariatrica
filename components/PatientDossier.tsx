@@ -605,6 +605,15 @@ const EditarPacienteModal = ({ paciente, onClose, onSuccess }: { paciente: Pacie
                                 <input type="email" name="email" id="email" value={formData.email} onChange={handleChange} className="mt-1 block w-full rounded-md border-slate-300" />
                             </div>
                         </div>
+                        <div className="flex items-end gap-4">
+                            <div className="flex-grow">
+                                <label htmlFor="fotoPerfil" className="block text-sm font-medium text-slate-700">Foto de Perfil (URL)</label>
+                                <input type="url" name="fotoPerfil" id="fotoPerfil" value={formData.fotoPerfil || ''} onChange={handleChange} placeholder="https://..." className="mt-1 block w-full rounded-md border-slate-300" />
+                            </div>
+                            {formData.fotoPerfil && (
+                                <img src={formData.fotoPerfil} alt="preview" className="w-14 h-14 rounded-full object-cover border-2 border-slate-200 flex-shrink-0" />
+                            )}
+                        </div>
                         {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
                     </div>
                     <div className="p-4 bg-slate-50 border-t flex justify-end space-x-3">
@@ -2260,7 +2269,13 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
             {/* Header */}
             <div className="bg-white rounded-lg shadow-md p-6 relative">
                  <div className="flex items-start">
-                    <UserPhotoPlaceholderIcon />
+                    {filiatorio.fotoPerfil ? (
+                        <div className="w-24 h-24 rounded-full ring-4 ring-white shadow-md overflow-hidden flex-shrink-0">
+                            <img src={filiatorio.fotoPerfil} alt="" className="w-full h-full object-cover" />
+                        </div>
+                    ) : (
+                        <UserPhotoPlaceholderIcon />
+                    )}
                     <div className="ml-6 flex-grow">
                          
 <div className="flex justify-between items-center">

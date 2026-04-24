@@ -89,6 +89,7 @@ export const ESTADO_TURNO_MAP: Record<EstadoTurnoDia, { texto: string; color: st
     [EstadoTurnoDia.EN_CONSULTA]: { texto: 'En Consulta', color: 'border-orange-500', colorFondo: 'bg-orange-50' },
     [EstadoTurnoDia.ATENDIDO]: { texto: 'Atendido', color: 'border-green-500', colorFondo: 'bg-green-50', colorTexto: 'text-green-800' },
     [EstadoTurnoDia.CANCELADO]: { texto: 'Cancelado', color: 'border-red-500', colorFondo: 'bg-red-50', colorTexto: 'text-red-800' },
+    [EstadoTurnoDia.AUSENTE]: { texto: 'Ausente', color: 'border-orange-400', colorFondo: 'bg-orange-50', colorTexto: 'text-orange-800' },
 };
 
 export const COMORBILIDADES_PREDEFINIDAS: string[] = [
@@ -134,6 +135,7 @@ export const INITIAL_CRM_PROFESSIONALS: CrmSimpleProfessionals = {
     surgeons: ["Dr. Juan Pérez", "Dra. Bianchi", "Dr. Moreno"],
     nutritionists: ["Lic. Ana Gómez", "Lic. Vega", "Lic. Giménez"],
     psychologists: ["Lic. Carlos Ruiz", "Lic. Acosta", "Lic. Flores"],
+    todos: [],
 };
 
 export const INITIAL_MESSAGE_TEMPLATES: MessageTemplate[] = [
