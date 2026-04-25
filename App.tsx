@@ -43,7 +43,8 @@ export default function App() {
   // Redirigir según rol
   useEffect(() => {
     if (user) {
-      setActiveApp(user.rol === UserRole.ADMINISTRATIVO ? 'crm' : 'clinical');
+      const goToCrm = user.rol === UserRole.ADMINISTRATIVO || user.rol === UserRole.SUPERADMIN;
+      setActiveApp(goToCrm ? 'crm' : 'clinical');
     }
   }, [user]);
 

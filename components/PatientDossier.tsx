@@ -1271,7 +1271,8 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
 
 
     const user = authContext!.user!;
-    const canEdit = user.rol === UserRole.ADMINISTRATIVO || user.rol === UserRole.MEDICO;
+    const isSuperAdmin = user.rol === UserRole.SUPERADMIN;
+    const canEdit = user.rol === UserRole.ADMINISTRATIVO || user.rol === UserRole.MEDICO || isSuperAdmin;
 
     const fetchData = useCallback(() => {
     setIsLoading(true);
@@ -1591,7 +1592,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                     <div className="space-y-4">
                         <div className="flex justify-between items-center">
                             <h3 className="text-xl font-bold text-slate-800">Resumen Clínico</h3>
-                            {user.rol === UserRole.MEDICO && (
+                            {(user.rol === UserRole.MEDICO || isSuperAdmin) && (
                                 <div className="flex items-center gap-2">
                                      <button onClick={() => setModal('weightCurve')} className="flex items-center text-sm font-medium text-indigo-600 bg-indigo-50 px-3 py-2 rounded-md hover:bg-indigo-100"><ChartBarIcon/>Curva</button>
                                      <button onClick={() => { setResumenData(paciente.historiaClinica); setModal('editResumen'); }} className="flex items-center text-sm font-medium text-white bg-indigo-600 px-3 py-2 rounded-md shadow-sm hover:bg-indigo-700"><PencilIcon/>Editar</button>
@@ -1664,7 +1665,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                     <div>
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-xl font-bold text-slate-800">Información Quirúrgica</h3>
-                            {user.rol === UserRole.MEDICO && <button onClick={() => { setCirugiaData(paciente.cirugia || {}); setModal('editCirugia'); }} className="flex items-center text-sm font-medium text-white bg-indigo-600 px-3 py-2 rounded-md"><PencilIcon/>Editar</button>}
+                            {(user.rol === UserRole.MEDICO || isSuperAdmin) && <button onClick={() => { setCirugiaData(paciente.cirugia || {}); setModal('editCirugia'); }} className="flex items-center text-sm font-medium text-white bg-indigo-600 px-3 py-2 rounded-md"><PencilIcon/>Editar</button>}
                         </div>
                         <div className="space-y-2 text-sm">
                             <p><strong>Fecha Programada:</strong> {paciente.cirugia?.fechaProgramada ? format(new Date(paciente.cirugia.fechaProgramada.replace(/-/g, '/')), 'dd/MM/yyyy') : 'N/A'}</p>
@@ -1678,7 +1679,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                     <div>
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-xl font-bold text-slate-800">Seguimiento Nutricional</h3>
-                            {user.rol === UserRole.MEDICO && <button onClick={() => { setNutricionData(paciente.nutricion || {}); setModal('editNutricion'); }} className="flex items-center text-sm font-medium text-white bg-indigo-600 px-3 py-2 rounded-md"><PencilIcon/>Editar</button>}
+                            {(user.rol === UserRole.MEDICO || isSuperAdmin) && <button onClick={() => { setNutricionData(paciente.nutricion || {}); setModal('editNutricion'); }} className="flex items-center text-sm font-medium text-white bg-indigo-600 px-3 py-2 rounded-md"><PencilIcon/>Editar</button>}
                         </div>
                         <div className="space-y-2 text-sm">
                             <p><strong>Perímetro Cintura:</strong> {paciente.nutricion?.perimetroCintura ? `${paciente.nutricion.perimetroCintura} cm` : 'N/A'}</p>
@@ -1742,7 +1743,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
         <div className="bg-white rounded-lg shadow h-full">
              <div className="flex justify-between items-center p-4 border-b">
                  <h3 className="text-xl font-bold text-slate-800">Estudios y Archivos</h3>
-                 {user.rol === UserRole.MEDICO && (
+                 {(user.rol === UserRole.MEDICO || isSuperAdmin) && (
                     <button onClick={() => {
                         setEstudioData({
                             fecha: format(new Date(), 'yyyy-MM-dd'),
@@ -1831,7 +1832,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
         <div className="space-y-4">
             <div className="flex justify-between items-center bg-white p-4 rounded-lg shadow">
                  <h3 className="text-xl font-bold text-slate-800">Evoluciones</h3>
-                 {user.rol === UserRole.MEDICO && (
+                 {(user.rol === UserRole.MEDICO || isSuperAdmin) && (
                     <button onClick={() => { setEvolucionData({ evolucionClinica: '', notaConfidencial: ''}); setModal('newEvolucion'); }} className="flex items-center text-sm font-medium text-white bg-green-600 px-4 py-2 rounded-md shadow-sm hover:bg-green-700"><DocumentPlusIcon/>Nueva Evolución</button>
                  )}
             </div>

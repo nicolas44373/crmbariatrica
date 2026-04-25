@@ -44,6 +44,11 @@ const prioridadToDB   = (p: Priority): string => p as string;        // 'Alta' �
 const prioridadFromDB = (p: string | undefined | null): Priority =>
   (p ?? Priority.NORMAL) as Priority;                                 // 'Alta' → Priority.ALTA
 
+// SuperAdmin bypasses all role checks.
+const canAdmin  = (r: UserRole) => r === UserRole.ADMINISTRATIVO || r === UserRole.SUPERADMIN;
+const canMedico = (r: UserRole) => r === UserRole.MEDICO          || r === UserRole.SUPERADMIN;
+const canAny    = (r: UserRole) => canAdmin(r) || canMedico(r);
+
 // ─── INTERCEPTOR DE SESIÓN ────────────────────────────────────────────────────
 
 supabase.auth.onAuthStateChange((event, session) => {
@@ -340,7 +345,7 @@ async function updateProfesionalesAdmin(
   newProfesionales: Profesional[],
   userRole: UserRole
 ): Promise<Profesional[]> {
-  if (userRole !== UserRole.ADMINISTRATIVO) throw new Error('Permiso denegado.');
+  if (!canAdmin(userRole)) throw new Error('Permiso denegado.');
 
   const upsertData = newProfesionales.map(p => ({
     email: p.email,
@@ -377,7 +382,7 @@ async function createProfesional(
   },
   userRole: UserRole = UserRole.ADMINISTRATIVO
 ): Promise<Profesional> {
-  if (userRole !== UserRole.ADMINISTRATIVO) throw new Error('Permiso denegado.');
+  if (!canAdmin(userRole)) throw new Error('Permiso denegado.');
 
   const { data: result, error } = await supabase
     .from('profesionales')
@@ -420,7 +425,7 @@ async function upsertProfesional(
   },
   userRole: UserRole = UserRole.ADMINISTRATIVO
 ): Promise<Profesional> {
-  if (userRole !== UserRole.ADMINISTRATIVO) throw new Error('Permiso denegado.');
+  if (!canAdmin(userRole)) throw new Error('Permiso denegado.');
 
   const { data: result, error } = await supabase
     .from('profesionales')
@@ -456,7 +461,7 @@ async function updateProfesionalConfig(
   },
   userRole: UserRole = UserRole.ADMINISTRATIVO
 ): Promise<Profesional> {
-  if (userRole !== UserRole.ADMINISTRATIVO) throw new Error('Permiso denegado.');
+  if (!canAdmin(userRole)) throw new Error('Permiso denegado.');
 
   const dbUpdates: any = {};
   if (data.nombres       !== undefined) dbUpdates.nombres       = data.nombres;
@@ -484,7 +489,7 @@ async function deleteProfesional(
   email: string,
   userRole: UserRole = UserRole.ADMINISTRATIVO
 ): Promise<void> {
-  if (userRole !== UserRole.ADMINISTRATIVO) throw new Error('Permiso denegado.');
+  if (!canAdmin(userRole)) throw new Error('Permiso denegado.');
 
   // Verificar turnos futuros antes de borrar
   const ahora = new Date().toISOString();
@@ -540,7 +545,7 @@ async function updateConfiguracionGeneral(
   newConfig: ConfiguracionGeneral,
   userRole: UserRole
 ): Promise<ConfiguracionGeneral> {
-  if (userRole !== UserRole.ADMINISTRATIVO) throw new Error('Permiso denegado.');
+  if (!canAdmin(userRole)) throw new Error('Permiso denegado.');
 
   await Promise.all(
     newConfig.configuracionesProfesionales.map(cp =>
@@ -670,7 +675,7 @@ async function createPaciente(
   userRole: UserRole,
   prospectoId?: string
 ): Promise<PacienteFiliatorio> {
-  if (userRole !== UserRole.ADMINISTRATIVO) throw new Error('Permiso denegado para crear pacientes.');
+  if (!canAdmin(userRole)) throw new Error('Permiso denegado para crear pacientes.');
 
   const { data: profs } = await supabase.from('profesionales').select('*').eq('activo', true);
   const cirujano = (profs ?? []).find((p: any) => (p.especialidad ?? '').toLowerCase().includes('cirug'));
@@ -732,7 +737,7 @@ async function updatePacienteFiliatorio(
   updates: Partial<PacienteFiliatorio>,
   userRole: UserRole
 ): Promise<PacienteFiliatorio> {
-  if (userRole !== UserRole.ADMINISTRATIVO && userRole !== UserRole.MEDICO)
+  if (!canAny(userRole))
     throw new Error('Permiso denegado para editar pacientes.');
 
   const dbUpdates: any = {};
@@ -762,7 +767,7 @@ async function updatePacienteTag(
   newTag: string,
   userRole: UserRole
 ): Promise<PacienteFiliatorio> {
-  if (userRole !== UserRole.ADMINISTRATIVO && userRole !== UserRole.MEDICO)
+  if (!canAny(userRole))
     throw new Error('Permiso denegado para cambiar etiqueta.');
 
   const { data, error } = await supabase
@@ -777,7 +782,7 @@ async function definirCirugia(
   fecha: string,
   userRole: UserRole
 ): Promise<PacienteFiliatorio> {
-  if (userRole !== UserRole.ADMINISTRATIVO && userRole !== UserRole.MEDICO)
+  if (!canAny(userRole))
     throw new Error('Permiso denegado.');
 
   const { data, error } = await supabase.from('pacientes').update({
@@ -853,7 +858,7 @@ async function createTurno(
   turnoData: Omit<Turno, 'idTurno' | 'estado'>,
   userRole: UserRole
 ): Promise<Turno> {
-  if (userRole !== UserRole.ADMINISTRATIVO && userRole !== UserRole.MEDICO)
+  if (!canAny(userRole))
     throw new Error('Permiso denegado para crear turnos.');
 
   if (!turnoData.esSobreturno) {
@@ -951,7 +956,7 @@ async function createEvolucion(
   evolucionData: Omit<EvolucionClinica, 'idEvolucion'>,
   userRole: UserRole
 ): Promise<EvolucionClinica> {
-  if (userRole !== UserRole.MEDICO) throw new Error('Permiso denegado para crear evoluciones.');
+  if (!canMedico(userRole)) throw new Error('Permiso denegado para crear evoluciones.');
 
   const { data, error } = await supabase.from('evoluciones').insert({
     id_paciente:        evolucionData.idPaciente,
@@ -972,7 +977,7 @@ async function updateEvolucion(
   updates: Partial<Pick<EvolucionClinica, 'pesoActual' | 'evolucionClinica' | 'notaConfidencial'>>,
   user: Profesional
 ): Promise<EvolucionClinica> {
-  if (user.rol !== UserRole.MEDICO) throw new Error('Permiso denegado para editar evoluciones.');
+  if (!canMedico(user.rol)) throw new Error('Permiso denegado para editar evoluciones.');
 
   const { data: original, error: errGet } = await supabase
     .from('evoluciones').select('*').eq('id_evolucion', idEvolucion).single();
@@ -1000,7 +1005,7 @@ async function updateHistoriaClinica(
   updates: Partial<Omit<HistoriaClinicaEstatica, 'idHistoria' | 'idPaciente' | 'imcInicial'>>,
   userRole: UserRole
 ): Promise<HistoriaClinicaEstatica> {
-  if (userRole !== UserRole.MEDICO) throw new Error('Permiso denegado para actualizar la historia clínica.');
+  if (!canMedico(userRole)) throw new Error('Permiso denegado para actualizar la historia clínica.');
 
   const { data: existing } = await supabase
     .from('historias_clinicas').select('*').eq('id_paciente', idPaciente).maybeSingle();
@@ -1033,7 +1038,7 @@ async function createEstudio(
   estudioData: Omit<EstudioRealizado, 'idEstudio'>,
   user: Profesional
 ): Promise<EstudioRealizado> {
-  if (user.rol !== UserRole.MEDICO) throw new Error('Permiso denegado para crear estudios.');
+  if (!canMedico(user.rol)) throw new Error('Permiso denegado para crear estudios.');
 
   const { data, error } = await supabase.from('estudios').insert({
     id_paciente:         estudioData.idPaciente,
@@ -1083,7 +1088,7 @@ async function updateEstudio(
   updates: Partial<EstudioRealizado>,
   userRole: UserRole
 ): Promise<EstudioRealizado> {
-  if (userRole !== UserRole.MEDICO) throw new Error('Permiso denegado para actualizar estudios.');
+  if (!canMedico(userRole)) throw new Error('Permiso denegado para actualizar estudios.');
 
   const dbUpdates: any = {};
   if (updates.fecha            !== undefined) dbUpdates.fecha_estudio       = updates.fecha;
@@ -1106,7 +1111,7 @@ async function updateCirugiaInfo(
   updates: Partial<CirugiaInfo>,
   user: Profesional
 ): Promise<CirugiaInfo> {
-  if (user.rol !== UserRole.MEDICO) throw new Error('Permiso denegado.');
+  if (!canMedico(user.rol)) throw new Error('Permiso denegado.');
 
   const dbData: any = { id_paciente: idPaciente };
   if (updates.tipoCirugia            !== undefined) dbData.tipo_cirugia              = updates.tipoCirugia;
@@ -1136,7 +1141,7 @@ async function updateNutricionInfo(
   updates: Partial<NutricionInfo>,
   user: Profesional
 ): Promise<NutricionInfo> {
-  if (user.rol !== UserRole.MEDICO) throw new Error('Permiso denegado.');
+  if (!canMedico(user.rol)) throw new Error('Permiso denegado.');
 
   const dbData: any = { id_paciente: idPaciente };
   if (updates.perimetroCintura    !== undefined) dbData.perimetro_cintura    = updates.perimetroCintura;
@@ -1156,14 +1161,13 @@ async function updatePsicologiaInfo(
   updates: Partial<PsicologiaInfo>,
   user: Profesional
 ): Promise<PsicologiaInfo> {
-// DESPUÉS — case-insensitive
-if (!user.especialidad?.toLowerCase().includes('psic')) {
+  if (!canMedico(user.rol) && !user.especialidad?.toLowerCase().includes('psic')) {
     throw new Error('Solo un psicólogo puede editar estas notas.');
-}
+  }
 
   const { data: existing } = await supabase
     .from('psicologia_info').select('psicologo_email_autor').eq('id_paciente', idPaciente).maybeSingle();
-  if (existing && existing.psicologo_email_autor !== user.email)
+  if (existing && existing.psicologo_email_autor !== user.email && user.rol !== UserRole.SUPERADMIN)
     throw new Error('No puede editar las notas de otro psicólogo.');
 
   const { data, error } = await supabase.from('psicologia_info').upsert({
@@ -1544,7 +1548,7 @@ async function inviteUsuario(
   profesionalData: Omit<Profesional, 'activo'>,
   userRole: UserRole
 ): Promise<void> {
-  if (userRole !== UserRole.ADMINISTRATIVO) throw new Error('Permiso denegado.');
+  if (!canAdmin(userRole)) throw new Error('Permiso denegado.');
 
   const { error: insertError } = await supabase.from('profesionales').insert({
     email:        profesionalData.email,

@@ -3,6 +3,7 @@
 export enum UserRole {
   ADMINISTRATIVO = 'Administrativo',
   MEDICO = 'Médico',
+  SUPERADMIN = 'SuperAdmin',
 }
 
 export enum PreQuirurgicoStatus {

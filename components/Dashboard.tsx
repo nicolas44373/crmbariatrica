@@ -2053,7 +2053,7 @@ export default function Dashboard({ onSelectPatient, onNavigateToCrm }: Dashboar
     const user = authContext!.user!;
     return (
         <div>
-            {user.rol === UserRole.ADMINISTRATIVO
+            {user.rol === UserRole.ADMINISTRATIVO || user.rol === UserRole.SUPERADMIN
                 ? <TorreDeControl onSelectPatient={onSelectPatient} />
                 : <MedicoDashboard onSelectPatient={onSelectPatient} onNavigateToCrm={onNavigateToCrm} />
             }

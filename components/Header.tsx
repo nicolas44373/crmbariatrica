@@ -36,7 +36,8 @@ export default function Header({ activeApp, onNavigate }: HeaderProps) {
   }
 
   const { user, signOut } = authContext;
-  const isAdmin = user.rol === UserRole.ADMINISTRATIVO;
+  const isAdmin = user.rol === UserRole.ADMINISTRATIVO || user.rol === UserRole.SUPERADMIN;
+  const isSuperAdmin = user.rol === UserRole.SUPERADMIN;
   const nombreCompleto = `${user.nombres} ${user.apellido}`;
 
   const navButtonCommonClasses = "flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-colors duration-200 text-sm";
@@ -77,11 +78,14 @@ export default function Header({ activeApp, onNavigate }: HeaderProps) {
           {/* Usuario + Cerrar sesión */}
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">
-              <div className={`p-1.5 rounded-full ${isAdmin ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'}`}>
+              <div className={`p-1.5 rounded-full ${isSuperAdmin ? 'bg-amber-100 text-amber-600' : isAdmin ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'}`}>
                 {isAdmin ? <UserGroupIcon /> : <StethoscopeIcon />}
               </div>
               <div className="text-right">
-                <p className="text-sm font-medium text-slate-700">{nombreCompleto}</p>
+                <p className="text-sm font-medium text-slate-700 flex items-center gap-1">
+                  {nombreCompleto}
+                  {isSuperAdmin && <span className="text-xs font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">SUPER</span>}
+                </p>
                 <p className="text-xs text-slate-500">
                   {user.rol}{user.especialidad && ` - ${user.especialidad}`}
                 </p>
