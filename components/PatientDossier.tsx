@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
-import { PacienteCompleto, EtiquetaFlujo, UserRole, CirugiaTipo, Profesional, Turno, ConfiguracionGeneral, DiaSemana, TurnoConPaciente, EstadoTurnoDia, PacienteFiliatorio, HistoriaClinicaEstatica, TipoEstudio, EvolucionClinica, EstudioRealizado, ResultadoLaboratorio, PlantillaLaboratorioParametro, CirugiaInfo, TipoCirugiaBariatrica, NutricionInfo, PsicologiaInfo, InformeClinico, Task, Priority } from '../types';
+import { PacienteCompleto, EtiquetaFlujo, UserRole, CirugiaTipo, Profesional, Turno, ConfiguracionGeneral, DiaSemana, TurnoConPaciente, EstadoTurnoDia, PacienteFiliatorio, HistoriaClinicaEstatica, TipoEstudio, EvolucionClinica, EstudioRealizado, ResultadoLaboratorio, PlantillaLaboratorioParametro, CirugiaInfo, TipoCirugiaBariatrica, NutricionInfo, PsicologiaInfo, InformeClinico, Task, Priority, PostOpStage } from '../types';
 import { api } from '../services/mockApi';
 import { AuthContext } from '../App';
 import { ETIQUETAS_FLUJO, PROFESIONALES, DIAS_SEMANA_MAP, ESTADO_TURNO_MAP, COMORBILIDADES_PREDEFINIDAS, TIPOS_ESTUDIO, TIPOS_CIRUGIA_BARIATRICA } from '../constants';
@@ -1114,13 +1114,20 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
         }
     };
 
+    const [saveError, setSaveError] = useState<string | null>(null);
+
     const handleSave = async () => {
+        if (!informe.contenido?.trim()) {
+            setSaveError('El informe no puede estar vacío.');
+            return;
+        }
         setIsSaving(true);
+        setSaveError(null);
         try {
             await api.guardarInforme(informe as any);
             onSaveSuccess();
-        } catch (error) {
-            alert("Error al guardar el informe.");
+        } catch (error: any) {
+            setSaveError(error?.message || 'Error al guardar el informe. Intente de nuevo.');
         } finally {
             setIsSaving(false);
         }
@@ -1220,20 +1227,23 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
                             {isGenerating ? 'Generando...' : 'Generar con IA'}
                         </button>
                     </div>
-                    <div className="flex items-center space-x-3">
-                         <button onClick={handleCopy} className="flex items-center px-4 py-2 text-sm font-medium text-slate-700 bg-slate-200 rounded-md hover:bg-slate-300">
-                             <ClipboardIcon/>
-                             {clipboardStatus || 'Copiar'}
-                         </button>
-                         <button onClick={handlePrint} className="flex items-center px-4 py-2 text-sm font-medium text-slate-700 bg-slate-200 rounded-md hover:bg-slate-300">
-                             <PrintIcon/>
-                             Imprimir
-                         </button>
-                        <button onClick={onClose} disabled={isSaving} className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200">Cancelar</button>
-                        <button onClick={handleSave} disabled={isSaving || isGenerating || !informe.contenido?.trim()} className="flex items-center px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:bg-indigo-300">
-                            <SaveIcon/>
-                            {isSaving ? 'Guardando...' : 'Guardar Informe'}
-                        </button>
+                    <div className="flex flex-col items-end gap-2">
+                        {saveError && <p className="text-xs text-red-600 bg-red-50 px-3 py-1.5 rounded-md border border-red-200">{saveError}</p>}
+                        <div className="flex items-center space-x-3">
+                             <button onClick={handleCopy} className="flex items-center px-4 py-2 text-sm font-medium text-slate-700 bg-slate-200 rounded-md hover:bg-slate-300">
+                                 <ClipboardIcon/>
+                                 {clipboardStatus || 'Copiar'}
+                             </button>
+                             <button onClick={handlePrint} className="flex items-center px-4 py-2 text-sm font-medium text-slate-700 bg-slate-200 rounded-md hover:bg-slate-300">
+                                 <PrintIcon/>
+                                 Imprimir
+                             </button>
+                            <button onClick={onClose} disabled={isSaving} className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200">Cancelar</button>
+                            <button onClick={handleSave} disabled={isSaving || isGenerating || !informe.contenido?.trim()} className="flex items-center px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:bg-indigo-300">
+                                <SaveIcon/>
+                                {isSaving ? 'Guardando...' : 'Guardar Informe'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1575,6 +1585,21 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
     
     const { filiatorio, historiaClinica } = paciente;
     const etiquetaInfo = ETIQUETAS_FLUJO.find(e => e.nombreEtiquetaUnico === filiatorio.etiquetaPrincipalActiva) || { color: 'bg-gray-200 text-gray-800' };
+
+    const getPostOpStageLabel = (surgeryDate?: string | null): string => {
+        if (!surgeryDate) return 'Sin fecha';
+        // Replace dashes with slashes so JS parses as local time (not UTC midnight)
+        const parsed = new Date(surgeryDate.replace(/-/g, '/'));
+        if (isNaN(parsed.getTime())) return 'Sin fecha';
+        const days = (new Date().getTime() - parsed.getTime()) / (1000 * 3600 * 24);
+        if (days <= 30) return PostOpStage.INMEDIATO;
+        if (days <= 180) return PostOpStage.RECIENTE;
+        if (days <= 365) return PostOpStage.MEDIATO;
+        return PostOpStage.ALEJADO;
+    };
+
+    // Prefer the actual surgery date (fechaRealizada) over the scheduled date
+    const fechaCirugiaEfectiva = paciente.cirugia?.fechaRealizada ?? filiatorio.fechaCirugia;
 
     const renderResumenClinico = () => (
         <div className="bg-white p-6 rounded-lg shadow space-y-4 h-full">
@@ -2307,26 +2332,33 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                 );
             })}
         </div>
-        {/* Tag dropdown — existente */}
-        <div className="relative">
-            <button onClick={() => setShowTagDropdown(!showTagDropdown)} onBlur={() => setTimeout(() => setShowTagDropdown(false), 200)} className={`flex items-center px-3 py-2 text-sm font-semibold rounded-full ${etiquetaInfo.color}`}>
-                <TagIcon />
-                {filiatorio.etiquetaPrincipalActiva.replace(/_/g, ' ')}
-                <ChevronDownIcon/>
-            </button>
-            {showTagDropdown && (
-                <div className="absolute right-0 mt-2 w-64 bg-white rounded-md shadow-lg z-10 border">
-                    {ETIQUETAS_FLUJO.map(tag => (
-                        <button key={tag.nombreEtiquetaUnico} onClick={() => handleTagChange(tag.nombreEtiquetaUnico)} className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-100 ${filiatorio.etiquetaPrincipalActiva === tag.nombreEtiquetaUnico ? 'font-bold' : ''}`}>
-                            {tag.nombreEtiquetaUnico.replace(/_/g, ' ')}
-                        </button>
-                    ))}
-                    {filiatorio.etiquetaPrincipalActiva === 'DEFINIR_CIRUGIA' && (
-                        <button onClick={() => setModal('definirCirugia')} className="w-full text-left px-4 py-3 bg-green-50 hover:bg-green-100 font-bold text-green-700 border-t">
-                            Definir Fecha de Cirugía...
-                        </button>
-                    )}
-                </div>
+        {/* Tag dropdown con sub-etiqueta para POSBARIATRICO */}
+        <div className="flex flex-col items-end gap-1">
+            <div className="relative">
+                <button onClick={() => setShowTagDropdown(!showTagDropdown)} onBlur={() => setTimeout(() => setShowTagDropdown(false), 200)} className={`flex items-center px-3 py-2 text-sm font-semibold rounded-full ${etiquetaInfo.color}`}>
+                    <TagIcon />
+                    {filiatorio.etiquetaPrincipalActiva.replace(/_/g, ' ')}
+                    <ChevronDownIcon/>
+                </button>
+                {showTagDropdown && (
+                    <div className="absolute right-0 mt-2 w-64 bg-white rounded-md shadow-lg z-10 border">
+                        {ETIQUETAS_FLUJO.map(tag => (
+                            <button key={tag.nombreEtiquetaUnico} onClick={() => handleTagChange(tag.nombreEtiquetaUnico)} className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-100 ${filiatorio.etiquetaPrincipalActiva === tag.nombreEtiquetaUnico ? 'font-bold' : ''}`}>
+                                {tag.nombreEtiquetaUnico.replace(/_/g, ' ')}
+                            </button>
+                        ))}
+                        {filiatorio.etiquetaPrincipalActiva === 'DEFINIR_CIRUGIA' && (
+                            <button onClick={() => setModal('definirCirugia')} className="w-full text-left px-4 py-3 bg-green-50 hover:bg-green-100 font-bold text-green-700 border-t">
+                                Definir Fecha de Cirugía...
+                            </button>
+                        )}
+                    </div>
+                )}
+            </div>
+            {filiatorio.etiquetaPrincipalActiva === 'POSBARIATRICO' && (
+                <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-cyan-100 text-cyan-800">
+                    Etapa post-op: {getPostOpStageLabel(fechaCirugiaEfectiva)}
+                </span>
             )}
         </div>
     </div>

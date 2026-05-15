@@ -283,6 +283,7 @@ export interface MessageTemplate {
     id: string;
     name: string;
     text: string;
+    category?: 'prospectos' | 'no-operados' | 'operados' | 'todos';
 }
 
 export enum Priority {
@@ -312,6 +313,14 @@ export enum TaskStatus {
     PENDIENTE = 'Pendiente',
     HECHO = 'Hecho',
     POSPUESTO = 'Pospuesto',
+}
+
+export interface TaskHistoryEntry {
+    id: string;
+    date: string; // ISO string
+    action: 'creada' | 'pospuesta' | 'realizada' | 'reabierta' | 'modificada';
+    note?: string;
+    author?: string;
 }
 
 export enum PostOpStage {
@@ -365,8 +374,10 @@ export interface Task {
     status: TaskStatus;
     createdAt: string; // ISO string
     completedAt: string | null; // ISO string
+    postponedAt?: string | null; // ISO string
     creatorEmail?: string;
     assigneeEmail?: string;
+    history?: TaskHistoryEntry[];
 }
 
 export interface Folder {

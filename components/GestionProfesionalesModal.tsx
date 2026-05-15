@@ -28,6 +28,7 @@ interface ProfesionalForm {
     telefono: string;
     activo: boolean;
     config_turnos: ConfigTurnos;
+    password?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -61,6 +62,7 @@ const defaultForm = (): ProfesionalForm => ({
     telefono: '',
     activo: true,
     config_turnos: defaultConfig(),
+    password: '',
 });
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -311,6 +313,10 @@ const ProfesionalFormPanel = ({
             setError('Por favor ingrese un email válido.');
             return;
         }
+        if (isNew && (!form.password || form.password.length < 8)) {
+            setError('La contraseña inicial debe tener al menos 8 caracteres.');
+            return;
+        }
         setError(null);
         setIsSaving(true);
         try {
@@ -388,6 +394,22 @@ const ProfesionalFormPanel = ({
                                 <p className="text-xs text-slate-400 mt-1">El email no puede modificarse.</p>
                             )}
                         </div>
+
+                        {isNew && (
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-600 mb-1">Contraseña inicial *</label>
+                                <input
+                                    type="password"
+                                    value={form.password || ''}
+                                    onChange={e => set('password', e.target.value)}
+                                    required
+                                    minLength={8}
+                                    placeholder="Mínimo 8 caracteres"
+                                    className="w-full rounded-md border-slate-300 shadow-sm text-sm"
+                                />
+                                <p className="text-xs text-slate-400 mt-1">El profesional usará esta contraseña para ingresar por primera vez. Podrá cambiarla luego.</p>
+                            </div>
+                        )}
 
                         <div className="grid grid-cols-2 gap-4">
                             <div>
@@ -642,13 +664,15 @@ export default function GestionProfesionalesModal({ onClose }: GestionProfesiona
         config_turnos: parseConfigTurnos((prof as any).config_turnos),
     });
 
+    const [saveMessage, setSaveMessage] = useState<string | null>(null);
+
     const handleSave = async (data: ProfesionalForm) => {
         const payload = { ...data, config_turnos: data.config_turnos };
 
         if (isCreating) {
-            // FIX: use createProfesional (plain INSERT) instead of upsert
-            // to prevent accidentally overwriting an existing record.
-            await (api as any).createProfesional(payload);
+            const result = await (api as any).createProfesionalWithAuth(payload, data.password || '');
+            setSaveMessage(result.message);
+            setTimeout(() => setSaveMessage(null), 6000);
         } else {
             await (api as any).updateProfesionalConfig(data.email, payload);
         }
@@ -751,6 +775,9 @@ export default function GestionProfesionalesModal({ onClose }: GestionProfesiona
                         <div className="p-3 border-t border-slate-200">
                             {deleteError && (
                                 <p className="text-xs text-red-600 mb-2 text-center">{deleteError}</p>
+                            )}
+                            {saveMessage && (
+                                <p className="text-xs text-green-700 bg-green-50 rounded p-2 mb-2">{saveMessage}</p>
                             )}
                             <p className="text-xs text-center text-slate-400">
                                 {profesionales.length} profesional{profesionales.length !== 1 ? 'es' : ''} registrado{profesionales.length !== 1 ? 's' : ''}

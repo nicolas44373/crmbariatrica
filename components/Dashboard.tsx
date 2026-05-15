@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext, useCallback, useRef, useMemo } from 'react';
-import { PacienteFiliatorio, UserRole, ContactoCRM, ContactoTag, ContactoStatus, Priority, CrmHistoryEntry, Task, TaskStatus, PostOpStage, Folder, FolderTrackingStatus, MessageTemplate, CrmSimpleProfessionals, ChecklistItemStatus, LostReason, ProspectoCanalOrigen, ProspectoEstadoSeguimiento, TurnoConPaciente, ConfiguracionGeneral, Turno, DiaSemana, EstadoTurnoDia, TurnoDiario, Profesional } from '../types';
+import { PacienteFiliatorio, UserRole, ContactoCRM, ContactoTag, ContactoStatus, Priority, CrmHistoryEntry, Task, TaskStatus, TaskHistoryEntry, PostOpStage, Folder, FolderTrackingStatus, MessageTemplate, CrmSimpleProfessionals, ChecklistItemStatus, LostReason, ProspectoCanalOrigen, ProspectoEstadoSeguimiento, TurnoConPaciente, ConfiguracionGeneral, Turno, DiaSemana, EstadoTurnoDia, TurnoDiario, Profesional } from '../types';
 import { api } from '../services/mockApi';
 import { AuthContext } from '../App';
 import { ETIQUETAS_FLUJO, normalizeString, CANALES_ORIGEN_LIST, ESTADOS_SEGUIMIENTO_LIST, ESTADO_TURNO_MAP } from '../constants';
@@ -231,26 +231,58 @@ const WhatsAppModal = ({ onClose, patient, templates }: {
                     )}
 
                     {/* PLANTILLAS */}
-                    {activeTab === 'plantillas' && (
-                        <div className="p-4 space-y-3">
-                            {templates.length === 0 ? (
-                                <div className="text-center py-8 text-slate-400 text-sm">
-                                    <p>No hay plantillas guardadas.</p>
-                                    <p className="mt-1">Creá plantillas desde "Gestionar Plantillas".</p>
-                                </div>
-                            ) : (
-                                templates.map(t => (
-                                    <div key={t.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200 hover:border-green-300 hover:bg-green-50 cursor-pointer transition-colors" onClick={() => handleSelectTemplate(t)}>
-                                        <div className="flex items-center justify-between mb-1">
-                                            <p className="text-sm font-semibold text-slate-700">{t.name}</p>
-                                            <span className="text-xs text-green-700 font-medium">Usar →</span>
-                                        </div>
-                                        <p className="text-xs text-slate-500 line-clamp-2">{resolveTemplate(t.text)}</p>
+                    {activeTab === 'plantillas' && (() => {
+                        // Determine patient category for smart ordering
+                        const isProspect = !patient.isPatient;
+                        const isOperated = patient.tag === ContactoTag.POSBARIATRICO;
+                        const primaryCategory = isProspect ? 'prospectos' : isOperated ? 'operados' : 'no-operados';
+                        const categoryLabels: Record<string, string> = {
+                            prospectos: 'Prospectos',
+                            'no-operados': 'No Operados',
+                            operados: 'Operados',
+                            todos: 'General',
+                        };
+                        // Group: primary category first, then 'todos', then rest
+                        const grouped: Record<string, MessageTemplate[]> = {};
+                        templates.forEach(t => {
+                            const cat = t.category ?? 'todos';
+                            if (!grouped[cat]) grouped[cat] = [];
+                            grouped[cat].push(t);
+                        });
+                        const orderedCats = [
+                            primaryCategory,
+                            'todos',
+                            ...Object.keys(grouped).filter(c => c !== primaryCategory && c !== 'todos'),
+                        ].filter(c => grouped[c]?.length > 0);
+
+                        return (
+                            <div className="p-4 space-y-4">
+                                {templates.length === 0 ? (
+                                    <div className="text-center py-8 text-slate-400 text-sm">
+                                        <p>No hay plantillas guardadas.</p>
+                                        <p className="mt-1">Creá plantillas desde "Gestionar Plantillas".</p>
                                     </div>
-                                ))
-                            )}
-                        </div>
-                    )}
+                                ) : orderedCats.map(cat => (
+                                    <div key={cat}>
+                                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+                                            {cat === primaryCategory ? `★ ${categoryLabels[cat] ?? cat}` : categoryLabels[cat] ?? cat}
+                                        </p>
+                                        <div className="space-y-2">
+                                            {(grouped[cat] ?? []).map(t => (
+                                                <div key={t.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200 hover:border-green-300 hover:bg-green-50 cursor-pointer transition-colors" onClick={() => handleSelectTemplate(t)}>
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <p className="text-sm font-semibold text-slate-700">{t.name}</p>
+                                                        <span className="text-xs text-green-700 font-medium">Usar →</span>
+                                                    </div>
+                                                    <p className="text-xs text-slate-500 line-clamp-2">{resolveTemplate(t.text)}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        );
+                    })()}
 
                     {/* GENERAR CON IA */}
                     {activeTab === 'ia' && (
@@ -416,6 +448,59 @@ const EmailModal = ({ onClose }: { onClose: () => void; }) => (
     </div>
 );
 
+const TASK_ACTION_LABELS: Record<string, { label: string; color: string }> = {
+    creada:    { label: 'Tarea creada',    color: 'bg-blue-100 text-blue-700' },
+    realizada: { label: 'Tarea realizada', color: 'bg-green-100 text-green-700' },
+    pospuesta: { label: 'Tarea pospuesta', color: 'bg-amber-100 text-amber-700' },
+    reabierta: { label: 'Tarea reabierta', color: 'bg-slate-100 text-slate-700' },
+    modificada:{ label: 'Modificada',      color: 'bg-slate-100 text-slate-700' },
+};
+
+const TaskHistoryTimeline = ({ task }: { task: Task }) => {
+    const [open, setOpen] = useState(false);
+
+    // Build a timeline from known timestamps + any stored history
+    const timeline: { date: string; action: string; note?: string }[] = [];
+    if (task.createdAt) timeline.push({ date: task.createdAt, action: 'creada' });
+
+    (task.history ?? []).forEach(h => {
+        if (h.action !== 'creada') timeline.push({ date: h.date, action: h.action, note: h.note });
+    });
+
+    if (task.postponedAt) {
+        const alreadyHasPostponed = (task.history ?? []).some(h => h.action === 'pospuesta');
+        if (!alreadyHasPostponed) timeline.push({ date: task.postponedAt, action: 'pospuesta' });
+    }
+    if (task.completedAt && task.status === TaskStatus.HECHO) {
+        const alreadyHasDone = (task.history ?? []).some(h => h.action === 'realizada');
+        if (!alreadyHasDone) timeline.push({ date: task.completedAt, action: 'realizada' });
+    }
+
+    timeline.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    return (
+        <div className="mt-1">
+            <button onClick={() => setOpen(o => !o)} className="text-xs text-indigo-600 hover:underline">
+                {open ? '▲ Ocultar historial' : `▼ Ver historial (${timeline.length})`}
+            </button>
+            {open && (
+                <ol className="mt-2 ml-2 border-l-2 border-slate-200 space-y-2 pl-3">
+                    {timeline.map((e, i) => {
+                        const cfg = TASK_ACTION_LABELS[e.action] ?? { label: e.action, color: 'bg-slate-100 text-slate-700' };
+                        return (
+                            <li key={i} className="flex items-start gap-2 text-xs">
+                                <span className={`mt-0.5 px-1.5 py-0.5 rounded text-xs font-medium whitespace-nowrap ${cfg.color}`}>{cfg.label}</span>
+                                <span className="text-slate-500">{new Date(e.date).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                                {e.note && <span className="text-slate-400 truncate">{e.note}</span>}
+                            </li>
+                        );
+                    })}
+                </ol>
+            )}
+        </div>
+    );
+};
+
 const TasksModal = ({ onClose, patient, tasks, onUpdate, onAdd, profesionales }: { onClose: () => void; patient: ContactoCRM | null; tasks: Task[]; onUpdate: (id: string, updates: Partial<Task>) => void; onAdd: (task: Task) => void; profesionales: { nombre: string; email: string }[]; }) => {
     const [newTask, setNewTask] = useState('');
     const [newDueDate, setNewDueDate] = useState('');
@@ -423,7 +508,7 @@ const TasksModal = ({ onClose, patient, tasks, onUpdate, onAdd, profesionales }:
 
     if (!patient) return null;
 
-    // [FIX 5c] Prospects (non-patient) can't be linked to tasks via DB FK — show an info message
+    // Prospects can't be linked to tasks via DB FK
     if (!patient.isPatient) {
         return (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -445,6 +530,8 @@ const TasksModal = ({ onClose, patient, tasks, onUpdate, onAdd, profesionales }:
 
     const handleAddTask = () => {
         if (!newTask || !newDueDate) return;
+        const now = new Date().toISOString();
+        const histEntry: TaskHistoryEntry = { id: `h-${Date.now()}`, date: now, action: 'creada' };
         const task: Task = {
             id: `task-${Date.now()}`,
             patientId: patient.id,
@@ -452,9 +539,10 @@ const TasksModal = ({ onClose, patient, tasks, onUpdate, onAdd, profesionales }:
             description: newTask,
             dueDate: newDueDate,
             status: TaskStatus.PENDIENTE,
-            createdAt: new Date().toISOString(),
+            createdAt: now,
             completedAt: null,
             assigneeEmail: newAssignee || undefined,
+            history: [histEntry],
         };
         onAdd(task);
         setNewTask('');
@@ -463,31 +551,65 @@ const TasksModal = ({ onClose, patient, tasks, onUpdate, onAdd, profesionales }:
     };
 
     const handleStatusChange = (task: Task) => {
-        const newStatus = task.status === TaskStatus.PENDIENTE ? TaskStatus.HECHO : TaskStatus.PENDIENTE;
-        onUpdate(task.id, { status: newStatus, completedAt: newStatus === TaskStatus.HECHO ? new Date().toISOString() : null });
+        const now = new Date().toISOString();
+        if (task.status === TaskStatus.PENDIENTE) {
+            const histEntry: TaskHistoryEntry = { id: `h-${Date.now()}`, date: now, action: 'realizada' };
+            onUpdate(task.id, { status: TaskStatus.HECHO, completedAt: now, history: [...(task.history ?? []), histEntry] });
+        } else if (task.status === TaskStatus.HECHO) {
+            const histEntry: TaskHistoryEntry = { id: `h-${Date.now()}`, date: now, action: 'reabierta' };
+            onUpdate(task.id, { status: TaskStatus.PENDIENTE, completedAt: null, history: [...(task.history ?? []), histEntry] });
+        }
+    };
+
+    const handlePostpone = (task: Task) => {
+        const now = new Date().toISOString();
+        const histEntry: TaskHistoryEntry = { id: `h-${Date.now()}`, date: now, action: 'pospuesta' };
+        onUpdate(task.id, { status: TaskStatus.POSPUESTO, postponedAt: now, history: [...(task.history ?? []), histEntry] });
+    };
+
+    const STATUS_BADGE: Record<TaskStatus, string> = {
+        [TaskStatus.PENDIENTE]: 'bg-amber-100 text-amber-700',
+        [TaskStatus.HECHO]:     'bg-green-100 text-green-700',
+        [TaskStatus.POSPUESTO]: 'bg-slate-100 text-slate-600',
     };
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl">
+            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
                 <h2 className="text-xl font-bold text-slate-800 mb-2">Tareas para {patient.firstName} {patient.lastName}</h2>
                 <div className="space-y-4 mt-4">
-                    <div className="max-h-60 overflow-y-auto pr-2 space-y-3">
+                    <div className="space-y-3">
                         {patientTasks.length > 0 ? patientTasks.map(task => (
-                            <div key={task.id} className="flex items-center justify-between p-2 bg-slate-50 rounded-md">
-                                <div className="flex items-center">
-                                    <input type="checkbox" checked={task.status === TaskStatus.HECHO} onChange={() => handleStatusChange(task)} className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                                    <div className="ml-3">
-                                        <p className={`text-sm font-medium ${task.status === TaskStatus.HECHO ? 'text-slate-500 line-through' : 'text-slate-900'}`}>{task.description}</p>
-                                        <p className="text-xs text-slate-500">Vence: {task.dueDate}</p>
+                            <div key={task.id} className={`p-3 rounded-lg border ${task.status === TaskStatus.HECHO ? 'bg-green-50 border-green-200' : task.status === TaskStatus.POSPUESTO ? 'bg-slate-50 border-slate-200' : 'bg-white border-slate-200'}`}>
+                                <div className="flex items-start justify-between gap-2">
+                                    <div className="flex items-start gap-2 flex-grow">
+                                        <input
+                                            type="checkbox"
+                                            checked={task.status === TaskStatus.HECHO}
+                                            onChange={() => handleStatusChange(task)}
+                                            className="h-4 w-4 mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 flex-shrink-0"
+                                        />
+                                        <div className="flex-grow">
+                                            <p className={`text-sm font-medium ${task.status === TaskStatus.HECHO ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{task.description}</p>
+                                            <div className="flex flex-wrap items-center gap-2 mt-1">
+                                                <span className="text-xs text-slate-500">Vence: {task.dueDate}</span>
+                                                <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${STATUS_BADGE[task.status]}`}>{task.status}</span>
+                                                {task.assigneeEmail && <span className="text-xs text-slate-400">→ {task.assigneeEmail}</span>}
+                                            </div>
+                                            <TaskHistoryTimeline task={task} />
+                                        </div>
                                     </div>
+                                    {task.status === TaskStatus.PENDIENTE && (
+                                        <button onClick={() => handlePostpone(task)} title="Posponer" className="text-xs text-amber-600 hover:text-amber-800 flex-shrink-0 mt-0.5">Posponer</button>
+                                    )}
                                 </div>
                             </div>
-                        )) : <p className="text-sm text-center text-slate-500">No hay tareas.</p>}
+                        )) : <p className="text-sm text-center text-slate-500 py-4">No hay tareas para este paciente.</p>}
                     </div>
                     <div className="border-t pt-4 space-y-2">
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Nueva tarea</p>
                         <div className="flex gap-2">
-                            <input type="text" value={newTask} onChange={e => setNewTask(e.target.value)} placeholder="Nueva tarea..." className="flex-grow rounded-md border-slate-300 text-sm" />
+                            <input type="text" value={newTask} onChange={e => setNewTask(e.target.value)} placeholder="Descripción de la tarea..." className="flex-grow rounded-md border-slate-300 text-sm" />
                             <input type="date" value={newDueDate} onChange={e => setNewDueDate(e.target.value)} className="rounded-md border-slate-300 text-sm" />
                         </div>
                         <div className="flex gap-2">
@@ -685,7 +807,7 @@ const orden: FolderTrackingStatus[] = [
     );
 };
 
-const FoldersDashboardModal = ({ onClose, folders, onSelectPatient, contactos }: { onClose: () => void; folders: Folder[]; onSelectPatient: (patientId: string) => void; contactos: ContactoCRM[]; }) => {
+const FoldersDashboardModal = ({ onClose, folders, onOpenFolder, contactos }: { onClose: () => void; folders: Folder[]; onOpenFolder: (patientId: string) => void; contactos: ContactoCRM[]; }) => {
     const [osFilter, setOsFilter] = useState('');
     const [stateFilter, setStateFilter] = useState<FolderTrackingStatus | ''>('');
 
@@ -732,7 +854,7 @@ const FoldersDashboardModal = ({ onClose, folders, onSelectPatient, contactos }:
                             ) : filtered.map(folder => {
                                 const contacto = contactos.find(c => c.id === folder.patientId);
                                 return (
-                                    <tr key={folder.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => onSelectPatient(folder.patientId)}>
+                                    <tr key={folder.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => onOpenFolder(folder.patientId)}>
                                         <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-slate-800">{contacto ? `${contacto.lastName}, ${contacto.firstName}` : folder.patientId}</td>
                                         <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{contacto?.socialInsurance || '-'}</td>
                                         <td className="px-4 py-3 whitespace-nowrap text-sm">
@@ -860,11 +982,178 @@ const NewProspectModal = ({ onClose, onSuccess }: { onClose: () => void, onSucce
 };
 
 
+// ─── ESTADÍSTICAS MODAL ───────────────────────────────────────────────────────
+
+const EstadisticasModal = ({ onClose }: { onClose: () => void }) => {
+    const [stats, setStats] = useState<any>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        (api as any).getEstadisticas()
+            .then(setStats)
+            .catch((e: any) => setError(e.message || 'Error al cargar estadísticas'))
+            .finally(() => setIsLoading(false));
+    }, []);
+
+    const etapaLabels: Record<string, string> = {
+        PROSPECTO: 'Prospecto', PRECIRUGICO: 'Pre-Quirúrgico', POSBARIATRICO: 'Post-Bariátrico',
+        PERDIDO: 'Perdido', ALTA: 'Alta',
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+                <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-indigo-700 to-indigo-600">
+                    <div>
+                        <h2 className="text-lg font-bold text-white">Estadísticas Generales</h2>
+                        <p className="text-xs text-indigo-200 mt-0.5">Solo visible para administradores</p>
+                    </div>
+                    <button onClick={onClose} className="text-indigo-200 hover:text-white text-2xl leading-none">&times;</button>
+                </div>
+
+                <div className="flex-grow overflow-y-auto p-6">
+                    {isLoading && <div className="text-center py-12 text-slate-500">Cargando estadísticas...</div>}
+                    {error && <div className="text-center py-12 text-red-500">{error}</div>}
+                    {stats && !isLoading && (
+                        <div className="space-y-6">
+                            {/* KPIs principales */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                {[
+                                    { label: 'Total Pacientes', value: stats.totalPacientes, color: 'bg-blue-50 text-blue-700 border-blue-200' },
+                                    { label: 'Prospectos activos', value: stats.totalProspectos, color: 'bg-purple-50 text-purple-700 border-purple-200' },
+                                    { label: 'Nuevos últimos 30 días', value: stats.nuevosUltimos30dias, color: 'bg-green-50 text-green-700 border-green-200' },
+                                    { label: 'Turnos registrados', value: Object.values(stats.turnosPorEstado as Record<string,number>).reduce((a, b) => a + b, 0), color: 'bg-amber-50 text-amber-700 border-amber-200' },
+                                ].map(kpi => (
+                                    <div key={kpi.label} className={`rounded-xl border p-4 text-center ${kpi.color}`}>
+                                        <p className="text-3xl font-bold">{kpi.value}</p>
+                                        <p className="text-xs font-medium mt-1">{kpi.label}</p>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* Pacientes por etapa */}
+                                <div className="bg-white rounded-lg border p-4">
+                                    <h3 className="font-semibold text-slate-700 mb-3">Pacientes por etapa</h3>
+                                    <div className="space-y-2">
+                                        {Object.entries(stats.pacientesPorEtapa as Record<string,number>).sort(([,a],[,b]) => b-a).map(([etapa, count]) => (
+                                            <div key={etapa} className="flex items-center gap-2">
+                                                <div className="flex-grow bg-slate-100 rounded-full h-5 overflow-hidden">
+                                                    <div className="bg-indigo-500 h-full rounded-full" style={{ width: `${Math.min(100, (count / Math.max(...Object.values(stats.pacientesPorEtapa as Record<string,number>))) * 100)}%` }} />
+                                                </div>
+                                                <span className="text-xs text-slate-600 w-32 truncate">{etapaLabels[etapa] ?? etapa}</span>
+                                                <span className="text-xs font-bold text-slate-800 w-6 text-right">{count}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Turnos por estado */}
+                                <div className="bg-white rounded-lg border p-4">
+                                    <h3 className="font-semibold text-slate-700 mb-3">Turnos por estado</h3>
+                                    <div className="space-y-2">
+                                        {Object.entries(stats.turnosPorEstado as Record<string,number>).sort(([,a],[,b]) => b-a).map(([estado, count]) => {
+                                            const colorMap: Record<string,string> = { ATENDIDO: 'bg-green-500', CANCELADO: 'bg-red-500', AUSENTE: 'bg-amber-500', AGENDADO: 'bg-blue-500', CONFIRMADO: 'bg-indigo-500', EN_ESPERA: 'bg-purple-500' };
+                                            return (
+                                                <div key={estado} className="flex items-center gap-2">
+                                                    <div className="flex-grow bg-slate-100 rounded-full h-5 overflow-hidden">
+                                                        <div className={`${colorMap[estado] ?? 'bg-slate-400'} h-full rounded-full`} style={{ width: `${Math.min(100, (count / Math.max(...Object.values(stats.turnosPorEstado as Record<string,number>))) * 100)}%` }} />
+                                                    </div>
+                                                    <span className="text-xs text-slate-600 w-32 truncate">{estado}</span>
+                                                    <span className="text-xs font-bold text-slate-800 w-6 text-right">{count}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* Obra social top 10 */}
+                                <div className="bg-white rounded-lg border p-4">
+                                    <h3 className="font-semibold text-slate-700 mb-3">Pacientes por obra social (top 10)</h3>
+                                    <div className="space-y-2">
+                                        {Object.entries(stats.pacientesPorObraSocial as Record<string,number>).sort(([,a],[,b]) => b-a).slice(0,10).map(([os, count]) => (
+                                            <div key={os} className="flex items-center justify-between text-xs">
+                                                <span className="text-slate-600 truncate flex-grow">{os}</span>
+                                                <span className="font-bold text-slate-800 ml-2 flex-shrink-0">{count}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Por profesional */}
+                                <div className="bg-white rounded-lg border p-4">
+                                    <h3 className="font-semibold text-slate-700 mb-3">Turnos por profesional</h3>
+                                    {stats.turnosPorProfesional.length === 0
+                                        ? <p className="text-xs text-slate-400">Sin datos de turnos.</p>
+                                        : (
+                                            <table className="w-full text-xs">
+                                                <thead><tr className="text-slate-400 border-b"><th className="text-left pb-1">Profesional</th><th className="text-right pb-1">Atend.</th><th className="text-right pb-1">Cancel.</th><th className="text-right pb-1">Ausente</th></tr></thead>
+                                                <tbody>
+                                                    {stats.turnosPorProfesional.map((p: any) => (
+                                                        <tr key={p.profesional} className="border-b border-slate-50">
+                                                            <td className="py-1 text-slate-700 truncate max-w-[120px]">{p.profesional}</td>
+                                                            <td className="py-1 text-right text-green-600 font-semibold">{p.atendidos}</td>
+                                                            <td className="py-1 text-right text-red-500">{p.cancelados}</td>
+                                                            <td className="py-1 text-right text-amber-500">{p.ausentes}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        )
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ─── BACKUP BUTTON ────────────────────────────────────────────────────────────
+
+const BackupButton = () => {
+    const [isExporting, setIsExporting] = useState(false);
+
+    const handleExport = async () => {
+        setIsExporting(true);
+        try {
+            const backup = await (api as any).exportBackup();
+            const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `plenus_backup_${new Date().toISOString().slice(0, 10)}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (e: any) {
+            alert('Error al generar el backup: ' + (e.message || 'Error desconocido'));
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    return (
+        <button
+            onClick={handleExport}
+            disabled={isExporting}
+            className="flex items-center text-sm font-medium text-emerald-700 bg-emerald-50 px-3 py-2 rounded-md shadow-sm border border-emerald-200 hover:bg-emerald-100 disabled:opacity-60"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 mr-1">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            </svg>
+            {isExporting ? 'Exportando...' : 'Backup'}
+        </button>
+    );
+};
+
 // ─── CRM DASHBOARD ────────────────────────────────────────────────────────────
 
 // [FIX 1] Added 'turn-history' to modal type union
 type CrmActiveView = 'prospects' | 'not-operated' | 'operated' | 'tasks' | 'history';
-type ActiveModalType = 'whatsapp' | 'whatsapp-templates' | 'email' | 'tasks' | 'history' | 'turn-history' | 'folder' | 'folders-dashboard' | 'settings' | 'schedule-surgery' | 'surgery-details' | 'lost' | 'new-prospect' | 'new-patient' | 'convert-prospect' | null;
+type ActiveModalType = 'whatsapp' | 'whatsapp-templates' | 'email' | 'tasks' | 'history' | 'turn-history' | 'folder' | 'folders-dashboard' | 'settings' | 'schedule-surgery' | 'surgery-details' | 'lost' | 'new-prospect' | 'new-patient' | 'convert-prospect' | 'estadisticas' | null;
 
 interface CrmDashboardProps {
     onSelectPatient: (patient: PacienteFiliatorio) => void;
@@ -883,6 +1172,7 @@ const getContactoCalculatedStatus = (contacto: ContactoCRM, inactivityThresholdD
 
 export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardProps) {
     const authContext = useContext(AuthContext);
+    const user = authContext!.user!;
     const [activeView, setActiveView] = useState<CrmActiveView>('not-operated');
     const [contactos, setContactos] = useState<ContactoCRM[]>([]);
     const [history, setHistory] = useState<CrmHistoryEntry[]>([]);
@@ -1073,10 +1363,14 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
             {/* [FIX 4] Turn history modal */}
             {activeModal === 'turn-history' && <TurnHistoryModal onClose={() => setActiveModal(null)} contacto={selectedContacto} />}
             {activeModal === 'folder' && selectedContacto && <FolderModal patient={selectedContacto} folder={folders.find(f => f.patientId === selectedContacto.id) || null} professionals={professionals} onSave={handleSaveFolders} onClose={() => setActiveModal(null)} />}
-            {activeModal === 'folders-dashboard' && <FoldersDashboardModal onClose={() => setActiveModal(null)} folders={folders} onSelectPatient={(patientId) => {
-                const patient = contactos.find(c => c.id === patientId);
-                if (patient) api.getPacienteCompleto(patient.id, '').then(p => onSelectPatient(p.filiatorio));
-                setActiveModal(null);
+            {activeModal === 'folders-dashboard' && <FoldersDashboardModal onClose={() => setActiveModal(null)} folders={folders} onOpenFolder={(patientId) => {
+                const contacto = contactos.find(c => c.id === patientId);
+                if (contacto) {
+                    setSelectedContacto(contacto);
+                    setActiveModal('folder');
+                } else {
+                    setActiveModal(null);
+                }
             }} contactos={contactos} />}
             {activeModal === 'settings' && <SettingsCrmModal onClose={() => setActiveModal(null)} professionals={professionals} templates={messageTemplates} onSaveProfessionals={handleSaveProfessionals} onSaveTemplates={handleSaveTemplates} />}
             {activeModal === 'schedule-surgery' && <ScheduleSurgeryModal onClose={() => setActiveModal(null)} patient={selectedContacto} onSchedule={() => {}} />}
@@ -1084,6 +1378,7 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
             {activeModal === 'lost' && <MarkAsLostModal onClose={() => setActiveModal(null)} patient={selectedContacto} onConfirm={handleMarkAsLost} />}
             {activeModal === 'new-prospect' && <NewProspectModal onClose={() => setActiveModal(null)} onSuccess={() => { fetchData(); setActiveModal(null); }} />}
             {activeModal === 'new-patient' && <NewPatientModal onClose={() => setActiveModal(null)} onSuccess={() => { fetchData(); setActiveModal(null); setActiveView('not-operated'); }} />}
+            {activeModal === 'estadisticas' && <EstadisticasModal onClose={() => setActiveModal(null)} />}
             {activeModal === 'convert-prospect' && selectedContacto && (
     <NewPatientModal
         onClose={() => setActiveModal(null)}
@@ -1161,6 +1456,15 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
                     <button onClick={() => setActiveModal('folders-dashboard')} className="flex items-center text-sm font-medium text-slate-700 bg-white px-3 py-2 rounded-md shadow-sm border hover:bg-slate-50"><FolderIcon />Ver Carpetas</button>
                     <button onClick={() => { setSelectedContacto(null); setActiveModal('history'); }} className="flex items-center text-sm font-medium text-slate-700 bg-white px-3 py-2 rounded-md shadow-sm border hover:bg-slate-50"><HistoryIcon />Historial Global</button>
                     <button onClick={() => setActiveModal('whatsapp-templates')} className="flex items-center text-sm font-medium text-slate-700 bg-white px-3 py-2 rounded-md shadow-sm border hover:bg-slate-50"><ClipboardCheckIcon />Gestionar Plantillas</button>
+                    {(user.rol === UserRole.SUPERADMIN || user.rol === UserRole.ADMINISTRATIVO) && (
+                        <>
+                            <button onClick={() => setActiveModal('estadisticas')} className="flex items-center text-sm font-medium text-indigo-700 bg-indigo-50 px-3 py-2 rounded-md shadow-sm border border-indigo-200 hover:bg-indigo-100">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 mr-1"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" /></svg>
+                                Estadísticas
+                            </button>
+                            <BackupButton />
+                        </>
+                    )}
                 </div>
             </div>
 

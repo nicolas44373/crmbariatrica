@@ -139,25 +139,75 @@ export const INITIAL_CRM_PROFESSIONALS: CrmSimpleProfessionals = {
 };
 
 export const INITIAL_MESSAGE_TEMPLATES: MessageTemplate[] = [
-  { 
-    id: 'recordatorioCita', 
-    name: 'Recordatorio Cita', 
-    text: "Hola [Nombre], te recordamos tu consulta el [Proxima Cita] a las [Hora Cita] con [Profesional]. ¡Te esperamos!" 
+  // ── Prospectos ──────────────────────────────────────────────────────────────
+  {
+    id: 'bienvenidaProspecto',
+    name: 'Bienvenida Prospecto',
+    category: 'prospectos',
+    text: "Hola [Nombre], gracias por comunicarte con nuestro equipo de cirugía bariátrica. Nos pondremos en contacto a la brevedad para responder tus consultas. ¡Bienvenido/a!"
   },
-  { 
-    id: 'seguimientoPostOp', 
-    name: 'Seguimiento Post-Op', 
-    text: "Hola [Nombre], ¿cómo has seguido después de tu cirugía? Estamos aquí para cualquier consulta que tengas." 
+  {
+    id: 'infoConsultaInicial',
+    name: 'Info Consulta Inicial',
+    category: 'prospectos',
+    text: "Hola [Nombre], te contamos que el primer paso es una consulta de evaluación con nuestro equipo. ¿Querés que te orientemos sobre turnos disponibles?"
   },
-  { 
-    id: 'consultaResultados', 
-    name: 'Consulta Resultados', 
-    text: "Hola [Nombre], ya tenemos los resultados de tus últimos estudios. Por favor, contáctanos para agendar una consulta." 
+  {
+    id: 'seguimientoSinRespuesta',
+    name: 'Seguimiento sin respuesta',
+    category: 'prospectos',
+    text: "Hola [Nombre], hace unos días nos contactaste y queremos saber si podemos ayudarte. Estamos disponibles para responder tus dudas sobre el proceso bariátrico."
   },
-  { 
-    id: 'saludoGeneral', 
-    name: 'Saludo General', 
-    text: "Hola [Nombre], te saludamos del programa de cirugía bariátrica. ¿Cómo estás? Queremos saber de ti." 
+  // ── No Operados ──────────────────────────────────────────────────────────────
+  {
+    id: 'recordatorioCita',
+    name: 'Recordatorio Cita',
+    category: 'no-operados',
+    text: "Hola [Nombre], te recordamos tu consulta el [Proxima Cita] a las [Hora Cita] con [Profesional]. ¡Te esperamos!"
+  },
+  {
+    id: 'consultaResultados',
+    name: 'Consulta Resultados',
+    category: 'no-operados',
+    text: "Hola [Nombre], ya tenemos los resultados de tus últimos estudios. Por favor, contáctanos para agendar una consulta."
+  },
+  {
+    id: 'recordatorioEstudios',
+    name: 'Recordatorio Estudios',
+    category: 'no-operados',
+    text: "Hola [Nombre], queremos recordarte que tenés estudios pendientes para completar tu evaluación pre-quirúrgica. ¡Cualquier duda, escribinos!"
+  },
+  {
+    id: 'infoCarpeta',
+    name: 'Info Carpeta Obra Social',
+    category: 'no-operados',
+    text: "Hola [Nombre], tu carpeta para la obra social ya está lista. Te coordinamos la entrega cuando quieras. ¿Cuándo podés venir a buscarla?"
+  },
+  // ── Operados ─────────────────────────────────────────────────────────────────
+  {
+    id: 'seguimientoPostOp',
+    name: 'Seguimiento Post-Op',
+    category: 'operados',
+    text: "Hola [Nombre], ¿cómo has seguido después de tu cirugía? Estamos aquí para cualquier consulta que tengas."
+  },
+  {
+    id: 'recordatorioCitaPostOp',
+    name: 'Recordatorio Cita Post-Op',
+    category: 'operados',
+    text: "Hola [Nombre], te recordamos tu control post-operatorio el [Proxima Cita] a las [Hora Cita] con [Profesional]. Es muy importante no faltar. ¡Te esperamos!"
+  },
+  {
+    id: 'controlAnual',
+    name: 'Control Anual',
+    category: 'operados',
+    text: "Hola [Nombre], es tiempo de tu control anual post-cirugía. Recordá que el seguimiento es clave para mantener tus resultados. ¿Agendamos tu turno?"
+  },
+  // ── Todos ────────────────────────────────────────────────────────────────────
+  {
+    id: 'saludoGeneral',
+    name: 'Saludo General',
+    category: 'todos',
+    text: "Hola [Nombre], te saludamos del programa de cirugía bariátrica. ¿Cómo estás? Queremos saber de ti."
   }
 ];
 

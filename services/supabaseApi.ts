@@ -410,6 +410,64 @@ async function createProfesional(
   return mapProfesional(result);
 }
 
+async function createProfesionalWithAuth(
+  data: {
+    email: string;
+    nombres: string;
+    apellido: string;
+    rol: UserRole;
+    especialidad: string;
+    matricula: string;
+    telefono: string;
+    activo: boolean;
+    config_turnos: object;
+  },
+  password: string
+): Promise<{ profesional: Profesional; authCreated: boolean; message: string }> {
+  // 1. Create the auth account
+  const { data: authData, error: authError } = await supabase.auth.signUp({
+    email: data.email.trim().toLowerCase(),
+    password,
+    options: { data: { nombre: `${data.nombres} ${data.apellido}` } },
+  });
+
+  let authCreated = false;
+  let message = '';
+
+  if (authError) {
+    if (authError.message.includes('already registered')) {
+      message = 'Cuenta de acceso ya existía — solo se actualizaron los datos del profesional.';
+    } else {
+      throw new Error(`Error al crear cuenta de acceso: ${authError.message}`);
+    }
+  } else {
+    authCreated = true;
+    message = authData.user?.identities?.length === 0
+      ? 'Email ya registrado. Los datos del profesional fueron actualizados.'
+      : 'Cuenta de acceso creada. Si el email requiere confirmación, el profesional recibirá un correo para activarla.';
+  }
+
+  // 2. Insert into profesionales table (upsert in case auth already existed)
+  const { data: result, error: profError } = await supabase
+    .from('profesionales')
+    .upsert({
+      email:         data.email.trim().toLowerCase(),
+      nombres:       data.nombres,
+      apellido:      data.apellido,
+      rol:           data.rol,
+      activo:        data.activo,
+      especialidad:  data.especialidad  || null,
+      matricula:     data.matricula     || null,
+      telefono:      data.telefono      || null,
+      config_turnos: data.config_turnos,
+    }, { onConflict: 'email' })
+    .select()
+    .single();
+
+  if (profError) throw new Error(profError.message);
+  return { profesional: mapProfesional(result), authCreated, message };
+}
+
 // Mantener upsertProfesional por compatibilidad con código existente
 async function upsertProfesional(
   data: {
@@ -675,7 +733,7 @@ async function createPaciente(
   userRole: UserRole,
   prospectoId?: string
 ): Promise<PacienteFiliatorio> {
-  if (!canAdmin(userRole)) throw new Error('Permiso denegado para crear pacientes.');
+  if (!canAny(userRole)) throw new Error('Permiso denegado para crear pacientes.');
 
   const { data: profs } = await supabase.from('profesionales').select('*').eq('activo', true);
   const cirujano = (profs ?? []).find((p: any) => (p.especialidad ?? '').toLowerCase().includes('cirug'));
@@ -1194,12 +1252,14 @@ async function guardarInforme(
     return mapInforme(data);
   }
 
+  const now = new Date().toISOString();
   const { data, error } = await supabase.from('informes').insert({
     id_paciente:          informeData.idPaciente,
     autor_email:          informeData.emailProfesionalAutor,
     tipo_informe:         informeData.tipoInforme ?? 'Resumen Clínico',
     contenido:            informeData.contenido,
-    fecha_ultima_edicion: new Date().toISOString(),
+    fecha_creacion:       now,
+    fecha_ultima_edicion: now,
   }).select().single();
   if (error) handleSupabaseError(error);
   return mapInforme(data);
@@ -1335,22 +1395,81 @@ async function createProspecto(
 }
 
 async function getCrmHistory(): Promise<CrmHistoryEntry[]> {
-  const { data, error } = await supabase
-    .from('crm_contactos')
-    .select('id_contacto, apellido, nombres')
-    .order('id_contacto', { ascending: false })
-    .limit(100);
-  if (error) handleSupabaseError(error);
+  const entries: CrmHistoryEntry[] = [];
 
-  return (data ?? []).map((row: any, i: number): CrmHistoryEntry => ({
-    id: `hist-${i}`,
-    patientId: row.id_contacto,
-    patientName: `${row.apellido ?? ''}, ${row.nombres ?? ''}`,
-    actionType: 'Registro',
-    note: '',
-    date: new Date().toISOString(),
-    author: '',
-  }));
+  // 1. Contact registrations
+  const { data: contacts } = await supabase
+    .from('crm_contactos')
+    .select('id_contacto, fecha_ingreso, pacientes(apellido, nombres)')
+    .order('fecha_ingreso', { ascending: false })
+    .limit(100);
+
+  (contacts ?? []).forEach((row: any, i: number) => {
+    const nombre = row.pacientes
+      ? `${row.pacientes.apellido ?? ''}, ${row.pacientes.nombres ?? ''}`
+      : row.id_contacto;
+    entries.push({
+      id: `reg-${i}`,
+      patientId: row.id_contacto,
+      patientName: nombre,
+      actionType: 'Registro de contacto',
+      note: '',
+      date: row.fecha_ingreso ? new Date(row.fecha_ingreso).toISOString() : new Date().toISOString(),
+      author: '',
+    });
+  });
+
+  // 2. Task history (completed tasks)
+  const { data: tareas } = await supabase
+    .from('tareas')
+    .select('id_tarea, id_paciente, descripcion, estado, created_at, completed_at, asignado_a_email, pacientes(apellido, nombres)')
+    .order('created_at', { ascending: false })
+    .limit(200);
+
+  (tareas ?? []).forEach((row: any, i: number) => {
+    const nombre = row.pacientes
+      ? `${row.pacientes.apellido ?? ''}, ${row.pacientes.nombres ?? ''}`
+      : row.id_paciente;
+
+    entries.push({
+      id: `tarea-creada-${i}`,
+      patientId: row.id_paciente,
+      patientName: nombre,
+      actionType: 'Tarea creada',
+      note: row.descripcion ?? '',
+      date: row.created_at ?? new Date().toISOString(),
+      author: row.asignado_a_email ?? '',
+    });
+
+    if (row.completed_at && row.estado === TaskStatus.HECHO) {
+      entries.push({
+        id: `tarea-completada-${i}`,
+        patientId: row.id_paciente,
+        patientName: nombre,
+        actionType: 'Tarea completada',
+        note: row.descripcion ?? '',
+        date: row.completed_at,
+        author: row.asignado_a_email ?? '',
+      });
+    }
+
+    if (row.estado === TaskStatus.POSPUESTO) {
+      entries.push({
+        id: `tarea-pospuesta-${i}`,
+        patientId: row.id_paciente,
+        patientName: nombre,
+        actionType: 'Tarea pospuesta',
+        note: row.descripcion ?? '',
+        date: row.created_at ?? new Date().toISOString(),
+        author: row.asignado_a_email ?? '',
+      });
+    }
+  });
+
+  // Sort all entries descending by date
+  entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  return entries;
 }
 
 // ─── TAREAS ───────────────────────────────────────────────────────────────────
@@ -1563,6 +1682,110 @@ async function inviteUsuario(
   if (insertError) throw new Error('Error al crear el perfil: ' + insertError.message);
 }
 
+// ─── ESTADÍSTICAS ─────────────────────────────────────────────────────────────
+
+export interface EstadisticasGenerales {
+  pacientesPorEtapa: Record<string, number>;
+  pacientesPorObraSocial: Record<string, number>;
+  turnosPorEstado: Record<string, number>;
+  turnosPorProfesional: { profesional: string; atendidos: number; cancelados: number; ausentes: number }[];
+  totalPacientes: number;
+  totalProspectos: number;
+  nuevosUltimos30dias: number;
+}
+
+async function getEstadisticas(): Promise<EstadisticasGenerales> {
+  const [
+    { data: pacientes },
+    { data: turnos },
+    { data: crm },
+    { data: profs },
+  ] = await Promise.all([
+    supabase.from('pacientes').select('etiqueta_activa, obra_social, created_at'),
+    supabase.from('turnos').select('estado, profesional_email, fecha_turno'),
+    supabase.from('crm_contactos').select('is_patient, fecha_ingreso'),
+    supabase.from('profesionales').select('email, nombres, apellido'),
+  ]);
+
+  const profMap: Record<string, string> = {};
+  (profs ?? []).forEach((p: any) => { profMap[p.email] = `${p.apellido}, ${p.nombres}`; });
+
+  const pacientesPorEtapa: Record<string, number> = {};
+  const pacientesPorObraSocial: Record<string, number> = {};
+  let totalPacientes = 0;
+
+  (pacientes ?? []).forEach((p: any) => {
+    const etapa = p.etiqueta_activa ?? 'Sin etiqueta';
+    pacientesPorEtapa[etapa] = (pacientesPorEtapa[etapa] ?? 0) + 1;
+    const os = p.obra_social ?? 'Sin obra social';
+    pacientesPorObraSocial[os] = (pacientesPorObraSocial[os] ?? 0) + 1;
+    totalPacientes++;
+  });
+
+  const turnosPorEstado: Record<string, number> = {};
+  const profStats: Record<string, { atendidos: number; cancelados: number; ausentes: number }> = {};
+
+  (turnos ?? []).forEach((t: any) => {
+    turnosPorEstado[t.estado] = (turnosPorEstado[t.estado] ?? 0) + 1;
+    const email = t.profesional_email;
+    if (!profStats[email]) profStats[email] = { atendidos: 0, cancelados: 0, ausentes: 0 };
+    if (t.estado === EstadoTurnoDia.ATENDIDO) profStats[email].atendidos++;
+    if (t.estado === EstadoTurnoDia.CANCELADO) profStats[email].cancelados++;
+    if (t.estado === EstadoTurnoDia.AUSENTE) profStats[email].ausentes++;
+  });
+
+  const turnosPorProfesional = Object.entries(profStats).map(([email, s]) => ({
+    profesional: profMap[email] ?? email,
+    ...s,
+  })).sort((a, b) => b.atendidos - a.atendidos);
+
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  const totalProspectos = (crm ?? []).filter((c: any) => !c.is_patient).length;
+  const nuevosUltimos30dias = (crm ?? []).filter((c: any) => c.fecha_ingreso && new Date(c.fecha_ingreso) >= thirtyDaysAgo).length;
+
+  return {
+    pacientesPorEtapa,
+    pacientesPorObraSocial,
+    turnosPorEstado,
+    turnosPorProfesional,
+    totalPacientes,
+    totalProspectos,
+    nuevosUltimos30dias,
+  };
+}
+
+// ─── BACKUP ───────────────────────────────────────────────────────────────────
+
+async function exportBackup(): Promise<object> {
+  const [
+    { data: pacientes },
+    { data: turnos },
+    { data: crm },
+    { data: profesionales },
+    { data: evoluciones },
+    { data: informes },
+    { data: tareas },
+    { data: carpetas },
+  ] = await Promise.all([
+    supabase.from('pacientes').select('*'),
+    supabase.from('turnos').select('*'),
+    supabase.from('crm_contactos').select('*'),
+    supabase.from('profesionales').select('*'),
+    supabase.from('evoluciones').select('*'),
+    supabase.from('informes').select('*'),
+    supabase.from('tareas').select('*'),
+    supabase.from('carpetas_quirurgicas').select('*'),
+  ]);
+
+  return {
+    exportDate: new Date().toISOString(),
+    version: '1.0',
+    data: { pacientes, turnos, crm_contactos: crm, profesionales, evoluciones, informes, tareas, carpetas_quirurgicas: carpetas },
+  };
+}
+
 // ─── EXPORT ───────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -1577,6 +1800,7 @@ export const api = {
   getProfesionalesAdmin,
   updateProfesionalesAdmin,
   createProfesional,
+  createProfesionalWithAuth,
   upsertProfesional,
   updateProfesionalConfig,
   deleteProfesional,
@@ -1634,4 +1858,8 @@ export const api = {
   updateMessageTemplates,
   // IA
   generateWhatsAppMessage,
+  // Estadísticas
+  getEstadisticas,
+  // Backup
+  exportBackup,
 };

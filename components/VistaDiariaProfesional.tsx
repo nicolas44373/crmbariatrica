@@ -3,7 +3,7 @@ import { PacienteFiliatorio, TurnoDiario, EstadoTurnoDia, UserRole, Turno, Profe
 import { api } from '../services/mockApi';
 import { AuthContext } from '../App';
 import { ESTADO_TURNO_MAP, ETIQUETAS_FLUJO } from '../constants';
-import { format, isToday } from 'date-fns';
+import { format, isToday, isBefore, startOfDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 interface VistaDiariaProfesionalProps {
@@ -66,14 +66,37 @@ export default function VistaDiariaProfesional({ onSelectPatient, date }: VistaD
     const fetchData = useCallback(() => {
         setIsLoading(true);
         setError(null);
+        const isPastDay = isBefore(startOfDay(date), startOfDay(new Date()));
         api.getTurnosDiariosTodosProfesionales(date)
-            .then(allTurnos => {
-                const myTurnos = allTurnos.filter(t => t.profesionalEmail === user.email);
+            .then(async allTurnos => {
+                let myTurnos = allTurnos.filter(t => t.profesionalEmail === user.email);
+
+                // Auto-mark AUSENTE for past days with unresolved appointments
+                if (isPastDay) {
+                    const pendingIds = myTurnos
+                        .filter(t =>
+                            t.estado === EstadoTurnoDia.AGENDADO ||
+                            t.estado === EstadoTurnoDia.CONFIRMADO ||
+                            t.estado === EstadoTurnoDia.EN_ESPERA
+                        )
+                        .map(t => t.idTurno);
+
+                    if (pendingIds.length > 0) {
+                        await Promise.allSettled(
+                            pendingIds.map(id =>
+                                api.updateDetallesTurno(id, { estado: EstadoTurnoDia.AUSENTE }, user)
+                            )
+                        );
+                        // Reload after auto-marking
+                        const refreshed = await api.getTurnosDiariosTodosProfesionales(date);
+                        myTurnos = refreshed.filter(t => t.profesionalEmail === user.email);
+                    }
+                }
                 setTurnos(myTurnos);
             })
             .catch(() => setError(`No se pudieron cargar los turnos para el ${format(date, 'dd/MM/yyyy')}.`))
             .finally(() => setIsLoading(false));
-    }, [user.email, date]);
+    }, [user, date]);
 
     useEffect(() => {
         fetchData();

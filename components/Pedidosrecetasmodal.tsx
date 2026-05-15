@@ -302,9 +302,9 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
         const { filiatorio } = paciente;
         const itemsText = items
             .filter(i => i.descripcion.trim())
-            .map((item, idx) => `${idx + 1}. ${item.urgente ? '[URGENTE] ' : ''}${item.descripcion}${item.diagnostico ? ` — Dx: ${item.diagnostico}` : ''}`)
+            .map(item => `• ${item.urgente ? '[URGENTE] ' : ''}${item.descripcion}${item.indicaciones ? ` (${item.indicaciones})` : ''}`)
             .join('\n');
-        const text = `*PEDIDO DE ESTUDIOS*\n\nPaciente: ${filiatorio.apellido}, ${filiatorio.nombres}\nDNI: ${filiatorio.dni}\n${diagnostico ? `Diagnóstico: ${diagnostico}\n` : ''}\n*Se solicita:*\n${itemsText}\n\n_${firmaNombre}${showSignature ? ` - ${firmaMatricula}` : ''}_`;
+        const text = `*PEDIDO DE ESTUDIOS*\n\nPaciente: ${filiatorio.apellido}, ${filiatorio.nombres}\nDNI: ${filiatorio.dni}\n\n*Se solicita:*\n${itemsText}${diagnostico ? `\n\n_Dx: ${diagnostico}_` : ''}\n\n_${firmaNombre}${showSignature ? ` - ${firmaMatricula}` : ''}_`;
         const phone = filiatorio.telefono?.replace(/\D/g, '') || '';
         window.open(`https://wa.me/${phone ? '549' + phone : ''}?text=${encodeURIComponent(text)}`, '_blank');
     };
@@ -474,43 +474,38 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
                         <div><span className="text-slate-500">Nro Afiliado:</span> {filiatorio.nroAfiliado || '-'}</div>
                     </div>
 
-                    {/* Diagnóstico general */}
-                    {diagnostico && (
-                        <div className="text-xs">
-                            <span className="text-slate-500 font-medium">Diagnóstico: </span>
-                            <span className="text-slate-800">{diagnostico}</span>
-                        </div>
-                    )}
-
-                    {/* Lista de estudios */}
+                    {/* Lista de estudios — sin número ni DX por ítem */}
                     <div>
                         <p className="font-semibold text-slate-800 mb-2 text-xs uppercase tracking-wide">Se solicita:</p>
-                        <ol className="space-y-2">
-                            {items.filter(i => i.descripcion.trim()).map((item, idx) => (
-                                <li key={item.id} className="text-xs border-l-2 border-slate-300 pl-2">
-                                    <div className="flex items-start gap-1">
-                                        <span className="text-slate-400 flex-shrink-0">{idx + 1}.</span>
-                                        <div>
-                                            {item.urgente && (
-                                                <span className="bg-red-100 text-red-700 text-xs font-bold px-1 py-0.5 rounded mr-1">URGENTE</span>
-                                            )}
-                                            <strong>{item.descripcion}</strong>
-                                            {item.indicaciones && (
-                                                <span className="text-slate-500 ml-1">— {item.indicaciones}</span>
-                                            )}
-                                            {item.diagnostico && (
-                                                <p className="text-slate-500 italic mt-0.5">Dx: {item.diagnostico}</p>
-                                            )}
-                                        </div>
+                        <ul className="space-y-1.5">
+                            {items.filter(i => i.descripcion.trim()).map((item) => (
+                                <li key={item.id} className="text-xs flex items-start gap-1.5">
+                                    <span className="text-slate-400 flex-shrink-0 mt-0.5">•</span>
+                                    <div>
+                                        {item.urgente && (
+                                            <span className="bg-red-100 text-red-700 text-xs font-bold px-1 py-0.5 rounded mr-1">URGENTE</span>
+                                        )}
+                                        <strong>{item.descripcion}</strong>
+                                        {item.indicaciones && (
+                                            <span className="text-slate-500 ml-1">— {item.indicaciones}</span>
+                                        )}
                                     </div>
                                 </li>
                             ))}
-                        </ol>
+                        </ul>
                     </div>
+
+                    {/* Diagnóstico al pie del pedido */}
+                    {diagnostico && (
+                        <div className="mt-3 pt-3 border-t border-slate-200 text-xs">
+                            <span className="text-slate-500 font-medium">Diagnóstico: </span>
+                            <span className="text-slate-700 italic">{diagnostico}</span>
+                        </div>
+                    )}
 
                     {/* Firma */}
                     {showSignature && (
-                        <div className="mt-8 pt-4 border-t text-right text-xs text-slate-700">
+                        <div className="mt-6 pt-4 border-t text-right text-xs text-slate-700">
                             <div className="inline-block border-t border-slate-400 pt-2 min-w-[180px]">
                                 <p className="font-semibold">{firmaNombre}</p>
                                 <p className="text-slate-500">{firmaMatricula}</p>
@@ -526,18 +521,20 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
 
 // ─── VADEMECUM STORAGE ────────────────────────────────────────────────────────
 
-const VADEMECUM_KEY = 'plenus_vademecum';
+function getVademecumKey(userEmail: string) {
+    return `plenus_vademecum_${userEmail.replace(/[@.]/g, '_')}`;
+}
 
-function loadVademecum(): VademecumItem[] {
+function loadVademecum(userEmail: string): VademecumItem[] {
     try {
-        return JSON.parse(localStorage.getItem(VADEMECUM_KEY) || '[]');
+        return JSON.parse(localStorage.getItem(getVademecumKey(userEmail)) || '[]');
     } catch {
         return [];
     }
 }
 
-function saveVademecum(items: VademecumItem[]) {
-    localStorage.setItem(VADEMECUM_KEY, JSON.stringify(items));
+function saveVademecum(items: VademecumItem[], userEmail: string) {
+    localStorage.setItem(getVademecumKey(userEmail), JSON.stringify(items));
 }
 
 // ─── PANEL RECETA MÉDICA ──────────────────────────────────────────────────────
@@ -554,7 +551,7 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
     const [showSignature, setShowSignature] = useState(true);
     const [firmaMatricula, setFirmaMatricula] = useState('M.P. ');
     const [showMRxInfo, setShowMRxInfo] = useState(false);
-    const [vademecum, setVademecum] = useState<VademecumItem[]>(() => loadVademecum());
+    const [vademecum, setVademecum] = useState<VademecumItem[]>(() => loadVademecum(user.email));
     const [showVademecum, setShowVademecum] = useState(false);
 
     const addItem = () => {
@@ -584,7 +581,7 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
         };
         const updated = [newEntry, ...vademecum.filter(v => v.medicamento !== item.medicamento)].slice(0, 20);
         setVademecum(updated);
-        saveVademecum(updated);
+        saveVademecum(updated, user.email);
     };
 
     const handleLoadFromVademecum = (vItem: VademecumItem) => {
@@ -600,7 +597,7 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
     const handleRemoveFromVademecum = (id: string) => {
         const updated = vademecum.filter(v => v.id !== id);
         setVademecum(updated);
-        saveVademecum(updated);
+        saveVademecum(updated, user.email);
     };
 
     const handleWhatsApp = () => {

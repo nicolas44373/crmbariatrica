@@ -225,7 +225,7 @@ export default function AgendaProfesional({ onDateSelect, selectedDate }: Agenda
                             case 'disponible': cellClasses += ' bg-green-50 hover:bg-green-100 text-green-800 cursor-pointer'; dotClasses += ' bg-green-600'; break;
                             case 'completo': cellClasses += ' bg-red-50 hover:bg-red-100 text-red-800 cursor-pointer'; dotClasses += ' bg-red-600'; break;
                             case 'bloqueado': cellClasses += ' bg-slate-200 text-slate-500 line-through cursor-not-allowed'; break;
-                            case 'pasado': cellClasses += ' bg-white text-slate-400 cursor-pointer hover:bg-slate-50'; dotClasses += ' bg-slate-400'; break;
+                            case 'pasado': cellClasses += ' bg-slate-50 text-slate-500 cursor-pointer hover:bg-slate-100'; dotClasses += ' bg-indigo-400'; break;
                             default: cellClasses += ' bg-white hover:bg-slate-100 cursor-pointer'; dotClasses += ' bg-indigo-500'; break;
                         }
                     }
@@ -256,7 +256,10 @@ export default function AgendaProfesional({ onDateSelect, selectedDate }: Agenda
                                     {format(day, 'd')}
                                 </div>
                             )}
-                            {hasAppointments && <div className={dotClasses}></div>}
+                            {hasAppointments && status === 'pasado'
+                                ? <div className="absolute bottom-1 left-1/2 -translate-x-1/2 bg-indigo-500 text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none">{turnosByDay[dayKey]}</div>
+                                : hasAppointments && <div className={dotClasses}></div>
+                            }
                         </div>
                     )
                 })}
