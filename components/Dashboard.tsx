@@ -1353,8 +1353,16 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
         : history;
 
     const NavButton = ({ view, label, icon }: { view: CrmActiveView, label: string, icon: React.ReactNode }) => (
-        <button onClick={() => setActiveView(view)} className={`flex items-center gap-2 px-3 py-2 rounded-md font-medium transition-colors duration-200 text-sm ${activeView === view ? 'bg-sky-600 text-white shadow-sm' : 'bg-white text-slate-600 hover:bg-slate-100'}`}>
-            {icon}{label}
+        <button 
+            onClick={() => setActiveView(view)} 
+            className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all duration-200 text-sm ${
+                activeView === view 
+                    ? 'bg-sky-600 text-white shadow-sm' 
+                    : 'bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-transparent'
+            }`}
+        >
+            {icon}
+            <span>{label}</span>
         </button>
     );
 
@@ -1461,18 +1469,21 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
     </div>
 )}
 
-            <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-                <h2 className="text-2xl font-bold text-slate-800">Panel Principal</h2>
-                <div className="flex items-center gap-2">
-                    <button onClick={() => setActiveModal('new-prospect')} className="flex items-center text-sm font-medium text-white bg-blue-600 px-3 py-2 rounded-md shadow-sm hover:bg-blue-700"><UserPlusIcon className="w-5 h-5 mr-1" />Ingresar Prospecto</button>
-                    <button onClick={() => setActiveModal('new-patient')} className="flex items-center text-sm font-medium text-white bg-green-600 px-3 py-2 rounded-md shadow-sm hover:bg-green-700"><UserPlusIcon className="w-5 h-5 mr-1" />Agregar Paciente</button>
-                    <button onClick={() => setActiveModal('folders-dashboard')} className="flex items-center text-sm font-medium text-slate-700 bg-white px-3 py-2 rounded-md shadow-sm border hover:bg-slate-50"><FolderIcon />Ver Carpetas</button>
-                    <button onClick={() => { setSelectedContacto(null); setActiveModal('history'); }} className="flex items-center text-sm font-medium text-slate-700 bg-white px-3 py-2 rounded-md shadow-sm border hover:bg-slate-50"><HistoryIcon />Historial Global</button>
-                    <button onClick={() => setActiveModal('whatsapp-templates')} className="flex items-center text-sm font-medium text-slate-700 bg-white px-3 py-2 rounded-md shadow-sm border hover:bg-slate-50"><ClipboardCheckIcon />Gestionar Plantillas</button>
+            <div className="flex flex-col gap-4 lg:flex-row lg:justify-between lg:items-center border-b border-slate-200 pb-5">
+                <div>
+                    <h2 className="text-2xl font-bold text-slate-800 tracking-tight sm:text-3xl">Panel Principal</h2>
+                    <p className="text-xs text-slate-500 mt-1 sm:text-sm">Gestión de prospectos, pacientes y seguimiento de tratamientos.</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-start lg:justify-end">
+                    <button onClick={() => setActiveModal('new-prospect')} className="flex items-center text-xs sm:text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors px-3 py-2 rounded-lg shadow-sm"><UserPlusIcon className="w-4 h-4 mr-1.5" />Ingresar Prospecto</button>
+                    <button onClick={() => setActiveModal('new-patient')} className="flex items-center text-xs sm:text-sm font-semibold text-white bg-green-600 hover:bg-green-700 transition-colors px-3 py-2 rounded-lg shadow-sm"><UserPlusIcon className="w-4 h-4 mr-1.5" />Agregar Paciente</button>
+                    <button onClick={() => setActiveModal('folders-dashboard')} className="flex items-center text-xs sm:text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 transition-colors px-3 py-2 rounded-lg shadow-sm"><FolderIcon />Ver Carpetas</button>
+                    <button onClick={() => { setSelectedContacto(null); setActiveModal('history'); }} className="flex items-center text-xs sm:text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 transition-colors px-3 py-2 rounded-lg shadow-sm"><HistoryIcon />Historial Global</button>
+                    <button onClick={() => setActiveModal('whatsapp-templates')} className="flex items-center text-xs sm:text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 transition-colors px-3 py-2 rounded-lg shadow-sm"><ClipboardCheckIcon />Plantillas</button>
                     {(user.rol === UserRole.SUPERADMIN || user.rol === UserRole.ADMINISTRATIVO) && (
                         <>
-                            <button onClick={() => setActiveModal('estadisticas')} className="flex items-center text-sm font-medium text-indigo-700 bg-indigo-50 px-3 py-2 rounded-md shadow-sm border border-indigo-200 hover:bg-indigo-100">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 mr-1"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" /></svg>
+                            <button onClick={() => setActiveModal('estadisticas')} className="flex items-center text-xs sm:text-sm font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 transition-colors px-3 py-2 rounded-lg shadow-sm">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 mr-1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" /></svg>
                                 Estadísticas
                             </button>
                             <BackupButton />
@@ -1481,30 +1492,73 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
                 </div>
             </div>
 
-            <div className="bg-white p-4 rounded-lg shadow space-y-4">
-                <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-                    <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
-                        <NavButton view="prospects" label="Prospectos" icon={<UsersIcon />} />
-                        <NavButton view="not-operated" label="No Operados" icon={<UsersIcon />} />
-                        <NavButton view="operated" label="Operados" icon={<UsersIcon />} />
-                        <NavButton view="tasks" label="Tareas" icon={<ClipboardCheckIcon />} />
+            <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
+                <div className="flex flex-col gap-4">
+                    <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3">
+                        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl overflow-x-auto whitespace-nowrap scrollbar-none w-full md:w-auto">
+                            <NavButton view="prospects" label="Prospectos" icon={<UsersIcon />} />
+                            <NavButton view="not-operated" label="No Operados" icon={<UsersIcon />} />
+                            <NavButton view="operated" label="Operados" icon={<UsersIcon />} />
+                            <NavButton view="tasks" label="Tareas" icon={<ClipboardCheckIcon />} />
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                            {['prospects', 'not-operated', 'operated'].includes(activeView) && (
+                                <div className="relative w-full sm:w-64">
+                                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><SearchIcon /></div>
+                                    <input type="text" placeholder="Buscar por nombre, DNI o tel..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="block w-full rounded-lg border-slate-300 pl-9 text-sm focus:border-sky-500 focus:ring-sky-500 bg-slate-50 focus:bg-white transition-colors" />
+                                </div>
+                            )}
+                            {activeView === 'tasks' && (
+                                <select value={taskStatusFilter} onChange={(e) => setTaskStatusFilter(e.target.value as any)} className="block w-full sm:w-auto rounded-lg border-slate-300 text-sm shadow-sm focus:border-sky-500 focus:ring-sky-500 bg-white">
+                                    <option value="todos">Todas las Tareas</option>
+                                    <option value={TaskStatus.PENDIENTE}>Pendiente</option>
+                                    <option value={TaskStatus.HECHO}>Hecho</option>
+                                    <option value={TaskStatus.POSPUESTO}>Pospuesto</option>
+                                </select>
+                            )}
+                            {activeView === 'prospects' && (
+                                <div className="flex items-center gap-1.5 w-full sm:w-auto">
+                                    <span className="text-xs text-slate-500 hidden sm:inline">Seguimiento:</span>
+                                    <select value={seguimientoFilter} onChange={e => setSeguimientoFilter(e.target.value as any)} className="block w-full sm:w-auto rounded-lg border-slate-300 text-sm bg-white shadow-sm focus:border-sky-500 focus:ring-sky-500">
+                                        <option value="todos">Todos los Estados</option>
+                                        {Object.values(ProspectoEstadoSeguimiento).map(s => <option key={s} value={s}>{s}</option>)}
+                                    </select>
+                                </div>
+                            )}
+                        </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                        {activeView === 'tasks' && (
-                            <select value={taskStatusFilter} onChange={(e) => setTaskStatusFilter(e.target.value as any)} className="block w-full sm:w-auto rounded-md border-slate-300 shadow-sm text-sm">
-                                <option value="todos">Todas las Tareas</option>
-                                <option value={TaskStatus.PENDIENTE}>Pendiente</option>
-                                <option value={TaskStatus.HECHO}>Hecho</option>
-                                <option value={TaskStatus.POSPUESTO}>Pospuesto</option>
+
+                    {['not-operated', 'operated'].includes(activeView) && (
+                        <div className="flex flex-wrap items-center gap-2 p-2 bg-slate-50/70 rounded-xl border border-slate-100">
+                            <span className="text-xs font-semibold text-slate-500 px-1">Filtros:</span>
+                            
+                            {activeView === 'not-operated' && (
+                                <select value={tagFilter} onChange={e => setTagFilter(e.target.value as any)} className="rounded-lg border-slate-300 text-xs bg-white py-1 shadow-sm focus:ring-sky-500 focus:border-sky-500">
+                                    <option value="todos">Todas las Etiquetas</option>
+                                    {Object.values(ContactoTag).filter(t => t !== ContactoTag.POSBARIATRICO).map(tag => <option key={tag} value={tag}>{tag.replace(/_/g, ' ')}</option>)}
+                                </select>
+                            )}
+
+                            {activeView === 'operated' && (
+                                <select value={postOpStageFilter} onChange={e => setPostOpStageFilter(e.target.value as any)} className="rounded-lg border-slate-300 text-xs bg-white py-1 shadow-sm focus:ring-sky-500 focus:border-sky-500">
+                                    <option value="todos">Todas las Etapas</option>
+                                    {Object.values(PostOpStage).map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                            )}
+
+                            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="rounded-lg border-slate-300 text-xs bg-white py-1 shadow-sm focus:ring-sky-500 focus:border-sky-500">
+                                <option value="todos">Todos los Estados</option>
+                                <option value={ContactoStatus.ACTIVO}>Activo</option>
+                                <option value={ContactoStatus.INACTIVO}>Inactivo</option>
+                                <option value={ContactoStatus.PERDIDO}>Perdido</option>
                             </select>
-                        )}
-                        {(activeView === 'prospects' || activeView === 'not-operated' || activeView === 'operated') && (
-                            <div className="relative w-full sm:w-64">
-                                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><SearchIcon /></div>
-                                <input type="text" placeholder="Buscar por nombre, DNI o tel..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="block w-full rounded-md border-slate-300 pl-9" />
-                            </div>
-                        )}
-                    </div>
+
+                            <select value={socialInsuranceFilter} onChange={e => setSocialInsuranceFilter(e.target.value)} className="rounded-lg border-slate-300 text-xs bg-white py-1 shadow-sm focus:ring-sky-500 focus:border-sky-500">
+                                <option value="">Todas las Obras Sociales</option>
+                                {uniqueObrasSociales.map(os => <option key={os} value={os}>{os}</option>)}
+                            </select>
+                        </div>
+                    )}
                 </div>
 
                 {isLoading ? (
@@ -1519,12 +1573,34 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
                                     onUpdateContacto={handleUpdateContacto}
                                     onReactivate={handleReactivate}
                                     onSelectPatient={onSelectPatient}
-                                    seguimientoFilter={seguimientoFilter}
-                                    onSeguimientoFilterChange={setSeguimientoFilter}
                                 />
                             )}
-                            {activeView === 'not-operated' && <ContactoTable contactos={paginatedContactos} onOpenModal={handleOpenModal} onReactivate={handleReactivate} onSelectPatient={onSelectPatient} onUpdateContacto={handleUpdateContacto} contactRowRefs={contactRowRefs} selectedPatientId={selectedPatient?.idPaciente} folders={folders} tasks={tasks} tagFilter={tagFilter} onTagFilterChange={setTagFilter} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} osFilter={socialInsuranceFilter} onOsFilterChange={setSocialInsuranceFilter} obrasSociales={uniqueObrasSociales} />}
-                            {activeView === 'operated' && <OperatedContactoTable contactos={paginatedContactos} onOpenModal={handleOpenModal} onReactivate={handleReactivate} onSelectPatient={onSelectPatient} onUpdateContacto={handleUpdateContacto} contactRowRefs={contactRowRefs} selectedPatientId={selectedPatient?.idPaciente} folders={folders} tasks={tasks} postOpStageFilter={postOpStageFilter} onPostOpStageFilterChange={setPostOpStageFilter} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} osFilter={socialInsuranceFilter} onOsFilterChange={setSocialInsuranceFilter} obrasSociales={uniqueObrasSociales} />}
+                            {activeView === 'not-operated' && (
+                                <ContactoTable 
+                                    contactos={paginatedContactos} 
+                                    onOpenModal={handleOpenModal} 
+                                    onReactivate={handleReactivate} 
+                                    onSelectPatient={onSelectPatient} 
+                                    onUpdateContacto={handleUpdateContacto} 
+                                    contactRowRefs={contactRowRefs} 
+                                    selectedPatientId={selectedPatient?.idPaciente} 
+                                    folders={folders} 
+                                    tasks={tasks} 
+                                />
+                            )}
+                            {activeView === 'operated' && (
+                                <OperatedContactoTable 
+                                    contactos={paginatedContactos} 
+                                    onOpenModal={handleOpenModal} 
+                                    onReactivate={handleReactivate} 
+                                    onSelectPatient={onSelectPatient} 
+                                    onUpdateContacto={handleUpdateContacto} 
+                                    contactRowRefs={contactRowRefs} 
+                                    selectedPatientId={selectedPatient?.idPaciente} 
+                                    folders={folders} 
+                                    tasks={tasks} 
+                                />
+                            )}
                             {activeView === 'tasks' && <TasksView tasks={filteredTasks} onUpdateTask={handleUpdateTask} onSelectPatient={onSelectPatient} contactos={contactos} onOpenModal={handleOpenModal} />}
                         </div>
                         {['prospects', 'not-operated', 'operated'].includes(activeView) && totalPages > 1 && (
@@ -1561,14 +1637,12 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
 }
 
 // ─── [FIX 1 + 5] ProspectoTable now receives onSelectPatient ─────────────────
-const ProspectoTable = ({ contactos, onOpenModal, onUpdateContacto, onReactivate, onSelectPatient, seguimientoFilter, onSeguimientoFilterChange }: {
+const ProspectoTable = ({ contactos, onOpenModal, onUpdateContacto, onReactivate, onSelectPatient }: {
     contactos: ContactoCRM[];
     onOpenModal: (modal: ActiveModalType, contacto: ContactoCRM) => void;
     onUpdateContacto: (id: string, updates: Partial<ContactoCRM>) => void;
     onReactivate: (contacto: ContactoCRM) => void;
     onSelectPatient: (p: PacienteFiliatorio) => void;
-    seguimientoFilter: 'todos' | ProspectoEstadoSeguimiento;
-    onSeguimientoFilterChange: (v: 'todos' | ProspectoEstadoSeguimiento) => void;
 }) => (
     <table className="min-w-full divide-y divide-slate-200">
         <thead className="bg-slate-50">
@@ -1576,13 +1650,7 @@ const ProspectoTable = ({ contactos, onOpenModal, onUpdateContacto, onReactivate
                 <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Contacto</th>
                 <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Canal de Origen</th>
                 <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Fecha Ingreso</th>
-                <th scope="col" className="px-4 py-2 text-left">
-                    <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Estado Seguimiento</div>
-                    <select value={seguimientoFilter} onChange={e => onSeguimientoFilterChange(e.target.value as any)} className="block w-full rounded border-slate-300 text-xs py-1 shadow-sm bg-white">
-                        <option value="todos">Todos</option>
-                        {Object.values(ProspectoEstadoSeguimiento).map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                </th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Estado Seguimiento</th>
                 <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Acciones</th>
             </tr>
         </thead>
@@ -1722,35 +1790,15 @@ const ProspectoRow: React.FC<ProspectoRowProps> = ({ contacto, onOpenModal, onUp
 
 // ─── CONTACT TABLES ───────────────────────────────────────────────────────────
 
-const ContactoTable = ({ contactos, onOpenModal, onReactivate, onSelectPatient, onUpdateContacto, contactRowRefs, selectedPatientId, folders, tasks, tagFilter, onTagFilterChange, statusFilter, onStatusFilterChange, osFilter, onOsFilterChange, obrasSociales }: { contactos: ContactoCRM[], onOpenModal: (modal: ActiveModalType, contacto: ContactoCRM) => void, onReactivate: (contacto: ContactoCRM) => void, onSelectPatient: (p: any) => void, onUpdateContacto: (id: string, updates: Partial<ContactoCRM>) => void, contactRowRefs: React.MutableRefObject<Record<string, HTMLTableRowElement | null>>, selectedPatientId?: string | null, folders: Folder[], tasks: Task[], tagFilter: 'todos' | ContactoTag, onTagFilterChange: (v: 'todos' | ContactoTag) => void, statusFilter: 'todos' | ContactoStatus, onStatusFilterChange: (v: 'todos' | ContactoStatus) => void, osFilter: string, onOsFilterChange: (v: string) => void, obrasSociales: string[] }) => (
+const ContactoTable = ({ contactos, onOpenModal, onReactivate, onSelectPatient, onUpdateContacto, contactRowRefs, selectedPatientId, folders, tasks }: { contactos: ContactoCRM[], onOpenModal: (modal: ActiveModalType, contacto: ContactoCRM) => void, onReactivate: (contacto: ContactoCRM) => void, onSelectPatient: (p: any) => void, onUpdateContacto: (id: string, updates: Partial<ContactoCRM>) => void, contactRowRefs: React.MutableRefObject<Record<string, HTMLTableRowElement | null>>, selectedPatientId?: string | null, folders: Folder[], tasks: Task[] }) => (
     <table className="min-w-full divide-y divide-slate-200">
         <thead className="bg-slate-50">
             <tr>
                 <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Contacto</th>
-                <th scope="col" className="px-4 py-2 text-left">
-                    <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Etiqueta</div>
-                    <select value={tagFilter} onChange={e => onTagFilterChange(e.target.value as any)} className="block w-full rounded border-slate-300 text-xs py-1 shadow-sm bg-white">
-                        <option value="todos">Todas</option>
-                        {Object.values(ContactoTag).filter(t => t !== ContactoTag.POSBARIATRICO).map(tag => <option key={tag} value={tag}>{tag.replace(/_/g, ' ')}</option>)}
-                    </select>
-                </th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Etiqueta</th>
                 <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Prioridad</th>
-                <th scope="col" className="px-4 py-2 text-left">
-                    <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Estado</div>
-                    <select value={statusFilter} onChange={e => onStatusFilterChange(e.target.value as any)} className="block w-full rounded border-slate-300 text-xs py-1 shadow-sm bg-white">
-                        <option value="todos">Todos</option>
-                        <option value={ContactoStatus.ACTIVO}>Activo</option>
-                        <option value={ContactoStatus.INACTIVO}>Inactivo</option>
-                        <option value={ContactoStatus.PERDIDO}>Perdido</option>
-                    </select>
-                </th>
-                <th scope="col" className="px-4 py-2 text-left">
-                    <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Obra Social</div>
-                    <select value={osFilter} onChange={e => onOsFilterChange(e.target.value)} className="block w-full rounded border-slate-300 text-xs py-1 shadow-sm bg-white">
-                        <option value="">Todas</option>
-                        {obrasSociales.map(os => <option key={os} value={os}>{os}</option>)}
-                    </select>
-                </th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Estado</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Obra Social</th>
                 <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Consultas</th>
                 <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Acciones</th>
             </tr>
@@ -1765,36 +1813,16 @@ const ContactoTable = ({ contactos, onOpenModal, onReactivate, onSelectPatient, 
     </table>
 );
 
-const OperatedContactoTable = ({ contactos, onOpenModal, onReactivate, onSelectPatient, onUpdateContacto, contactRowRefs, selectedPatientId, folders, tasks, postOpStageFilter, onPostOpStageFilterChange, statusFilter, onStatusFilterChange, osFilter, onOsFilterChange, obrasSociales }: { contactos: ContactoCRM[], onOpenModal: (modal: ActiveModalType, contacto: ContactoCRM) => void, onReactivate: (contacto: ContactoCRM) => void, onSelectPatient: (p: any) => void, onUpdateContacto: (id: string, updates: Partial<ContactoCRM>) => void, contactRowRefs: React.MutableRefObject<Record<string, HTMLTableRowElement | null>>, selectedPatientId?: string | null, folders: Folder[], tasks: Task[], postOpStageFilter: 'todos' | PostOpStage, onPostOpStageFilterChange: (v: 'todos' | PostOpStage) => void, statusFilter: 'todos' | ContactoStatus, onStatusFilterChange: (v: 'todos' | ContactoStatus) => void, osFilter: string, onOsFilterChange: (v: string) => void, obrasSociales: string[] }) => (
+const OperatedContactoTable = ({ contactos, onOpenModal, onReactivate, onSelectPatient, onUpdateContacto, contactRowRefs, selectedPatientId, folders, tasks }: { contactos: ContactoCRM[], onOpenModal: (modal: ActiveModalType, contacto: ContactoCRM) => void, onReactivate: (contacto: ContactoCRM) => void, onSelectPatient: (p: any) => void, onUpdateContacto: (id: string, updates: Partial<ContactoCRM>) => void, contactRowRefs: React.MutableRefObject<Record<string, HTMLTableRowElement | null>>, selectedPatientId?: string | null, folders: Folder[], tasks: Task[] }) => (
     <table className="min-w-full divide-y divide-slate-200">
         <thead className="bg-slate-50">
             <tr>
                 <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Contacto</th>
-                <th scope="col" className="px-4 py-2 text-left">
-                    <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Etapa Post-Op</div>
-                    <select value={postOpStageFilter} onChange={e => onPostOpStageFilterChange(e.target.value as any)} className="block w-full rounded border-slate-300 text-xs py-1 shadow-sm bg-white">
-                        <option value="todos">Todas las etapas</option>
-                        {Object.values(PostOpStage).map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                </th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Etapa Post-Op</th>
                 <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Prioridad</th>
-                <th scope="col" className="px-4 py-2 text-left">
-                    <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Estado</div>
-                    <select value={statusFilter} onChange={e => onStatusFilterChange(e.target.value as any)} className="block w-full rounded border-slate-300 text-xs py-1 shadow-sm bg-white">
-                        <option value="todos">Todos</option>
-                        <option value={ContactoStatus.ACTIVO}>Activo</option>
-                        <option value={ContactoStatus.INACTIVO}>Inactivo</option>
-                        <option value={ContactoStatus.PERDIDO}>Perdido</option>
-                    </select>
-                </th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Estado</th>
                 <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Fecha Cx</th>
-                <th scope="col" className="px-4 py-2 text-left">
-                    <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Obra Social</div>
-                    <select value={osFilter} onChange={e => onOsFilterChange(e.target.value)} className="block w-full rounded border-slate-300 text-xs py-1 shadow-sm bg-white">
-                        <option value="">Todas</option>
-                        {obrasSociales.map(os => <option key={os} value={os}>{os}</option>)}
-                    </select>
-                </th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Obra Social</th>
                 <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Consultas</th>
                 <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Acciones</th>
             </tr>
