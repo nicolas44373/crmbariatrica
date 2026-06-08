@@ -23,6 +23,17 @@ const LogOutIcon = () => (
     </svg>
 );
 
+const MenuIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+    </svg>
+);
+const XIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+    </svg>
+);
+
 interface HeaderProps {
     activeApp: ActiveApp;
     onNavigate: (app: ActiveApp) => void;
@@ -30,6 +41,7 @@ interface HeaderProps {
 
 export default function Header({ activeApp, onNavigate }: HeaderProps) {
   const authContext = useContext(AuthContext);
+  const [isOpen, setIsOpen] = React.useState(false);
 
   if (!authContext?.user) {
     return null;
@@ -40,7 +52,7 @@ export default function Header({ activeApp, onNavigate }: HeaderProps) {
   const isSuperAdmin = user.rol === UserRole.SUPERADMIN;
   const nombreCompleto = `${user.nombres} ${user.apellido}`;
 
-  const navButtonCommonClasses = "flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-colors duration-200 text-sm";
+  const navButtonCommonClasses = "flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-colors duration-200 text-sm w-full md:w-auto justify-center md:justify-start";
   const navButtonActiveClasses = "bg-sky-600 text-white shadow-inner";
   const navButtonInactiveClasses = "bg-white text-slate-600 hover:bg-slate-100";
 
@@ -50,15 +62,15 @@ export default function Header({ activeApp, onNavigate }: HeaderProps) {
         <div className="flex items-center justify-between h-16">
 
           {/* Logo */}
-          <div className="flex items-center">
-            <div className="bg-sky-600 p-2 rounded-lg mr-3">
+          <div className="flex items-center flex-shrink-0">
+            <div className="bg-sky-600 p-2 rounded-lg mr-3 text-white">
                <StethoscopeIcon />
             </div>
             <h1 className="text-xl font-bold text-slate-800">Plenus</h1>
           </div>
 
-          {/* Navegación */}
-          <nav className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
+          {/* Navegación (Desktop) */}
+          <nav className="hidden md:flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
             <button
               onClick={() => onNavigate('clinical')}
               className={`${navButtonCommonClasses} ${activeApp === 'clinical' ? navButtonActiveClasses : navButtonInactiveClasses}`}
@@ -75,8 +87,8 @@ export default function Header({ activeApp, onNavigate }: HeaderProps) {
             </button>
           </nav>
 
-          {/* Usuario + Cerrar sesión */}
-          <div className="flex items-center space-x-4">
+          {/* Usuario + Cerrar sesión (Desktop) */}
+          <div className="hidden md:flex items-center space-x-4">
             <div className="flex items-center space-x-2">
               <div className={`p-1.5 rounded-full ${isSuperAdmin ? 'bg-amber-100 text-amber-600' : isAdmin ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'}`}>
                 {isAdmin ? <UserGroupIcon /> : <StethoscopeIcon />}
@@ -98,12 +110,70 @@ export default function Header({ activeApp, onNavigate }: HeaderProps) {
               title="Cerrar sesión"
             >
               <LogOutIcon />
-              <span className="hidden sm:inline">Cerrar Sesión</span>
+              <span>Cerrar Sesión</span>
+            </button>
+          </div>
+
+          {/* Botón de Menú Móvil (Hamburguesa) */}
+          <div className="flex md:hidden">
+            <button
+              onClick={() => setIsOpen(!isOpen)}
+              className="inline-flex items-center justify-center p-2 rounded-md text-slate-600 hover:text-slate-900 hover:bg-slate-100 focus:outline-none transition-colors"
+              aria-label="Abrir menú"
+            >
+              {isOpen ? <XIcon /> : <MenuIcon />}
             </button>
           </div>
 
         </div>
       </div>
+
+      {/* Menú Desplegable Móvil */}
+      {isOpen && (
+        <div className="md:hidden border-t border-slate-200 bg-slate-50 px-4 py-3 space-y-3 shadow-inner">
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => { onNavigate('clinical'); setIsOpen(false); }}
+              className={`${navButtonCommonClasses} ${activeApp === 'clinical' ? navButtonActiveClasses : navButtonInactiveClasses} border border-slate-200`}
+            >
+              <StethoscopeIcon />
+              Clínica
+            </button>
+            <button
+              onClick={() => { onNavigate('crm'); setIsOpen(false); }}
+              className={`${navButtonCommonClasses} ${activeApp === 'crm' ? navButtonActiveClasses : navButtonInactiveClasses} border border-slate-200`}
+            >
+              <HeartIcon />
+              CRM
+            </button>
+          </div>
+
+          <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <div className={`p-1.5 rounded-full ${isSuperAdmin ? 'bg-amber-100 text-amber-600' : isAdmin ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'}`}>
+                {isAdmin ? <UserGroupIcon /> : <StethoscopeIcon />}
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-700 flex items-center gap-1">
+                  {nombreCompleto}
+                  {isSuperAdmin && <span className="text-xs font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">SUPER</span>}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {user.rol}{user.especialidad && ` - ${user.especialidad}`}
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => { signOut(); setIsOpen(false); }}
+              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-md hover:bg-red-50 hover:text-red-600 transition-colors"
+            >
+              <LogOutIcon />
+              <span>Salir</span>
+            </button>
+          </div>
+        </div>
+      )}
     </header>
   );
 }

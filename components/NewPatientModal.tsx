@@ -299,7 +299,7 @@ export default function NewPatientModal({ onClose, onSuccess, initialData = {}, 
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 transition-opacity duration-300">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl m-4 transform transition-all duration-300 scale-95 opacity-0 animate-fadeInScale flex flex-col">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl m-4 max-h-[90vh] transform transition-all duration-300 scale-95 opacity-0 animate-fadeInScale flex flex-col">
                 {step === 1 ? renderStep1() : renderStep2()}
             </div>
             <style>{`

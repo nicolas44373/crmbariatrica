@@ -798,7 +798,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                     </div>
 
                     {/* Tabs */}
-                    <div className="border-b border-slate-200 px-5">
+                    <div className="border-b border-slate-200 px-5 overflow-x-auto whitespace-nowrap scrollbar-thin">
                         <nav className="-mb-px flex gap-1">
                             <TabBtn tab="usuarios" label="Usuarios" icon={<UserPlusIcon />} />
                             <TabBtn tab="horarios" label="Horarios" icon={<ClockIcon />} />

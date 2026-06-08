@@ -1604,7 +1604,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
     const renderResumenClinico = () => (
         <div className="bg-white p-6 rounded-lg shadow space-y-4 h-full">
             <div className="border-b border-gray-200">
-                <nav className="-mb-px flex space-x-6">
+                <nav className="-mb-px flex space-x-6 overflow-x-auto whitespace-nowrap scrollbar-thin">
                     <button onClick={() => setActiveResumenSubTab('general')} className={`py-2 px-1 border-b-2 text-sm font-medium ${activeResumenSubTab === 'general' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>General</button>
                     <button onClick={() => setActiveResumenSubTab('cirugia')} className={`py-2 px-1 border-b-2 text-sm font-medium ${activeResumenSubTab === 'cirugia' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Cirugía</button>
                     <button onClick={() => setActiveResumenSubTab('nutricion')} className={`py-2 px-1 border-b-2 text-sm font-medium ${activeResumenSubTab === 'nutricion' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Nutrición</button>
@@ -1780,7 +1780,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                  )}
             </div>
              <div className="border-b border-gray-200">
-                <nav className="-mb-px flex space-x-6 px-4">
+                <nav className="-mb-px flex space-x-6 px-4 overflow-x-auto whitespace-nowrap scrollbar-thin">
                     {TIPOS_ESTUDIO.map(tipo => {
                         const hasEstudios = paciente.estudios?.some(e => e.tipo === tipo.value);
                         const isActive = activeEstudiosTab === tipo.value;
@@ -2294,7 +2294,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
             
             {/* Header */}
             <div className="bg-white rounded-lg shadow-md p-6 relative">
-                 <div className="flex items-start">
+                 <div className="flex flex-col sm:flex-row items-center sm:items-start text-center sm:text-left">
                     {filiatorio.fotoPerfil ? (
                         <div className="w-24 h-24 rounded-full ring-4 ring-white shadow-md overflow-hidden flex-shrink-0">
                             <img src={filiatorio.fotoPerfil} alt="" className="w-full h-full object-cover" />
@@ -2302,11 +2302,11 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                     ) : (
                         <UserPhotoPlaceholderIcon />
                     )}
-                    <div className="ml-6 flex-grow">
+                    <div className="mt-4 sm:mt-0 sm:ml-6 flex-grow w-full">
                          
-<div className="flex justify-between items-center">
-    <h2 className="text-3xl font-bold text-slate-800">{filiatorio.apellido}, {filiatorio.nombres}</h2>
-    <div className="flex items-center gap-3">
+<div className="flex flex-col md:flex-row justify-between items-center gap-4">
+    <h2 className="text-2xl sm:text-3xl font-bold text-slate-800">{filiatorio.apellido}, {filiatorio.nombres}</h2>
+    <div className="flex flex-col sm:flex-row items-center gap-3">
         {/* Selector de prioridad */}
         <div className="flex items-center gap-1.5">
             <span className="text-xs text-slate-500 font-medium">Prioridad:</span>
@@ -2333,7 +2333,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
             })}
         </div>
         {/* Tag dropdown con sub-etiqueta para POSBARIATRICO */}
-        <div className="flex flex-col items-end gap-1">
+        <div className="flex flex-col items-center sm:items-end gap-1">
             <div className="relative">
                 <button onClick={() => setShowTagDropdown(!showTagDropdown)} onBlur={() => setTimeout(() => setShowTagDropdown(false), 200)} className={`flex items-center px-3 py-2 text-sm font-semibold rounded-full ${etiquetaInfo.color}`}>
                     <TagIcon />
@@ -2341,7 +2341,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                     <ChevronDownIcon/>
                 </button>
                 {showTagDropdown && (
-                    <div className="absolute right-0 mt-2 w-64 bg-white rounded-md shadow-lg z-10 border">
+                    <div className="absolute right-0 mt-2 w-64 bg-white rounded-md shadow-lg z-10 border text-left">
                         {ETIQUETAS_FLUJO.map(tag => (
                             <button key={tag.nombreEtiquetaUnico} onClick={() => handleTagChange(tag.nombreEtiquetaUnico)} className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-100 ${filiatorio.etiquetaPrincipalActiva === tag.nombreEtiquetaUnico ? 'font-bold' : ''}`}>
                                 {tag.nombreEtiquetaUnico.replace(/_/g, ' ')}
@@ -2363,7 +2363,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
         </div>
     </div>
 </div>
-                         <div className="flex items-center gap-6 mt-4 text-sm text-slate-600">
+                         <div className="flex flex-wrap items-center justify-center sm:justify-start gap-4 sm:gap-6 mt-6 text-sm text-slate-600">
                             <button onClick={() => setModal('verFicha')} className="flex items-center gap-1 hover:text-indigo-600 hover:underline"><IdentificationIcon /> Ver Ficha</button>
 <button onClick={() => setModal('agendarTurno')} className="flex items-center gap-1 hover:text-indigo-600 hover:underline"><CalendarDaysIcon /> Agendar Turno</button>
 <button onClick={() => setModal('turnHistorial')} className="flex items-center gap-1 hover:text-cyan-600 hover:underline">

@@ -839,7 +839,7 @@ const FoldersDashboardModal = ({ onClose, folders, onOpenFolder, contactos }: { 
                     </div>
                 </div>
                 <p className="text-sm text-slate-500 mb-3">{filtered.length} carpeta{filtered.length !== 1 ? 's' : ''}</p>
-                <div className="max-h-[65vh] overflow-y-auto">
+                <div className="max-h-[65vh] overflow-auto">
                     <table className="min-w-full divide-y divide-slate-200">
                         <thead className="bg-slate-50 sticky top-0">
                             <tr>
@@ -2080,19 +2080,21 @@ const LiquidacionDiariaModal = ({ onClose }: { onClose: () => void }) => {
                             {turnosAtendidos.length === 0 ? (
                                 <p className="text-sm text-slate-400 text-center py-6 border border-dashed rounded-lg">Sin turnos atendidos para esta fecha.</p>
                             ) : (
-                                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                                    <thead className="bg-slate-100"><tr><th className="px-4 py-2 text-left">Hora</th><th className="px-4 py-2 text-left">Paciente</th><th className="px-4 py-2 text-left">Profesional</th><th className="px-4 py-2 text-right">Valor</th></tr></thead>
-                                    <tbody>
-                                        {turnosAtendidos.filter(t => t.valorCobrado && t.valorCobrado > 0).map(t => (
-                                            <tr key={t.idTurno}>
-                                                <td className="px-4 py-2">{format(new Date(t.fechaTurno), 'HH:mm')}</td>
-                                                <td className="px-4 py-2">{t.paciente.apellido}, {t.paciente.nombres}</td>
-                                                <td className="px-4 py-2">{getProfesionalNombre(t.profesionalEmail)}</td>
-                                                <td className="px-4 py-2 text-right">${(t.valorCobrado || 0).toLocaleString('es-AR')}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                                <div className="overflow-x-auto border rounded-lg">
+                                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                                        <thead className="bg-slate-100"><tr><th className="px-4 py-2 text-left">Hora</th><th className="px-4 py-2 text-left">Paciente</th><th className="px-4 py-2 text-left">Profesional</th><th className="px-4 py-2 text-right">Valor</th></tr></thead>
+                                        <tbody>
+                                            {turnosAtendidos.filter(t => t.valorCobrado && t.valorCobrado > 0).map(t => (
+                                                <tr key={t.idTurno}>
+                                                    <td className="px-4 py-2">{format(new Date(t.fechaTurno), 'HH:mm')}</td>
+                                                    <td className="px-4 py-2">{t.paciente.apellido}, {t.paciente.nombres}</td>
+                                                    <td className="px-4 py-2">{getProfesionalNombre(t.profesionalEmail)}</td>
+                                                    <td className="px-4 py-2 text-right">${(t.valorCobrado || 0).toLocaleString('es-AR')}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
                             )}
                         </div>
                     )}
@@ -2175,7 +2177,7 @@ const TorreDeControl = ({ onSelectPatient }: { onSelectPatient: (patient: Pacien
     };
 
     return (
-        <div className="bg-white rounded-lg shadow-md flex flex-col" style={{ height: 'calc(100vh - 12rem)' }}>
+        <div className="bg-white rounded-lg shadow-md flex flex-col h-[calc(100vh-14rem)] sm:h-[calc(100vh-12rem)]">
             <div className="flex items-center justify-between p-4 border-b bg-slate-50 flex-wrap gap-2">
                 <h3 className="text-lg font-semibold text-slate-700 capitalize">
                     Torre de Control — {format(currentDate, 'eeee, dd MMMM yyyy', { locale: es })}

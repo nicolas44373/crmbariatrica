@@ -355,7 +355,7 @@ const ProfesionalFormPanel = ({
             <div className="flex-grow overflow-y-auto p-6">
                 {activeTab === 'datos' && (
                     <div className="space-y-5">
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-xs font-semibold text-slate-600 mb-1">Apellido *</label>
                                 <input
@@ -411,7 +411,7 @@ const ProfesionalFormPanel = ({
                             </div>
                         )}
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-xs font-semibold text-slate-600 mb-1">Rol</label>
                                 <select
@@ -438,7 +438,7 @@ const ProfesionalFormPanel = ({
                         </div>
 
                         {form.rol === UserRole.MEDICO && (
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-xs font-semibold text-slate-600 mb-1">Matrícula</label>
                                     <input
@@ -721,10 +721,9 @@ export default function GestionProfesionalesModal({ onClose }: GestionProfesiona
     const showForm = isCreating || selectedEmail !== null;
 
     return (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-0 sm:p-4">
             <div
-                className="bg-white rounded-xl shadow-2xl w-full max-w-5xl flex flex-col overflow-hidden"
-                style={{ height: 'min(90vh, 720px)' }}
+                className="bg-white rounded-xl shadow-2xl w-full max-w-5xl flex flex-col overflow-hidden h-full sm:h-[min(90vh,720px)]"
             >
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-slate-800 to-slate-700">
@@ -740,10 +739,10 @@ export default function GestionProfesionalesModal({ onClose }: GestionProfesiona
                 </div>
 
                 {/* Body */}
-                <div className="flex flex-grow overflow-hidden">
+                <div className="flex flex-col md:flex-row flex-grow overflow-hidden">
 
                     {/* Left panel */}
-                    <div className="w-72 flex-shrink-0 border-r border-slate-200 flex flex-col bg-slate-50">
+                    <div className={`${showForm ? 'hidden md:flex' : 'flex'} w-full md:w-72 flex-shrink-0 md:border-r border-slate-200 flex-col bg-slate-50 overflow-hidden`}>
                         <div className="p-3 border-b border-slate-200">
                             <button
                                 onClick={handleStartCreate}
@@ -786,7 +785,7 @@ export default function GestionProfesionalesModal({ onClose }: GestionProfesiona
                     </div>
 
                     {/* Right panel */}
-                    <div className="flex-grow overflow-hidden flex flex-col">
+                    <div className={`${showForm ? 'flex' : 'hidden md:flex'} flex-grow overflow-hidden flex-col`}>
                         {showForm ? (
                             <ProfesionalFormPanel
                                 key={isCreating ? 'new' : selectedEmail!}

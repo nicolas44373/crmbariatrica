@@ -1349,17 +1349,43 @@ async function getContactosCRM(): Promise<ContactoCRM[]> {
   const carpetaMap: Record<string, string> = {};
   (carpetas ?? []).forEach((c: any) => { carpetaMap[c.id_paciente] = c.id_carpeta; });
 
+  // Pre-group records by patient ID for O(1) map lookups
+  const evolucionesMap: Record<string, any[]> = {};
+  (evoluciones ?? []).forEach((e: any) => {
+    if (!evolucionesMap[e.id_paciente]) {
+      evolucionesMap[e.id_paciente] = [];
+    }
+    evolucionesMap[e.id_paciente].push(e);
+  });
+
+  const turnosMap: Record<string, any[]> = {};
+  (turnos ?? []).forEach((t: any) => {
+    if (!turnosMap[t.id_paciente]) {
+      turnosMap[t.id_paciente] = [];
+    }
+    turnosMap[t.id_paciente].push(t);
+  });
+
+  const cirugiaMap: Record<string, any> = {};
+  (cirugias ?? []).forEach((c: any) => {
+    cirugiaMap[c.id_paciente] = c;
+  });
+
   const result: ContactoCRM[] = [];
 
   for (const pac of (pacientes ?? [])) {
     const crm = crmMap[pac.id_paciente] ?? {};
-    const lastEvo = (evoluciones ?? [])
-      .filter((e: any) => e.id_paciente === pac.id_paciente)
-      .sort((a: any, b: any) => new Date(b.fecha_consulta).getTime() - new Date(a.fecha_consulta).getTime())[0];
-    const nextTurno = (turnos ?? [])
-      .filter((t: any) => t.id_paciente === pac.id_paciente)
-      .sort((a: any, b: any) => new Date(a.fecha_turno).getTime() - new Date(b.fecha_turno).getTime())[0];
-    const cirugia = (cirugias ?? []).find((c: any) => c.id_paciente === pac.id_paciente);
+    const patientEvos = evolucionesMap[pac.id_paciente] ?? [];
+    const lastEvo = patientEvos.length > 0
+      ? [...patientEvos].sort((a: any, b: any) => new Date(b.fecha_consulta).getTime() - new Date(a.fecha_consulta).getTime())[0]
+      : null;
+
+    const patientTurnos = turnosMap[pac.id_paciente] ?? [];
+    const nextTurno = patientTurnos.length > 0
+      ? [...patientTurnos].sort((a: any, b: any) => new Date(a.fecha_turno).getTime() - new Date(b.fecha_turno).getTime())[0]
+      : null;
+
+    const cirugia = cirugiaMap[pac.id_paciente];
 
     let priority: Priority = prioridadFromDB(crm.prioridad);
     if (priority === Priority.NORMAL) {

@@ -252,14 +252,14 @@ export default function VistaDiariaProfesional({ onSelectPatient, date }: VistaD
                 )}
             </div>
             {turnos.length > 0 && (
-                <div className="p-4 bg-slate-100 rounded-b-lg flex justify-end items-center gap-6 mt-auto text-right border-t">
-                    <div className="font-semibold">
+                <div className="p-4 bg-slate-100 rounded-b-lg flex flex-col sm:flex-row justify-end items-end sm:items-center gap-2 sm:gap-6 mt-auto text-right border-t">
+                    <div className="font-semibold text-sm sm:text-base">
                         <span className="text-slate-600">Pacientes Atendidos: </span>
                         <span className="text-slate-800">{summary.atendidos} de {summary.totalTurnos}</span>
                     </div>
-                        <div className="font-semibold">
+                    <div className="font-semibold text-sm sm:text-base">
                         <span className="text-slate-600">Total Recaudado: </span>
-                        <span className="text-green-700 text-lg">${summary.totalRecaudado.toLocaleString('es-AR')}</span>
+                        <span className="text-green-700 text-base sm:text-lg">${summary.totalRecaudado.toLocaleString('es-AR')}</span>
                     </div>
                 </div>
             )}
