@@ -1334,6 +1334,19 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
 
     const filteredTasks = tasks.filter(task => taskStatusFilter === 'todos' || task.status === taskStatusFilter);
 
+    const [currentPage, setCurrentPage] = useState(1);
+    const PAGE_SIZE = 50;
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm, statusFilter, tagFilter, taskStatusFilter, seguimientoFilter, postOpStageFilter, socialInsuranceFilter, activeView]);
+
+    const paginatedContactos = useMemo(() => {
+        return filteredContactos.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+    }, [filteredContactos, currentPage]);
+
+    const totalPages = Math.ceil(filteredContactos.length / PAGE_SIZE);
+
     // [FIX 5b] Per-contact filtered history
     const filteredHistory = selectedContacto
         ? history.filter(h => h.patientId === selectedContacto.id)
@@ -1497,21 +1510,49 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
                 {isLoading ? (
                     <p className="text-center p-8 text-slate-500">Cargando contactos...</p>
                 ) : (
-                    <div className="overflow-x-auto">
-                        {activeView === 'prospects' && (
-                            <ProspectoTable
-                                contactos={filteredContactos}
-                                onOpenModal={handleOpenModal}
-                                onUpdateContacto={handleUpdateContacto}
-                                onReactivate={handleReactivate}
-                                onSelectPatient={onSelectPatient}
-                                seguimientoFilter={seguimientoFilter}
-                                onSeguimientoFilterChange={setSeguimientoFilter}
-                            />
+                    <div>
+                        <div className="overflow-x-auto">
+                            {activeView === 'prospects' && (
+                                <ProspectoTable
+                                    contactos={paginatedContactos}
+                                    onOpenModal={handleOpenModal}
+                                    onUpdateContacto={handleUpdateContacto}
+                                    onReactivate={handleReactivate}
+                                    onSelectPatient={onSelectPatient}
+                                    seguimientoFilter={seguimientoFilter}
+                                    onSeguimientoFilterChange={setSeguimientoFilter}
+                                />
+                            )}
+                            {activeView === 'not-operated' && <ContactoTable contactos={paginatedContactos} onOpenModal={handleOpenModal} onReactivate={handleReactivate} onSelectPatient={onSelectPatient} onUpdateContacto={handleUpdateContacto} contactRowRefs={contactRowRefs} selectedPatientId={selectedPatient?.idPaciente} folders={folders} tasks={tasks} tagFilter={tagFilter} onTagFilterChange={setTagFilter} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} osFilter={socialInsuranceFilter} onOsFilterChange={setSocialInsuranceFilter} obrasSociales={uniqueObrasSociales} />}
+                            {activeView === 'operated' && <OperatedContactoTable contactos={paginatedContactos} onOpenModal={handleOpenModal} onReactivate={handleReactivate} onSelectPatient={onSelectPatient} onUpdateContacto={handleUpdateContacto} contactRowRefs={contactRowRefs} selectedPatientId={selectedPatient?.idPaciente} folders={folders} tasks={tasks} postOpStageFilter={postOpStageFilter} onPostOpStageFilterChange={setPostOpStageFilter} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} osFilter={socialInsuranceFilter} onOsFilterChange={setSocialInsuranceFilter} obrasSociales={uniqueObrasSociales} />}
+                            {activeView === 'tasks' && <TasksView tasks={filteredTasks} onUpdateTask={handleUpdateTask} onSelectPatient={onSelectPatient} contactos={contactos} onOpenModal={handleOpenModal} />}
+                        </div>
+                        {['prospects', 'not-operated', 'operated'].includes(activeView) && totalPages > 1 && (
+                            <div className="flex justify-between items-center px-4 py-3 bg-white border-t border-slate-200 sm:px-6 mt-4">
+                                <div className="flex-1 flex justify-between sm:hidden">
+                                    <button onClick={() => setCurrentPage(p => Math.max(p - 1, 1))} disabled={currentPage === 1} className="relative inline-flex items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50">Anterior</button>
+                                    <button onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))} disabled={currentPage === totalPages} className="ml-3 relative inline-flex items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50">Siguiente</button>
+                                </div>
+                                <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                                    <div>
+                                        <p className="text-sm text-slate-700">
+                                            Mostrando <span className="font-medium">{(currentPage - 1) * PAGE_SIZE + 1}</span> a <span className="font-medium">{Math.min(currentPage * PAGE_SIZE, filteredContactos.length)}</span> de <span className="font-medium">{filteredContactos.length}</span> contactos
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                                            <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-slate-300 bg-white text-sm font-medium text-slate-500 hover:bg-slate-50 disabled:opacity-50">Primero</button>
+                                            <button onClick={() => setCurrentPage(p => Math.max(p - 1, 1))} disabled={currentPage === 1} className="relative inline-flex items-center px-2 py-2 border border-slate-300 bg-white text-sm font-medium text-slate-500 hover:bg-slate-50 disabled:opacity-50">Anterior</button>
+                                            <span className="relative inline-flex items-center px-4 py-2 border border-slate-300 bg-slate-50 text-sm font-medium text-slate-700">
+                                                Página {currentPage} de {totalPages}
+                                            </span>
+                                            <button onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))} disabled={currentPage === totalPages} className="relative inline-flex items-center px-2 py-2 border border-slate-300 bg-white text-sm font-medium text-slate-500 hover:bg-slate-50 disabled:opacity-50">Siguiente</button>
+                                            <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages} className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-slate-300 bg-white text-sm font-medium text-slate-500 hover:bg-slate-50 disabled:opacity-50">Último</button>
+                                        </nav>
+                                    </div>
+                                </div>
+                            </div>
                         )}
-                        {activeView === 'not-operated' && <ContactoTable contactos={filteredContactos} onOpenModal={handleOpenModal} onReactivate={handleReactivate} onSelectPatient={onSelectPatient} onUpdateContacto={handleUpdateContacto} contactRowRefs={contactRowRefs} selectedPatientId={selectedPatient?.idPaciente} folders={folders} tasks={tasks} tagFilter={tagFilter} onTagFilterChange={setTagFilter} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} osFilter={socialInsuranceFilter} onOsFilterChange={setSocialInsuranceFilter} obrasSociales={uniqueObrasSociales} />}
-                        {activeView === 'operated' && <OperatedContactoTable contactos={filteredContactos} onOpenModal={handleOpenModal} onReactivate={handleReactivate} onSelectPatient={onSelectPatient} onUpdateContacto={handleUpdateContacto} contactRowRefs={contactRowRefs} selectedPatientId={selectedPatient?.idPaciente} folders={folders} tasks={tasks} postOpStageFilter={postOpStageFilter} onPostOpStageFilterChange={setPostOpStageFilter} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} osFilter={socialInsuranceFilter} onOsFilterChange={setSocialInsuranceFilter} obrasSociales={uniqueObrasSociales} />}
-                        {activeView === 'tasks' && <TasksView tasks={filteredTasks} onUpdateTask={handleUpdateTask} onSelectPatient={onSelectPatient} contactos={contactos} onOpenModal={handleOpenModal} />}
                     </div>
                 )}
             </div>

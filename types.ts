@@ -64,6 +64,12 @@ export interface PacienteFiliatorio {
   fechaCirugia?: string; // YYYY-MM-DD
   tipoCirugia?: CirugiaTipo;
   fotoPerfil?: string;
+  nroHc?: number;
+  sexo?: string;
+  ocupacion?: string;
+  localidad?: string;
+  cp?: string;
+  telefono2?: string;
 }
 
 // Corresponds to: Tabla 2: HISTORIA_CLINICA_ESTATICA
@@ -152,6 +158,7 @@ export interface Profesional {
     telefono?: string;
     modosAtencion?: ModosAtencion;
     config_turnos?: any; 
+    iniciales?: string;
 }
 
 export interface Turno {

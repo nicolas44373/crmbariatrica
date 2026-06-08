@@ -1,5 +1,5 @@
 // src/services/supabaseApi.ts
-import { supabase } from './supabaseClient';
+import { supabase, supabaseSignUpClient } from './supabaseClient';
 import { format, isToday } from 'date-fns';
 import {
   PacienteFiliatorio,
@@ -49,6 +49,33 @@ const canAdmin  = (r: UserRole) => r === UserRole.ADMINISTRATIVO || r === UserRo
 const canMedico = (r: UserRole) => r === UserRole.MEDICO          || r === UserRole.SUPERADMIN;
 const canAny    = (r: UserRole) => canAdmin(r) || canMedico(r);
 
+async function fetchAll<T>(
+  queryBuilder: any,
+  batchSize: number = 1000
+): Promise<T[]> {
+  let allData: T[] = [];
+  let from = 0;
+  let to = batchSize - 1;
+  let finished = false;
+
+  while (!finished) {
+    const { data, error } = await queryBuilder.range(from, to);
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      finished = true;
+    } else {
+      allData = allData.concat(data);
+      if (data.length < batchSize) {
+        finished = true;
+      } else {
+        from += batchSize;
+        to += batchSize;
+      }
+    }
+  }
+  return allData;
+}
+
 // ─── INTERCEPTOR DE SESIÓN ────────────────────────────────────────────────────
 
 supabase.auth.onAuthStateChange((event, session) => {
@@ -89,6 +116,7 @@ function mapProfesional(row: any): Profesional {
     telefono: row.telefono ?? '',
     modosAtencion: row.modos_atencion ?? undefined,
     config_turnos: row.config_turnos ?? null,
+    iniciales: row.iniciales ?? '',
   };
 }
 
@@ -105,12 +133,18 @@ function mapPaciente(row: any): PacienteFiliatorio {
     telefono: row.telefono ?? '',
     email: row.email ?? '',
     etiquetaPrincipalActiva: row.etiqueta_activa ?? 'NUEVO_INGRESO',
-    cirujanoAsignado: row.cirujano_asignado_email ?? '',
+    cirujanoAsignado: row.cirujano_assigned_email ?? row.cirujano_asignado_email ?? '',
     nutricionistaAsignado: row.nutricionista_asignado_email ?? '',
     psicologoAsignado: row.psicologo_asignado_email ?? '',
     fechaCirugia: row.fecha_cirugia ?? undefined,
     tipoCirugia: row.tipo_gestion_cirugia ?? undefined,
     fotoPerfil: row.foto_perfil ?? undefined,
+    nroHc: row.nro_hc ?? undefined,
+    sexo: row.sexo ?? '',
+    ocupacion: row.ocupacion ?? '',
+    localidad: row.localidad ?? '',
+    cp: row.cp ?? '',
+    telefono2: row.telefono_2 ?? '',
   };
 }
 
@@ -379,6 +413,7 @@ async function createProfesional(
     telefono: string;
     activo: boolean;
     config_turnos: object;
+    iniciales?: string;
   },
   userRole: UserRole = UserRole.ADMINISTRATIVO
 ): Promise<Profesional> {
@@ -396,6 +431,7 @@ async function createProfesional(
       matricula:     data.matricula     || null,
       telefono:      data.telefono      || null,
       config_turnos: data.config_turnos,
+      iniciales:     data.iniciales     || null,
     })
     .select()
     .single();
@@ -421,11 +457,12 @@ async function createProfesionalWithAuth(
     telefono: string;
     activo: boolean;
     config_turnos: object;
+    iniciales?: string;
   },
   password: string
 ): Promise<{ profesional: Profesional; authCreated: boolean; message: string }> {
   // 1. Create the auth account
-  const { data: authData, error: authError } = await supabase.auth.signUp({
+  const { data: authData, error: authError } = await supabaseSignUpClient.auth.signUp({
     email: data.email.trim().toLowerCase(),
     password,
     options: { data: { nombre: `${data.nombres} ${data.apellido}` } },
@@ -460,6 +497,7 @@ async function createProfesionalWithAuth(
       matricula:     data.matricula     || null,
       telefono:      data.telefono      || null,
       config_turnos: data.config_turnos,
+      iniciales:     data.iniciales     || null,
     }, { onConflict: 'email' })
     .select()
     .single();
@@ -516,6 +554,7 @@ async function updateProfesionalConfig(
     telefono?: string;
     activo?: boolean;
     config_turnos?: object;
+    iniciales?: string;
   },
   userRole: UserRole = UserRole.ADMINISTRATIVO
 ): Promise<Profesional> {
@@ -530,6 +569,7 @@ async function updateProfesionalConfig(
   if (data.telefono      !== undefined) dbUpdates.telefono      = data.telefono      || null;
   if (data.activo        !== undefined) dbUpdates.activo        = data.activo;
   if (data.config_turnos !== undefined) dbUpdates.config_turnos = data.config_turnos;
+  if (data.iniciales     !== undefined) dbUpdates.iniciales     = data.iniciales     || null;
 
   const { data: result, error } = await supabase
     .from('profesionales')
@@ -635,8 +675,7 @@ async function getPacientes(role: UserRole, profesionalEmail?: string): Promise<
       `cirujano_asignado_email.eq.${profesionalEmail},nutricionista_asignado_email.eq.${profesionalEmail},psicologo_asignado_email.eq.${profesionalEmail}`
     );
   }
-  const { data, error } = await query;
-  if (error) handleSupabaseError(error);
+  const data = await fetchAll<any>(query);
   return (data ?? []).map(mapPaciente);
 }
 
@@ -754,6 +793,12 @@ async function createPaciente(
     cirujano_asignado_email: cirujano?.email ?? null,
     nutricionista_asignado_email: nutricionista?.email ?? null,
     psicologo_asignado_email: psicologo?.email ?? null,
+    nro_hc: pacienteData.nroHc ?? null,
+    sexo: pacienteData.sexo ?? null,
+    ocupacion: pacienteData.ocupacion ?? null,
+    localidad: pacienteData.localidad ?? null,
+    cp: pacienteData.cp ?? null,
+    telefono_2: pacienteData.telefono2 ?? null,
   }).select().single();
 
   if (error) handleSupabaseError(error);
@@ -809,10 +854,16 @@ async function updatePacienteFiliatorio(
   if (updates.telefono          !== undefined) dbUpdates.telefono                    = updates.telefono;
   if (updates.email             !== undefined) dbUpdates.email                       = updates.email;
   // DESPUÉS — string vacío se convierte a NULL, que sí acepta la FK
-if (updates.cirujanoAsignado      !== undefined) dbUpdates.cirujano_asignado_email      = updates.cirujanoAsignado      || null;
-if (updates.nutricionistaAsignado !== undefined) dbUpdates.nutricionista_asignado_email = updates.nutricionistaAsignado || null;
-if (updates.psicologoAsignado     !== undefined) dbUpdates.psicologo_asignado_email     = updates.psicologoAsignado     || null;
-if (updates.fotoPerfil            !== undefined) dbUpdates.foto_perfil                 = updates.fotoPerfil            || null;
+  if (updates.cirujanoAsignado      !== undefined) dbUpdates.cirujano_asignado_email      = updates.cirujanoAsignado      || null;
+  if (updates.nutricionistaAsignado !== undefined) dbUpdates.nutricionista_asignado_email = updates.nutricionistaAsignado || null;
+  if (updates.psicologoAsignado     !== undefined) dbUpdates.psicologo_asignado_email     = updates.psicologoAsignado     || null;
+  if (updates.fotoPerfil            !== undefined) dbUpdates.foto_perfil                 = updates.fotoPerfil            || null;
+  if (updates.nroHc                 !== undefined) dbUpdates.nro_hc                      = updates.nroHc;
+  if (updates.sexo                  !== undefined) dbUpdates.sexo                        = updates.sexo;
+  if (updates.ocupacion             !== undefined) dbUpdates.ocupacion                   = updates.ocupacion;
+  if (updates.localidad             !== undefined) dbUpdates.localidad                   = updates.localidad;
+  if (updates.cp                    !== undefined) dbUpdates.cp                          = updates.cp;
+  if (updates.telefono2             !== undefined) dbUpdates.telefono_2                  = updates.telefono2;
 
   const { data, error } = await supabase
     .from('pacientes').update(dbUpdates).eq('id_paciente', idPaciente).select().single();
@@ -1269,20 +1320,20 @@ async function guardarInforme(
 
 async function getContactosCRM(): Promise<ContactoCRM[]> {
   const [
-    { data: contactos },
-    { data: pacientes },
-    { data: evoluciones },
-    { data: turnos },
-    { data: cirugias },
-    { data: carpetas },
+    contactos,
+    pacientes,
+    evoluciones,
+    turnos,
+    cirugias,
+    carpetas,
     { data: profs },
   ] = await Promise.all([
-    supabase.from('crm_contactos').select('*'),
-    supabase.from('pacientes').select('*'),
-    supabase.from('evoluciones').select('id_paciente, fecha_consulta').eq('is_deleted', false),
-    supabase.from('turnos').select('id_paciente, fecha_turno, profesional_email').gt('fecha_turno', new Date().toISOString()),
-    supabase.from('cirugias').select('id_paciente, fecha_realizada, fecha_programada, tipo_cirugia'),
-    supabase.from('carpetas_quirurgicas').select('id_paciente, id_carpeta'),
+    fetchAll<any>(supabase.from('crm_contactos').select('*')),
+    fetchAll<any>(supabase.from('pacientes').select('id_paciente, dni, apellido, nombres, telefono, email, obra_social, etiqueta_activa, created_at, fecha_cirugia')),
+    fetchAll<any>(supabase.from('evoluciones').select('id_paciente, fecha_consulta').eq('is_deleted', false)),
+    fetchAll<any>(supabase.from('turnos').select('id_paciente, fecha_turno, profesional_email').gt('fecha_turno', new Date().toISOString())),
+    fetchAll<any>(supabase.from('cirugias').select('id_paciente, fecha_realizada, fecha_programada, tipo_cirugia')),
+    fetchAll<any>(supabase.from('carpetas_quirurgicas').select('id_paciente, id_carpeta')),
     supabase.from('profesionales').select('email, nombres, apellido'),
   ]);
 
@@ -1475,17 +1526,16 @@ async function getCrmHistory(): Promise<CrmHistoryEntry[]> {
 // ─── TAREAS ───────────────────────────────────────────────────────────────────
 
 async function getTasks(): Promise<Task[]> {
-  const { data, error } = await supabase
-    .from('tareas').select('*, pacientes(apellido, nombres)').order('fecha_vencimiento');
-  if (error) handleSupabaseError(error);
+  const query = supabase.from('tareas').select('*, pacientes(apellido, nombres)').order('fecha_vencimiento');
+  const data = await fetchAll<any>(query);
   return (data ?? []).map(mapTask);
 }
 
 async function getTasksForUser(email: string): Promise<Task[]> {
-  const { data, error } = await supabase
+  const query = supabase
     .from('tareas').select('*, pacientes(apellido, nombres)')
     .eq('asignado_a_email', email).eq('estado', TaskStatus.PENDIENTE).order('fecha_vencimiento');
-  if (error) handleSupabaseError(error);
+  const data = await fetchAll<any>(query);
   return (data ?? []).map(mapTask);
 }
 
@@ -1696,14 +1746,14 @@ export interface EstadisticasGenerales {
 
 async function getEstadisticas(): Promise<EstadisticasGenerales> {
   const [
-    { data: pacientes },
-    { data: turnos },
-    { data: crm },
+    pacientes,
+    turnos,
+    crm,
     { data: profs },
   ] = await Promise.all([
-    supabase.from('pacientes').select('etiqueta_activa, obra_social, created_at'),
-    supabase.from('turnos').select('estado, profesional_email, fecha_turno'),
-    supabase.from('crm_contactos').select('is_patient, fecha_ingreso'),
+    fetchAll<any>(supabase.from('pacientes').select('etiqueta_activa, obra_social, created_at')),
+    fetchAll<any>(supabase.from('turnos').select('estado, profesional_email, fecha_turno')),
+    fetchAll<any>(supabase.from('crm_contactos').select('is_patient, fecha_ingreso')),
     supabase.from('profesionales').select('email, nombres, apellido'),
   ]);
 
@@ -1760,23 +1810,23 @@ async function getEstadisticas(): Promise<EstadisticasGenerales> {
 
 async function exportBackup(): Promise<object> {
   const [
-    { data: pacientes },
-    { data: turnos },
-    { data: crm },
-    { data: profesionales },
-    { data: evoluciones },
-    { data: informes },
-    { data: tareas },
-    { data: carpetas },
+    pacientes,
+    turnos,
+    crm,
+    profesionales,
+    evoluciones,
+    informes,
+    tareas,
+    carpetas,
   ] = await Promise.all([
-    supabase.from('pacientes').select('*'),
-    supabase.from('turnos').select('*'),
-    supabase.from('crm_contactos').select('*'),
-    supabase.from('profesionales').select('*'),
-    supabase.from('evoluciones').select('*'),
-    supabase.from('informes').select('*'),
-    supabase.from('tareas').select('*'),
-    supabase.from('carpetas_quirurgicas').select('*'),
+    fetchAll<any>(supabase.from('pacientes').select('*')),
+    fetchAll<any>(supabase.from('turnos').select('*')),
+    fetchAll<any>(supabase.from('crm_contactos').select('*')),
+    fetchAll<any>(supabase.from('profesionales').select('*')),
+    fetchAll<any>(supabase.from('evoluciones').select('*')),
+    fetchAll<any>(supabase.from('informes').select('*')),
+    fetchAll<any>(supabase.from('tareas').select('*')),
+    fetchAll<any>(supabase.from('carpetas_quirurgicas').select('*')),
   ]);
 
   return {

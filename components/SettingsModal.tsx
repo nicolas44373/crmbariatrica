@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { ConfiguracionGeneral, Profesional, DiaSemana, BloqueHorario, ConfiguracionProfesional, HorarioEspecial, UserRole, PlantillaLaboratorioParametro } from '../types';
 import { api } from '../services/supabaseApi';
-import { supabase } from '../services/supabaseClient';
+import { supabase, supabaseSignUpClient } from '../services/supabaseClient';
 import { AuthContext } from '../App';
 import { DIAS_SEMANA_MAP } from '../constants';
 import { format } from 'date-fns';
@@ -83,7 +83,7 @@ const NuevoUsuarioModal = ({ onClose, onSuccess }: NuevoUsuarioModalProps) => {
 
             if (authError) {
                 // Si no tenemos acceso admin, usar signUp normal
-                const { error: signUpError } = await supabase.auth.signUp({
+                const { error: signUpError } = await supabaseSignUpClient.auth.signUp({
                     email: formData.email,
                     password: formData.password,
                 });
