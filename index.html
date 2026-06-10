@@ -80,6 +80,51 @@
           display: none !important;
         }
       }
+      
+      /* Make all inputs, textareas, and selects wider, more spacious, and highly visible */
+      input[type="text"],
+      input[type="tel"],
+      input[type="email"],
+      input[type="number"],
+      input[type="date"],
+      input[type="password"],
+      select,
+      textarea {
+        border: 1px solid #94a3b8 !important; /* Very visible slate-400 border */
+        border-radius: 0.5rem !important; /* Rounded-lg */
+        padding: 0.55rem 0.85rem !important; /* Spacious padding */
+        font-size: 0.875rem !important; /* text-sm */
+        line-height: 1.25rem !important;
+        background-color: #ffffff !important;
+        color: #0f172a !important; /* slate-900 */
+        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
+        transition: all 0.15s ease-in-out !important;
+      }
+      /* Ensure left-padded inputs with icons have correct padding */
+      input.pl-4 {
+        padding-left: 1rem !important;
+      }
+      input.pl-7 {
+        padding-left: 1.75rem !important;
+      }
+      input.pl-9 {
+        padding-left: 2.25rem !important;
+      }
+      input.pl-10 {
+        padding-left: 2.5rem !important;
+      }
+      input[type="text"]:focus,
+      input[type="tel"]:focus,
+      input[type="email"]:focus,
+      input[type="number"]:focus,
+      input[type="date"]:focus,
+      input[type="password"]:focus,
+      select:focus,
+      textarea:focus {
+        border-color: #4f46e5 !important; /* Indigo-600 */
+        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15) !important; /* Indigo ring */
+        outline: none !important;
+      }
     </style>
   <script type="importmap">
 {

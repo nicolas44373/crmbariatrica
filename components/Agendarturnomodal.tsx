@@ -99,18 +99,48 @@ export default function AgendarTurnoModal({
 
   // ─── Búsqueda de pacientes ────────────────────────────────────────────────
   useEffect(() => {
-    if (pacienteBusqueda.length < 2) {
+    const isDigit = /^\d+$/.test(pacienteBusqueda);
+    if (pacienteBusqueda.length < (isDigit ? 1 : 2)) {
       setPacientesResultados([]);
       return;
     }
-    const query = pacienteBusqueda.toLowerCase();
+    
+    const query = pacienteBusqueda.trim().toLowerCase();
+    const isNumeric = /^\d+$/.test(query);
+    const isPrefixedId = /^p-\d+$/.test(query);
+    
     api.getPacientes(UserRole.ADMINISTRATIVO).then(pacientes => {
-      setPacientesResultados(
-        pacientes.filter(p =>
+      let filtered = [];
+      if (isNumeric || isPrefixedId) {
+        const numericStr = isNumeric ? query : query.substring(2);
+        const searchNum = parseInt(numericStr, 10);
+        const exactId = `p-${numericStr}`;
+        
+        const hasExactMatch = pacientes.some(p => 
+          p.nroHc === searchNum || (p.idPaciente && p.idPaciente.toLowerCase() === exactId)
+        );
+        
+        if (hasExactMatch) {
+          filtered = pacientes.filter(p => 
+            p.nroHc === searchNum || (p.idPaciente && p.idPaciente.toLowerCase() === exactId)
+          );
+        } else {
+          filtered = pacientes.filter(p =>
+            `${p.apellido} ${p.nombres}`.toLowerCase().includes(query) ||
+            p.dni.includes(pacienteBusqueda) ||
+            (p.idPaciente && p.idPaciente.toLowerCase().includes(query)) ||
+            (p.nroHc && String(p.nroHc).includes(query))
+          );
+        }
+      } else {
+        filtered = pacientes.filter(p =>
           `${p.apellido} ${p.nombres}`.toLowerCase().includes(query) ||
-          p.dni.includes(pacienteBusqueda)
-        ).slice(0, 8)
-      );
+          p.dni.includes(pacienteBusqueda) ||
+          (p.idPaciente && p.idPaciente.toLowerCase().includes(query)) ||
+          (p.nroHc && String(p.nroHc).includes(query))
+        );
+      }
+      setPacientesResultados(filtered.slice(0, 8));
     });
   }, [pacienteBusqueda]);
 
@@ -502,7 +532,7 @@ export default function AgendarTurnoModal({
                       type="text"
                       value={pacienteBusqueda}
                       onChange={e => setPacienteBusqueda(e.target.value)}
-                      placeholder="Buscar por apellido o DNI..."
+                      placeholder="Buscar por apellido, DNI, HC o ID..."
                       className="block w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:border-indigo-500 outline-none"
                     />
                     {pacientesResultados.length > 0 && (
@@ -515,7 +545,7 @@ export default function AgendarTurnoModal({
                           >
                             <div>
                               <p className="font-medium text-slate-800 text-sm">{p.apellido}, {p.nombres}</p>
-                              <p className="text-xs text-slate-500">DNI: {p.dni}</p>
+                              <p className="text-xs text-slate-500">DNI: {p.dni} {p.nroHc ? `· HC: ${p.nroHc}` : ''} · ID: {p.idPaciente}</p>
                             </div>
                           </button>
                         ))}

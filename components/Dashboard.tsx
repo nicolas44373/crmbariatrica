@@ -1313,9 +1313,39 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
     )).sort() as string[];
 
     const filteredContactos = contactos.filter(c => {
-        const searchLower = searchTerm.toLowerCase();
+        const searchLower = searchTerm.trim().toLowerCase();
         const contactName = `${c.firstName || ''} ${c.lastName || ''}`.toLowerCase();
-        const matchesSearch = contactName.includes(searchLower) || (c.dni && c.dni.includes(searchLower)) || (c.phone && c.phone.includes(searchLower));
+        
+        const isNumeric = /^\d+$/.test(searchLower);
+        const isPrefixedId = /^p-\d+$/.test(searchLower);
+        let matchesSearch = false;
+
+        if (isNumeric || isPrefixedId) {
+            const numericStr = isNumeric ? searchLower : searchLower.substring(2);
+            const searchNum = parseInt(numericStr, 10);
+            const exactId = `p-${numericStr}`;
+            
+            const hasExactMatch = contactos.some(other => 
+                other.isPatient && 
+                (other.nroHc === searchNum || other.id.toLowerCase() === exactId)
+            );
+
+            if (hasExactMatch) {
+                matchesSearch = c.isPatient && (c.nroHc === searchNum || c.id.toLowerCase() === exactId);
+            } else {
+                matchesSearch = contactName.includes(searchLower) || 
+                                (c.dni && c.dni.includes(searchLower)) || 
+                                (c.phone && c.phone.includes(searchLower)) ||
+                                c.id.toLowerCase().includes(searchLower) ||
+                                (c.nroHc && String(c.nroHc).includes(searchLower));
+            }
+        } else {
+            matchesSearch = contactName.includes(searchLower) || 
+                            (c.dni && c.dni.includes(searchLower)) || 
+                            (c.phone && c.phone.includes(searchLower)) ||
+                            c.id.toLowerCase().includes(searchLower) ||
+                            (c.nroHc && String(c.nroHc).includes(searchLower));
+        }
         const calculatedStatus = getContactoCalculatedStatus(c);
         const matchesStatus = statusFilter === 'todos' || calculatedStatus === statusFilter;
         const matchesTag = tagFilter === 'todos' || c.tag === tagFilter;
@@ -1533,27 +1563,27 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
                             <span className="text-xs font-semibold text-slate-500 px-1">Filtros:</span>
                             
                             {activeView === 'not-operated' && (
-                                <select value={tagFilter} onChange={e => setTagFilter(e.target.value as any)} className="rounded-lg border-slate-300 text-xs bg-white py-1 shadow-sm focus:ring-sky-500 focus:border-sky-500">
+                                <select value={tagFilter} onChange={e => setTagFilter(e.target.value as any)} className="text-sm bg-white shadow-sm focus:ring-sky-500 focus:border-sky-500">
                                     <option value="todos">Todas las Etiquetas</option>
                                     {Object.values(ContactoTag).filter(t => t !== ContactoTag.POSBARIATRICO).map(tag => <option key={tag} value={tag}>{tag.replace(/_/g, ' ')}</option>)}
                                 </select>
                             )}
 
                             {activeView === 'operated' && (
-                                <select value={postOpStageFilter} onChange={e => setPostOpStageFilter(e.target.value as any)} className="rounded-lg border-slate-300 text-xs bg-white py-1 shadow-sm focus:ring-sky-500 focus:border-sky-500">
+                                <select value={postOpStageFilter} onChange={e => setPostOpStageFilter(e.target.value as any)} className="text-sm bg-white shadow-sm focus:ring-sky-500 focus:border-sky-500">
                                     <option value="todos">Todas las Etapas</option>
                                     {Object.values(PostOpStage).map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
                             )}
 
-                            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="rounded-lg border-slate-300 text-xs bg-white py-1 shadow-sm focus:ring-sky-500 focus:border-sky-500">
+                            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="text-sm bg-white shadow-sm focus:ring-sky-500 focus:border-sky-500">
                                 <option value="todos">Todos los Estados</option>
                                 <option value={ContactoStatus.ACTIVO}>Activo</option>
                                 <option value={ContactoStatus.INACTIVO}>Inactivo</option>
                                 <option value={ContactoStatus.PERDIDO}>Perdido</option>
                             </select>
 
-                            <select value={socialInsuranceFilter} onChange={e => setSocialInsuranceFilter(e.target.value)} className="rounded-lg border-slate-300 text-xs bg-white py-1 shadow-sm focus:ring-sky-500 focus:border-sky-500">
+                            <select value={socialInsuranceFilter} onChange={e => setSocialInsuranceFilter(e.target.value)} className="text-sm bg-white shadow-sm focus:ring-sky-500 focus:border-sky-500">
                                 <option value="">Todas las Obras Sociales</option>
                                 {uniqueObrasSociales.map(os => <option key={os} value={os}>{os}</option>)}
                             </select>
@@ -1858,7 +1888,12 @@ const ContactoRow = React.forwardRef<HTMLTableRowElement, { contacto: ContactoCR
             <tr ref={ref} className={`transition-colors ${isSelected ? 'bg-blue-50' : ''}`}>
                 <td className="px-4 py-4 whitespace-nowrap">
                     <button onClick={handleSelect} className="text-left hover:underline">
-                        <div className="text-sm font-medium text-slate-900">{contacto.lastName}, {contacto.firstName}</div>
+                        <div className="text-sm font-medium text-slate-900">
+                            {contacto.lastName}, {contacto.firstName}
+                            <span className="ml-2 px-1.5 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-500 border">
+                                {contacto.id}
+                            </span>
+                        </div>
                         <div className="text-sm text-slate-500">{contacto.socialInsurance}</div>
                     </button>
                 </td>
@@ -2376,9 +2411,46 @@ function MedicoDashboard({ onSelectPatient, onNavigateToCrm }: DashboardProps) {
         const [isOpen, setIsOpen] = useState(false);
 
         useEffect(() => {
-            if (query.length < 2) { setResults([]); setIsOpen(false); return; }
-            const lowerQuery = normalizeString(query);
-            const filtered = allPatients.filter(p => normalizeString(`${p.apellido} ${p.nombres}`).includes(lowerQuery) || p.dni.includes(lowerQuery));
+            const isDigit = /^\d+$/.test(query);
+            if (query.length < (isDigit ? 1 : 2)) { setResults([]); setIsOpen(false); return; }
+            
+            const lowerQuery = query.trim().toLowerCase();
+            const isNumeric = /^\d+$/.test(lowerQuery);
+            const isPrefixedId = /^p-\d+$/.test(lowerQuery);
+            
+            let filtered = [];
+            
+            if (isNumeric || isPrefixedId) {
+                const numericStr = isNumeric ? lowerQuery : lowerQuery.substring(2);
+                const searchNum = parseInt(numericStr, 10);
+                const exactId = `p-${numericStr}`;
+                
+                const hasExactMatch = allPatients.some(p => 
+                    p.nroHc === searchNum || (p.idPaciente && p.idPaciente.toLowerCase() === exactId)
+                );
+                
+                if (hasExactMatch) {
+                    filtered = allPatients.filter(p => 
+                        p.nroHc === searchNum || (p.idPaciente && p.idPaciente.toLowerCase() === exactId)
+                    );
+                } else {
+                    const normQuery = normalizeString(query);
+                    filtered = allPatients.filter(p => 
+                        normalizeString(`${p.apellido} ${p.nombres}`).includes(normQuery) || 
+                        p.dni.includes(normQuery) ||
+                        (p.idPaciente && p.idPaciente.toLowerCase().includes(normQuery)) ||
+                        (p.nroHc && String(p.nroHc).includes(normQuery))
+                    );
+                }
+            } else {
+                const normQuery = normalizeString(query);
+                filtered = allPatients.filter(p => 
+                    normalizeString(`${p.apellido} ${p.nombres}`).includes(normQuery) || 
+                    p.dni.includes(normQuery) ||
+                    (p.idPaciente && p.idPaciente.toLowerCase().includes(normQuery)) ||
+                    (p.nroHc && String(p.nroHc).includes(normQuery))
+                );
+            }
             setResults(filtered);
             setIsOpen(true);
         }, [query]);
@@ -2388,14 +2460,14 @@ function MedicoDashboard({ onSelectPatient, onNavigateToCrm }: DashboardProps) {
         return (
             <div className="relative">
                 <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><SearchIcon /></div>
-                <input type="text" placeholder="Buscar paciente por nombre, apellido o DNI..." value={query} onChange={e => setQuery(e.target.value)} onBlur={() => setTimeout(() => setIsOpen(false), 200)} onFocus={() => query.length > 1 && setIsOpen(true)} className="block w-full rounded-md border-slate-300 pl-10 shadow-sm text-base p-3" />
+                <input type="text" placeholder="Buscar paciente por nombre, apellido, DNI, HC o ID..." value={query} onChange={e => setQuery(e.target.value)} onBlur={() => setTimeout(() => setIsOpen(false), 200)} onFocus={() => query.length > 1 && setIsOpen(true)} className="block w-full rounded-md border-slate-300 pl-10 shadow-sm text-base p-3" />
                 {isOpen && results.length > 0 && (
                     <div className="absolute z-10 mt-1 w-full bg-white shadow-lg rounded-md max-h-60 overflow-y-auto border border-slate-200">
                         <ul>
                             {results.map(patient => (
                                 <li key={patient.idPaciente} onClick={() => handleSelect(patient)} className="p-3 hover:bg-slate-100 cursor-pointer border-b last:border-b-0">
                                     <p className="font-medium text-slate-800">{patient.apellido}, {patient.nombres}</p>
-                                    <p className="text-sm text-slate-500">DNI: {patient.dni}</p>
+                                    <p className="text-sm text-slate-500">DNI: {patient.dni} {patient.nroHc ? `· HC: ${patient.nroHc}` : ''} · ID: {patient.idPaciente}</p>
                                 </li>
                             ))}
                         </ul>

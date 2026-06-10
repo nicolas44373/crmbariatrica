@@ -434,6 +434,7 @@ export interface ContactoCRM {
     surgeryType: TipoCirugiaBariatrica | null;
     folderId: string | null;
     isPatient: boolean;
+    nroHc?: number;
     // Prospect only fields
     canalOrigen?: ProspectoCanalOrigen;
     estadoSeguimiento?: ProspectoEstadoSeguimiento;

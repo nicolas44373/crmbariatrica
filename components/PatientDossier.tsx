@@ -660,6 +660,7 @@ const FichaModal = ({ paciente, equipoAsignado, onClose, onEdit, canEdit }: {
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         <div><strong className="text-slate-600">DNI:</strong> {filiatorio.dni}</div>
+                        <div><strong className="text-slate-600">Nro HC / ID:</strong> {filiatorio.nroHc ? `${filiatorio.nroHc} (ID: ${filiatorio.idPaciente})` : filiatorio.idPaciente}</div>
                         <div><strong className="text-slate-600">Fecha de Nacimiento:</strong> {filiatorio.fechaNacimiento ? format(new Date(filiatorio.fechaNacimiento.replace(/-/g, '/')), 'dd/MM/yyyy') : 'N/A'}</div>
                         <div><strong className="text-slate-600">Edad:</strong> {edad !== null ? `${edad} años` : 'N/A'}</div>
                         <div className="lg:col-span-3"><strong className="text-slate-600">Dirección:</strong> {filiatorio.direccion || 'No especificada'}</div>

@@ -1329,7 +1329,7 @@ async function getContactosCRM(): Promise<ContactoCRM[]> {
     { data: profs },
   ] = await Promise.all([
     fetchAll<any>(supabase.from('crm_contactos').select('*')),
-    fetchAll<any>(supabase.from('pacientes').select('id_paciente, dni, apellido, nombres, telefono, email, obra_social, etiqueta_activa, created_at, fecha_cirugia')),
+    fetchAll<any>(supabase.from('pacientes').select('id_paciente, nro_hc, dni, apellido, nombres, telefono, email, obra_social, etiqueta_activa, created_at, fecha_cirugia')),
     fetchAll<any>(supabase.from('evoluciones').select('id_paciente, fecha_consulta').eq('is_deleted', false)),
     fetchAll<any>(supabase.from('turnos').select('id_paciente, fecha_turno, profesional_email').gt('fecha_turno', new Date().toISOString())),
     fetchAll<any>(supabase.from('cirugias').select('id_paciente, fecha_realizada, fecha_programada, tipo_cirugia')),
@@ -1395,6 +1395,7 @@ async function getContactosCRM(): Promise<ContactoCRM[]> {
 
     result.push({
       id: pac.id_paciente,
+      nroHc: pac.nro_hc ?? undefined,
       dni: pac.dni ?? '',
       lastName: pac.apellido ?? '',
       firstName: pac.nombres ?? '',
@@ -1832,6 +1833,135 @@ async function getEstadisticas(): Promise<EstadisticasGenerales> {
   };
 }
 
+interface SlotDisponible {
+  horaInicio: string;
+  horaFin: string;
+  disponible: boolean;
+}
+
+async function getDiasDisponiblesEnMes(
+  profesionalEmail: string,
+  year: number,
+  month: number
+): Promise<Set<string>> {
+  const prof = await getProfesional(profesionalEmail);
+  const config = prof.config_turnos;
+  const diasConSlots = new Set<string>();
+  if (!config) return diasConSlots;
+
+  const startDate = new Date(year, month, 1);
+  const endDate = new Date(year, month + 1, 0);
+
+  const activeDaysOfWeek = new Set<number>();
+  (config.horarios || []).forEach((h: any) => {
+    activeDaysOfWeek.add(h.dia);
+  });
+
+  if (activeDaysOfWeek.size === 0) return diasConSlots;
+
+  const blockedDays = new Set<string>();
+  (config.diasBloqueados || []).forEach((d: string) => {
+    blockedDays.add(d.split('T')[0]);
+  });
+
+  const currentDate = new Date(startDate);
+  while (currentDate <= endDate) {
+    const dayOfWeek = currentDate.getDay();
+    if (activeDaysOfWeek.has(dayOfWeek)) {
+      const dateStr = format(currentDate, 'yyyy-MM-dd');
+      if (!blockedDays.has(dateStr)) {
+        diasConSlots.add(dateStr);
+      }
+    }
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+
+  return diasConSlots;
+}
+
+async function getSlotsDisponibles(
+  profesionalEmail: string,
+  date: Date
+): Promise<SlotDisponible[]> {
+  const prof = await getProfesional(profesionalEmail);
+  const config = prof.config_turnos;
+  if (!config) return [];
+
+  const dateStr = format(date, 'yyyy-MM-dd');
+
+  const isBlocked = (config.diasBloqueados || []).some(
+    (d: string) => d === dateStr || d.startsWith(dateStr)
+  );
+  if (isBlocked) return [];
+
+  const dayOfWeek = date.getDay();
+
+  const blocks = (config.horarios || []).filter((h: any) => h.dia === dayOfWeek);
+  if (blocks.length === 0) return [];
+
+  const inicio = new Date(date);
+  inicio.setHours(0, 0, 0, 0);
+  const fin = new Date(date);
+  fin.setHours(23, 59, 59, 999);
+
+  const { data: turnos, error } = await supabase
+    .from('turnos')
+    .select('*')
+    .eq('profesional_email', profesionalEmail)
+    .neq('estado', 'CANCELADO')
+    .gte('fecha_turno', inicio.toISOString())
+    .lte('fecha_turno', fin.toISOString());
+
+  if (error) handleSupabaseError(error);
+
+  const bookedTimes = new Set<string>();
+  (turnos ?? []).forEach((t: any) => {
+    const tDate = new Date(t.fecha_turno);
+    const hh = String(tDate.getHours()).padStart(2, '0');
+    const mm = String(tDate.getMinutes()).padStart(2, '0');
+    bookedTimes.add(`${hh}:${mm}`);
+  });
+
+  const slots: SlotDisponible[] = [];
+  const duration = config.duracionTurnoMinutos || 30;
+
+  for (const block of blocks) {
+    const [startHour, startMin] = block.horaInicio.split(':').map(Number);
+    const [endHour, endMin] = block.horaFin.split(':').map(Number);
+
+    let current = new Date(date);
+    current.setHours(startHour, startMin, 0, 0);
+
+    const endLimit = new Date(date);
+    endLimit.setHours(endHour, endMin, 0, 0);
+
+    while (current.getTime() + duration * 60000 <= endLimit.getTime()) {
+      const slotStartHour = String(current.getHours()).padStart(2, '0');
+      const slotStartMin = String(current.getMinutes()).padStart(2, '0');
+      const slotStartTimeStr = `${slotStartHour}:${slotStartMin}`;
+
+      const next = new Date(current.getTime() + duration * 60000);
+      const slotEndHour = String(next.getHours()).padStart(2, '0');
+      const slotEndMin = String(next.getMinutes()).padStart(2, '0');
+      const slotEndTimeStr = `${slotEndHour}:${slotEndMin}`;
+
+      const isBooked = bookedTimes.has(slotStartTimeStr);
+
+      slots.push({
+        horaInicio: slotStartTimeStr,
+        horaFin: slotEndTimeStr,
+        disponible: !isBooked,
+      });
+
+      current = next;
+    }
+  }
+
+  slots.sort((a, b) => a.horaInicio.localeCompare(b.horaInicio));
+
+  return slots;
+}
+
 // ─── BACKUP ───────────────────────────────────────────────────────────────────
 
 async function exportBackup(): Promise<object> {
@@ -1899,6 +2029,8 @@ export const api = {
   getTurnosDiariosTodosProfesionales,
   createTurno,
   updateDetallesTurno,
+  getDiasDisponiblesEnMes,
+  getSlotsDisponibles,
   // Evoluciones
   createEvolucion,
   updateEvolucion,

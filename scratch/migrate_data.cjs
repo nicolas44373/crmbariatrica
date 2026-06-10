@@ -341,6 +341,12 @@ async function runMigration() {
     }
   }
 
+  // Manual overrides for initials mismatch in RTF files
+  doctorInitialsToEmail['AJD'] = 'adiaz@plenus.ar';
+  doctorInitialsToEmail['MPS'] = 'psosa@plenus.ar';
+  doctorInitialsToEmail['PJT'] = 'medico_11@plenus.ar';
+  doctorInitialsToEmail['EP'] = 'epuertas@plenus.ar';
+
   // 1b. LOAD PATIENT TAGS MAPPING FROM PACIENTES_ETIQUETAS.xls
   console.log('\n--- 1b. Loading Patient Tags (PACIENTES_ETIQUETAS.xls) ---');
   const tagsWorkbook = XLSX.readFile(path.join(dataDir, 'PACIENTES_ETIQUETAS.xls'));
@@ -376,14 +382,78 @@ async function runMigration() {
   });
   console.log(`Loaded ${patientsWithSurgeries.size} patients with surgery records.`);
 
-  // 2. MIGRATE PACIENTES.xls -> pacientes
-  console.log('\n--- 2. Migrating patients (PACIENTES.xls) ---');
+    // Phone helpers for robust mapping
+    function cleanPhone(val) {
+      if (!val) return '';
+      return String(val).replace(/\D/g, '');
+    }
+
+    function formatPhone(phone, ddi) {
+      let cleaned = cleanPhone(phone);
+      if (!cleaned || cleaned.length < 6) return '';
+      
+      if (cleaned.startsWith('15') && cleaned.length === 9) {
+        cleaned = cleaned.slice(2);
+      }
+      
+      let cleanedDdi = cleanPhone(ddi);
+      
+      // Default to Tucumán area code 381 if no DDI is specified and number has 7/8 digits
+      if (!cleanedDdi && (cleaned.length === 7 || cleaned.length === 8)) {
+        cleanedDdi = '381';
+      }
+      
+      if (cleanedDdi && !cleaned.startsWith(cleanedDdi)) {
+        return `${cleanedDdi}${cleaned}`;
+      }
+      return cleaned;
+    }
+
+    function getPatientPhone(p) {
+      const whatsapp = formatPhone(p.WHATSAPP, p.DDI);
+      if (whatsapp) return whatsapp;
+      
+      const tel2 = formatPhone(p.TEL2, p.DDI2 || p.DDI);
+      if (tel2) return tel2;
+      
+      const tel = formatPhone(p.TEL, p.DDI);
+      if (tel) return tel;
+      
+      return '';
+    }
+
+    function getPatientPhone2(p) {
+      const mainPhone = getPatientPhone(p);
+      const candidates = [
+        formatPhone(p.WHATSAPP, p.DDI),
+        formatPhone(p.TEL2, p.DDI2 || p.DDI),
+        formatPhone(p.TEL, p.DDI)
+      ].filter(val => val && val.length >= 6 && val !== mainPhone);
+      
+      return candidates[0] || null;
+    }
+
+    // 2. MIGRATE PACIENTES.xls -> pacientes
+    console.log('\n--- 2. Migrating patients (PACIENTES.xls) ---');
   const pacientesWorkbook = XLSX.readFile(path.join(dataDir, 'PACIENTES.xls'));
   const pacientesSheet = pacientesWorkbook.Sheets[pacientesWorkbook.SheetNames[0]];
   const pacientesData = XLSX.utils.sheet_to_json(pacientesSheet);
   
-  const realPatients = pacientesData.filter(p => p.NROHC > 0);
-  console.log(`Found ${realPatients.length} patients to migrate.`);
+  const realPatients = pacientesData.filter(p => {
+    if (!p.NROHC || p.NROHC <= 0) return false;
+    const apellido = p.APELLIDO ? String(p.APELLIDO).trim() : '';
+    const nombre = p.NOMBRE ? String(p.NOMBRE).trim() : '';
+    // Filter out if name/apellido starts with symbols like -, ., /, *
+    if (/^[-\.\/\*]/.test(apellido) || /^[-\.\/\*]/.test(nombre)) {
+      return false;
+    }
+    // Filter out if name or apellido is empty or consists purely of symbols/spaces
+    if (!apellido.replace(/[-\.\/\*\s]/g, '') || !nombre.replace(/[-\.\/\*\s]/g, '')) {
+      return false;
+    }
+    return true;
+  });
+  console.log(`Found ${realPatients.length} valid patients to migrate.`);
 
   const nrohcToUuid = {};
   const batchSize = 100;
@@ -442,14 +512,14 @@ async function runMigration() {
         direccion: p.DOMICILIO || null,
         obra_social: p.OS || '',
         nro_afiliado: p.NROOS ? String(p.NROOS).trim() : '',
-        telefono: p.TEL ? String(p.TEL).trim() : '',
+        telefono: getPatientPhone(p),
         email: p.EMAIL || '',
         nro_hc: p.NROHC,
         sexo: sexoStr,
         ocupacion: p.OCUPACION || null,
         localidad: p.LOCALIDAD || null,
         cp: p.CP ? String(p.CP) : null,
-        telefono_2: p.TEL2 ? String(p.TEL2) : null,
+        telefono_2: getPatientPhone2(p),
         etiqueta_activa: tagStr,
         cirujano_asignado_email: drEmail,
       };

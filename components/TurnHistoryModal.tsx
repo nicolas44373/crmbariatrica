@@ -59,6 +59,11 @@ export const TurnHistoryModal = ({ onClose, contacto }: TurnHistoryModalProps) =
     const [turnoAReagendar, setTurnoAReagendar]             = useState<Turno | null>(null);
     const [profesionalParaReagendar, setProfesionalParaReagendar] = useState<Profesional | null>(null);
     const [loadingReagendar, setLoadingReagendar]           = useState(false);
+    const [profesionales, setProfesionales]                 = useState<Profesional[]>([]);
+
+    useEffect(() => {
+        api.getProfesionalesAdmin().then(setProfesionales).catch(console.error);
+    }, []);
 
     const fetchTurnos = useCallback(() => {
         if (!contacto) return;
@@ -138,6 +143,11 @@ export const TurnHistoryModal = ({ onClose, contacto }: TurnHistoryModalProps) =
                     {t.especialidad || 'Sin especialidad'}
                     {t.esVideoconsulta && ' · Videoconsulta'}
                     {t.esSobreturno   && ' · Sobreturno'}
+                    {t.profesionalEmail && ` · Profesional: ${
+                        profesionales.find(p => p.email === t.profesionalEmail)
+                            ? `${profesionales.find(p => p.email === t.profesionalEmail)?.nombres} ${profesionales.find(p => p.email === t.profesionalEmail)?.apellido}`
+                            : t.profesionalEmail
+                    }`}
                 </p>
                 {t.notaInterna && (
                     <p className="text-xs text-slate-400 mt-0.5 italic">"{t.notaInterna}"</p>
