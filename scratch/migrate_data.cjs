@@ -210,12 +210,13 @@ function normalizeWeightHeight(rawPeso, rawTalla) {
 function mapTipoQx(name) {
   if (!name) return 'Otra';
   const lower = name.toLowerCase();
+  if (lower.includes('bypass') || lower.includes('by pass') || lower.includes('bagua')) return 'Bypass Gástrico';
   if (lower.includes('manga') || lower.includes('sleeve')) return 'Manga Gástrica';
-  if (lower.includes('bypass') || lower.includes('by pass')) return 'Bypass Gástrico';
   if (lower.includes('sadi')) return 'SADI-S';
   if (lower.includes('balon') || lower.includes('balón')) return 'Balón Intragástrico';
   return 'Otra';
 }
+
 
 // ─── MAIN MIGRATION ───────────────────────────────────────────────────────────
 
@@ -376,10 +377,11 @@ async function runMigration() {
   const patientsWithSurgeries = new Set();
   barQxData.forEach(qx => {
     const datosRow = barDatosMap[qx.ID_PROCEDIMIENTO];
-    if (datosRow && datosRow.NROHC) {
+    if (datosRow && datosRow.NROHC && qx.FECHAQX) {
       patientsWithSurgeries.add(datosRow.NROHC);
     }
   });
+
   console.log(`Loaded ${patientsWithSurgeries.size} patients with surgery records.`);
 
     // Phone helpers for robust mapping
@@ -829,6 +831,10 @@ async function runMigration() {
       const d = excelDateToJSDate(qx.FECHAQXPROGRAMADA);
       if (d) fechaQxProg = d.toISOString().split('T')[0];
     }
+
+    if (!fechaQx && !fechaQxProg) {
+      continue; // Skip empty/garbage surgery logs
+    }
     
     const qxTypeName = tipoQxIdToName[qx.TIPOQX] || 'Otra';
     const bariatricType = mapTipoQx(qxTypeName);
@@ -842,6 +848,7 @@ async function runMigration() {
       nombre_archivo_protocolo: ''
     });
   }
+
   
   for (let i = 0; i < cirugiasPayloads.length; i += batchSize) {
     const batch = cirugiasPayloads.slice(i, i + batchSize);
