@@ -537,6 +537,21 @@ async function runMigration() {
       batch.forEach(p => {
         nrohcToUuid[p.NROHC] = `P-${p.NROHC}`;
       });
+
+      const crmPayload = batch.map(p => ({
+        id_contacto: `P-${p.NROHC}`,
+        is_patient: true,
+        prioridad: 'Normal',
+        fecha_ingreso: new Date().toISOString().split('T')[0]
+      }));
+
+      const { error: crmError } = await supabase
+        .from('crm_contactos')
+        .insert(crmPayload);
+
+      if (crmError) {
+        console.error(`Error inserting crm_contactos batch starting at index ${i}:`, crmError.message);
+      }
     }
   }
   

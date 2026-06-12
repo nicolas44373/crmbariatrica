@@ -1451,10 +1451,21 @@ async function updateContactoCRM(id: string, updates: Partial<ContactoCRM>): Pro
   return updates;
 }
 
+function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 async function createProspecto(
   prospectoData: Pick<ContactoCRM, 'firstName' | 'lastName' | 'phone' | 'email' | 'canalOrigen'>
 ): Promise<Partial<ContactoCRM>> {
-  const newId = crypto.randomUUID();
+  const newId = generateUUID();
   const today = new Date().toISOString().split('T')[0];
   const { error } = await supabase.from('crm_contactos').insert({
     id_contacto:        newId,
@@ -1471,6 +1482,7 @@ async function createProspecto(
   if (error) handleSupabaseError(error);
   return { id: newId, ...prospectoData, isPatient: false };
 }
+
 
 async function getCrmHistory(): Promise<CrmHistoryEntry[]> {
   const entries: CrmHistoryEntry[] = [];
