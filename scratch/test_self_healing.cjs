@@ -8,17 +8,18 @@ const envConfig = dotenv.parse(fs.readFileSync('.env.local'));
 const supabase = createClient(envConfig.VITE_SUPABASE_URL, envConfig.VITE_SUPABASE_ANON_KEY);
 
 async function run() {
-  const testDni = 'TEST_' + Math.floor(Math.random() * 1000000);
+  const manualHc = 8500;
+  const manualDni = 'TEST_MANUAL_' + Math.floor(Math.random() * 1000000);
+
   try {
-    console.log('Testing insert with manual high nro_hc (9999) and id_paciente (P-9999)...');
+    console.log(`Step 1: Inserting patient with manual nro_hc = ${manualHc}...`);
     const { data, error } = await supabase
       .from('pacientes')
       .insert({
-        id_paciente: 'P-9999',
-        nro_hc: 9999,
-        apellido: 'TEST_LASTNAME',
-        nombres: 'TEST_FIRSTNAME',
-        dni: testDni,
+        apellido: 'TEST_MANUAL_LN',
+        nombres: 'TEST_MANUAL_FN',
+        dni: manualDni,
+        nro_hc: manualHc,
         etiqueta_activa: 'NUEVO_INGRESO'
       })
       .select('id_paciente, nro_hc');
@@ -27,11 +28,11 @@ async function run() {
       console.error('Full Error Object:');
       console.error(JSON.stringify(error, null, 2));
     } else {
-      console.log('Success:', data);
-      await supabase.from('pacientes').delete().eq('dni', testDni);
+      console.log('Successfully inserted manual patient:', data);
+      await supabase.from('pacientes').delete().eq('dni', manualDni);
     }
-  } catch (err) {
-    console.error('Exception:', err);
+  } catch (error) {
+    console.error('Fatal error:', error.message);
   }
 }
 

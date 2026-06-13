@@ -2172,15 +2172,21 @@ const LiquidacionDiariaModal = ({ onClose }: { onClose: () => void }) => {
 };
 
 function useDebouncedCallback<A extends any[]>(callback: (...args: A) => void, wait: number) {
-    const argsRef = useRef<A | undefined>(undefined);
+    const callbackRef = useRef(callback);
+    useEffect(() => {
+        callbackRef.current = callback;
+    }, [callback]);
+
     const timeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
     function cleanup() { if (timeout.current) clearTimeout(timeout.current); }
     useEffect(() => { return cleanup; }, []);
+
     return useCallback((...args: A) => {
-        argsRef.current = args;
         cleanup();
-        timeout.current = setTimeout(() => { if (argsRef.current) callback(...argsRef.current); }, wait);
-    }, [callback, wait]);
+        timeout.current = setTimeout(() => {
+            callbackRef.current(...args);
+        }, wait);
+    }, [wait]);
 }
 
 // ─── [FIX 3] TORRE DE CONTROL — with date picker ─────────────────────────────
@@ -2299,16 +2305,16 @@ const TorreDeControl = ({ onSelectPatient }: { onSelectPatient: (patient: Pacien
                                                     </div>
                                                     <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${estadoInfo.colorFondo}`}>{estadoInfo.texto}</span>
                                                 </div>
-                                                <div className="grid grid-cols-2 gap-2 text-xs">
-                                                    <div>
-                                                        <input type="text" defaultValue={turno.notaInterna || ''} onChange={e => debouncedNotaUpdate(turno.idTurno, e.target.value)} placeholder="Nota..." className="w-full p-1 rounded border-slate-300" />
+                                                <div className="grid grid-cols-12 gap-1 text-xs">
+                                                    <div className="col-span-4">
+                                                        <input type="text" defaultValue={turno.notaInterna || ''} onChange={e => debouncedNotaUpdate(turno.idTurno, e.target.value)} onBlur={e => handleUpdateTurno(turno.idTurno, { notaInterna: e.target.value })} placeholder="Nota..." className="w-full p-1 compact-input rounded border-slate-300" />
                                                     </div>
-                                                    <div className="flex gap-1">
+                                                    <div className="col-span-8 flex gap-1">
                                                         <div className="relative flex-grow">
-                                                            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-1.5"><span className="text-gray-500">$</span></div>
-                                                            <input type="text" inputMode="decimal" defaultValue={turno.valorCobrado || ''} onChange={e => debouncedValorUpdate(turno.idTurno, parseFloat(e.target.value) || 0)} placeholder="Valor" className="w-full p-1 pl-4 rounded border-slate-300" />
+                                                            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-1"><span className="text-gray-500">$</span></div>
+                                                            <input type="text" inputMode="decimal" defaultValue={turno.valorCobrado || ''} onChange={e => debouncedValorUpdate(turno.idTurno, parseFloat(e.target.value) || 0)} onBlur={e => handleUpdateTurno(turno.idTurno, { valorCobrado: parseFloat(e.target.value) || 0 })} placeholder="Valor" className="w-full p-1 pl-4 compact-input rounded border-slate-300" />
                                                         </div>
-                                                        <select value={turno.metodoPago || ''} onChange={e => handleUpdateTurno(turno.idTurno, { metodoPago: e.target.value as any })} className="p-1 rounded border-slate-300">
+                                                        <select value={turno.metodoPago || ''} onChange={e => handleUpdateTurno(turno.idTurno, { metodoPago: e.target.value as any })} className="p-1 compact-input rounded border-slate-300">
                                                             <option value="">...</option>
                                                             <option value="Efectivo">Efectivo</option>
                                                             <option value="Tarjeta">Tarjeta</option>

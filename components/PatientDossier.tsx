@@ -524,8 +524,24 @@ const EditarPacienteModal = ({ paciente, onClose, onSuccess }: { paciente: Pacie
     const [formData, setFormData] = useState(paciente);
     const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [obrasSociales, setObrasSociales] = useState<string[]>([]);
 
     const user = authContext!.user!;
+
+    useEffect(() => {
+        const fetchObrasSociales = async () => {
+            try {
+                const data = await api.getContactosCRM();
+                const uniqueOS = Array.from(new Set(
+                    data.filter((c: any) => c.isPatient && c.socialInsurance).map((c: any) => c.socialInsurance)
+                )).sort() as string[];
+                setObrasSociales(uniqueOS);
+            } catch (err) {
+                console.error("Failed to load unique health insurances:", err);
+            }
+        };
+        fetchObrasSociales();
+    }, []);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
@@ -588,7 +604,20 @@ const EditarPacienteModal = ({ paciente, onClose, onSuccess }: { paciente: Pacie
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label htmlFor="obraSocial" className="block text-sm font-medium text-slate-700">Obra Social</label>
-                                <input type="text" name="obraSocial" id="obraSocial" value={formData.obraSocial} onChange={handleChange} className="mt-1 block w-full rounded-md border-slate-300" />
+                                <input 
+                                    type="text" 
+                                    name="obraSocial" 
+                                    id="obraSocial" 
+                                    list="obras-sociales-list"
+                                    value={formData.obraSocial} 
+                                    onChange={handleChange} 
+                                    className="mt-1 block w-full rounded-md border-slate-300" 
+                                />
+                                <datalist id="obras-sociales-list">
+                                    {obrasSociales.map(os => (
+                                        <option key={os} value={os} />
+                                    ))}
+                                </datalist>
                             </div>
                             <div>
                                 <label htmlFor="nroAfiliado" className="block text-sm font-medium text-slate-700">Nro de Afiliado</label>

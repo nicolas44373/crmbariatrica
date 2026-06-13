@@ -188,8 +188,9 @@ export default function VistaDiariaProfesional({ onSelectPatient, date }: VistaD
                         rows={1}
                         defaultValue={turno.notaInterna || ''}
                         onChange={(e) => debouncedNotaUpdate(turno.idTurno, e.target.value)}
+                        onBlur={(e) => handleUpdate(turno.idTurno, { notaInterna: e.target.value })}
                         placeholder="Nota interna..."
-                        className="block w-full text-sm p-2 rounded-md border-slate-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                        className="block w-full text-sm p-2 compact-input rounded-md border-slate-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
                      />
                 </div>
                 
@@ -206,8 +207,9 @@ export default function VistaDiariaProfesional({ onSelectPatient, date }: VistaD
                             id={`valor-${turno.idTurno}`}
                             defaultValue={turno.valorCobrado || ''}
                             onChange={(e) => debouncedValorUpdate(turno.idTurno, parseFloat(e.target.value) || 0)}
+                            onBlur={(e) => handleUpdate(turno.idTurno, { valorCobrado: parseFloat(e.target.value) || 0 })}
                             placeholder="0"
-                            className="block w-full text-sm p-2 pl-7 rounded-md border-slate-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                            className="block w-full text-sm p-2 pl-7 compact-input rounded-md border-slate-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
                          />
                      </div>
                 </div>

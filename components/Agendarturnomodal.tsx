@@ -408,7 +408,7 @@ export default function AgendarTurnoModal({
                     }`}
                   >
                     <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-bold flex-shrink-0">
-                      {prof.nombres.charAt(0)}{prof.apellido.charAt(0)}
+                      {(prof.nombres || '').charAt(0)}{(prof.apellido || '').charAt(0)}
                     </div>
                     <div>
                       <p className="font-semibold text-slate-800 text-sm">{prof.nombres} {prof.apellido}</p>
@@ -430,7 +430,7 @@ export default function AgendarTurnoModal({
             <div className="space-y-4">
               <div className="flex items-center gap-3 p-3 bg-indigo-50 rounded-xl">
                 <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-bold">
-                  {profesionalSeleccionado?.nombres.charAt(0)}{profesionalSeleccionado?.apellido.charAt(0)}
+                  {(profesionalSeleccionado?.nombres || '').charAt(0)}{(profesionalSeleccionado?.apellido || '').charAt(0)}
                 </div>
                 <div>
                   <p className="font-medium text-slate-800 text-sm">{profesionalSeleccionado?.nombres} {profesionalSeleccionado?.apellido}</p>
@@ -518,7 +518,7 @@ export default function AgendarTurnoModal({
                 {pacienteSeleccionado ? (
                   <div className="flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-xl">
                     <div className="w-9 h-9 rounded-full bg-green-200 text-green-800 flex items-center justify-center font-bold text-sm">
-                      {pacienteSeleccionado.nombres.charAt(0)}{pacienteSeleccionado.apellido.charAt(0)}
+                      {(pacienteSeleccionado?.nombres || '').charAt(0)}{(pacienteSeleccionado?.apellido || '').charAt(0)}
                     </div>
                     <div className="flex-1">
                       <p className="font-semibold text-slate-800 text-sm">{pacienteSeleccionado.apellido}, {pacienteSeleccionado.nombres}</p>
