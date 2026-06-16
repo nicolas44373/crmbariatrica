@@ -29,6 +29,9 @@ import { es } from 'date-fns/locale';
 import { supabase } from '../services/supabaseClient';
 import { TurnHistoryModal } from './TurnHistoryModal';
 import { PedidosRecetasModal } from './Pedidosrecetasmodal';
+import AgendarTurnoModal from './Agendarturnomodal';
+import { FolderModal } from './FolderModal';
+import { CrmSimpleProfessionals } from '../types';
 // --- Icons ---
 const UserPhotoPlaceholderIcon = () => (
     <div className="w-24 h-24 rounded-full bg-slate-200 flex items-center justify-center ring-4 ring-white shadow-md">
@@ -154,338 +157,6 @@ const ClipboardPlusIcon = () => (
 
 // --- Sub-components defined inside PatientDossier to reduce file count ---
 
-type AvailabilityStatus = 'disponible' | 'completo' | 'bloqueado' | 'pasado' | 'no-laboral';
-
-// AgendarTurnoModal Component
-const AgendarTurnoModal = ({ onConfirm, onCancel, profesionales, pacienteId, config, currentUser }: { 
-    onConfirm: (turnoData: Omit<Turno, 'idTurno' | 'estado'>) => void, 
-    onCancel: () => void,
-    profesionales: Profesional[],
-    pacienteId: string,
-    config: ConfiguracionGeneral,
-    currentUser: Profesional,
-}) => {
-    const [isSaving, setIsSaving] = useState(false);
-    const [profesionalEmail, setProfesionalEmail] = useState(profesionales[0]?.email || '');
-    const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-    const [selectedTime, setSelectedTime] = useState<string | null>(null);
-    const [esVideoconsulta, setEsVideoconsulta] = useState(false);
-    const [esSobreturno, setEsSobreturno] = useState(false);
-    const [allSlots, setAllSlots] = useState<Date[]>([]);
-    const [bookedSlots, setBookedSlots] = useState<number[]>([]);
-    const [isLoadingSlots, setIsLoadingSlots] = useState(false);
-    
-    const [currentMonth, setCurrentMonth] = useState(new Date());
-    const [turnosProfesional, setTurnosProfesional] = useState<TurnoConPaciente[]>([]);
-    const [monthlyAvailability, setMonthlyAvailability] = useState<Record<string, AvailabilityStatus>>({});
-    const [isLoadingCalendar, setIsLoadingCalendar] = useState(true);
-    const selectedProfesional = profesionales.find(p => p.email === profesionalEmail);
-    const professionalConfig = config.configuracionesProfesionales.find(h => h.profesionalEmail === profesionalEmail);
-
-    useEffect(() => {
-        if (!profesionalEmail) return;
-        setIsLoadingCalendar(true);
-        api.getTurnosParaProfesional(profesionalEmail).then(setTurnosProfesional);
-    }, [profesionalEmail]);
-    
-
-    useEffect(() => {
-        if (!professionalConfig) return;
-        
-        setIsLoadingCalendar(true);
-        const start = startOfMonth(currentMonth);
-        const end = endOfMonth(currentMonth);
-        const daysInMonth = eachDayOfInterval({start, end});
-        const newAvailability: Record<string, AvailabilityStatus> = {};
-        const today = startOfDay(new Date());
-
-        daysInMonth.forEach(day => {
-            const dayKey = format(day, 'yyyy-MM-dd');
-            const dayOfWeek = getDay(day);
-
-            if (isBefore(day, today)) {
-                newAvailability[dayKey] = 'pasado';
-                return;
-            }
-            
-            const specialBlocks = professionalConfig.horariosEspeciales?.filter(h => h.fecha === dayKey) || [];
-            if (specialBlocks.length > 0) {
-                 newAvailability[dayKey] = 'disponible';
-                 return;
-            }
-
-            if (professionalConfig.diasBloqueados?.includes(dayKey)) {
-                newAvailability[dayKey] = 'bloqueado';
-                return;
-            }
-            const workingBlocks = professionalConfig.horarios.filter(h => h.dia === dayOfWeek);
-            if (workingBlocks.length === 0) {
-                newAvailability[dayKey] = 'no-laboral';
-                return;
-            }
-            
-            newAvailability[dayKey] = 'disponible';
-        });
-        
-        setMonthlyAvailability(newAvailability);
-        setIsLoadingCalendar(false);
-
-    }, [currentMonth, professionalConfig, turnosProfesional]);
-
-    useEffect(() => {
-        const calculateAvailableSlots = async () => {
-            if (!profesionalEmail || !selectedDate || !config || !professionalConfig) {
-                 setAllSlots([]);
-                 setBookedSlots([]);
-                return;
-            };
-
-            setIsLoadingSlots(true);
-            const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');
-            
-            try {
-                const turnosDelDia = await api.getTurnosPorFechaYProfesional(selectedDateStr, profesionalEmail);
-                setBookedSlots(turnosDelDia.map(t => new Date(t.fechaTurno).getTime()));
-
-                const { duracionTurnoMinutos } = professionalConfig;
-                const possibleSlots: Date[] = [];
-                const specialBlocksForDay = professionalConfig.horariosEspeciales?.filter(h => h.fecha === selectedDateStr) || [];
-                
-                const blocksForCalculation = specialBlocksForDay.length > 0 
-                    ? specialBlocksForDay 
-                    : professionalConfig.horarios.filter(h => h.dia === getDay(selectedDate));
-
-
-                for (const block of blocksForCalculation) {
-                    let currentTime = new Date(`${selectedDateStr}T${block.horaInicio}:00.000`);
-                    const endTime = new Date(`${selectedDateStr}T${block.horaFin}:00.000`);
-
-                    while (currentTime < endTime) {
-                       possibleSlots.push(new Date(currentTime));
-                       currentTime = addMinutes(currentTime, duracionTurnoMinutos);
-                    }
-                }
-                
-                setAllSlots(possibleSlots.sort((a, b) => a.getTime() - b.getTime()));
-
-            } catch (error) {
-                console.error("Error fetching slots:", error);
-                 setAllSlots([]);
-                 setBookedSlots([]);
-            } finally {
-                setIsLoadingSlots(false);
-            }
-        };
-
-        calculateAvailableSlots();
-    }, [profesionalEmail, selectedDate, config, professionalConfig]);
-
-    useEffect(() => {
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-            if (event === 'SIGNED_OUT' || (!session && event !== 'INITIAL_SESSION')) {
-                window.location.href = '/login';
-            }
-        });
-        return () => subscription.unsubscribe();
-    }, []);
-
-    const handleDateSelect = (day: Date) => {
-        const status = monthlyAvailability[format(day, 'yyyy-MM-dd')];
-        if (status === 'disponible') {
-            setSelectedDate(day);
-            setSelectedTime(null);
-            setEsSobreturno(false);
-        }
-    }
-    
-    const handleTimeClick = (slotDate: Date) => {
-        const isBooked = bookedSlots.includes(slotDate.getTime());
-        if (isBooked) {
-            if (window.confirm("Este horario ya está ocupado. ¿Desea agendar un sobreturno?")) {
-                setSelectedTime(slotDate.toISOString());
-                setEsSobreturno(true);
-            }
-        } else {
-            setSelectedTime(slotDate.toISOString());
-            setEsSobreturno(false);
-        }
-    };
-
-
-    const handleSubmit = async () => {
-        if (!selectedDate || !selectedTime || !profesionalEmail || !selectedProfesional?.especialidad) {
-            alert('Por favor complete todos los campos requeridos.');
-            return;
-        }
-        setIsSaving(true);
-        try {
-            await onConfirm({
-                idPaciente: pacienteId,
-                fechaTurno: new Date(selectedTime).toISOString(),
-                profesionalEmail,
-                especialidad: selectedProfesional.especialidad,
-                creadoPorEmail: currentUser.email,
-                esVideoconsulta,
-                esSobreturno,
-            });
-        } catch(e: any) {
-             alert(`Error al guardar: ${e.message}`);
-        } finally {
-            setIsSaving(false);
-        }
-    };
-    
-    const calendarDays = useMemo(() => {
-        const monthStart = startOfMonth(currentMonth);
-        const monthEnd = endOfMonth(monthStart);
-        const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
-        const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
-        return eachDayOfInterval({ start: startDate, end: endDate });
-    }, [currentMonth]);
-    
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 transition-opacity duration-300">
-            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-3xl m-4 transform transition-all duration-300 scale-95 opacity-0 animate-fadeInScale">
-                <h2 className="text-xl font-bold text-slate-800 mb-4">Agendar Nuevo Turno</h2>
-                <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label htmlFor="profesional" className="block text-sm font-medium text-slate-700">Profesional</label>
-                            <select
-                                id="profesional"
-                                value={profesionalEmail}
-                                onChange={(e) => {
-                                    setProfesionalEmail(e.target.value);
-                                    setSelectedDate(null);
-                                    setSelectedTime(null);
-                                }}
-                                className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                            >
-                                {profesionales.map(p => <option key={p.email} value={p.email}>{`${p.nombres} ${p.apellido}`}</option>)}
-                            </select>
-                        </div>
-                        <div>
-                            <label htmlFor="especialidad" className="block text-sm font-medium text-slate-700">Especialidad</label>
-                            <input type="text" id="especialidad" disabled value={selectedProfesional?.especialidad || 'N/A'} className="mt-1 block w-full rounded-md border-slate-300 shadow-sm bg-slate-50 sm:text-sm" />
-                        </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* Calendario */}
-                        <div>
-                            <div className="flex items-center justify-between mb-2">
-                                <button type="button" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} className="p-1 rounded-full hover:bg-slate-100"><ChevronLeftIconSmall /></button>
-                                <h3 className="font-semibold text-slate-700 capitalize">{format(currentMonth, 'LLLL yyyy', { locale: es })}</h3>
-                                <button type="button" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} className="p-1 rounded-full hover:bg-slate-100"><ChevronRightIconSmall /></button>
-                            </div>
-                             {isLoadingCalendar ? <div className="text-center p-10">Cargando calendario...</div> : (
-                                <>
-                                <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-500 mb-2">
-                                    {['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá', 'Do'].map(d => <div key={d}>{d}</div>)}
-                                </div>
-                                <div className="grid grid-cols-7 gap-1">
-                                    {calendarDays.map(day => {
-                                        const dayKey = format(day, 'yyyy-MM-dd');
-                                        const status = monthlyAvailability[dayKey];
-                                        const isSel = selectedDate && isSameDay(day, selectedDate);
-                                        const isCurrMonth = isSameMonth(day, currentMonth);
-
-                                        let statusClasses = 'bg-white ';
-                                        if (isCurrMonth) {
-                                           switch (status) {
-                                            case 'disponible': statusClasses += 'bg-green-100 text-green-900 font-semibold hover:bg-green-200 cursor-pointer'; break;
-                                            case 'bloqueado': statusClasses += 'bg-slate-200 text-slate-500 line-through cursor-not-allowed'; break;
-                                            case 'pasado': statusClasses += 'text-slate-400 cursor-not-allowed'; break;
-                                            default: statusClasses += 'text-slate-700';
-                                           }
-                                        } else {
-                                            statusClasses += 'text-slate-400 cursor-not-allowed';
-                                        }
-                                        
-                                        if (isSel) {
-                                            statusClasses = 'bg-indigo-600 text-white font-bold ring-2 ring-indigo-400';
-                                        } else if (isToday(day)) {
-                                            statusClasses += ' border-2 border-indigo-300';
-                                        }
-
-                                        return (
-                                            <button
-                                                type="button"
-                                                key={dayKey}
-                                                onClick={() => handleDateSelect(day)}
-                                                disabled={status !== 'disponible'}
-                                                className={`h-9 w-9 flex items-center justify-center rounded-full text-sm transition-colors duration-150 ${statusClasses}`}
-                                            >
-                                                {format(day, 'd')}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                                </>
-                             )}
-                        </div>
-                        {/* Horarios */}
-                        <div>
-                             <label className="block text-sm font-medium text-slate-700 mb-2">Horarios disponibles</label>
-                             {!selectedDate ? <div className="text-center p-4 text-slate-500 text-sm bg-slate-50 rounded-md">Seleccione un día verde en el calendario.</div>
-                             : isLoadingSlots ? <div className="text-center p-4 text-slate-500">Buscando horarios...</div>
-                             : allSlots.length > 0 ? (
-                                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-48 overflow-y-auto pr-2">
-                                    {allSlots.map(slot => {
-                                        const isBooked = bookedSlots.includes(slot.getTime());
-                                        const isSelected = selectedTime === slot.toISOString();
-                                        return (
-                                            <button
-                                                type="button"
-                                                key={slot.toISOString()}
-                                                onClick={() => handleTimeClick(slot)}
-                                                className={`p-2 text-sm rounded-md text-center transition-colors ${
-                                                    isSelected ? 'bg-indigo-600 text-white font-bold ring-2 ring-indigo-400' : 
-                                                    isBooked ? 'bg-red-100 text-red-700 hover:bg-red-200' : 
-                                                    'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                                                }`}
-                                            >
-                                                {format(slot, 'HH:mm')}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            ) : (
-                                <div className="text-center p-4 bg-slate-50 rounded-md mt-1 text-slate-600 text-sm">No hay horarios para este día.</div>
-                            )}
-                        </div>
-                    </div>
-                     <div className="pt-2">
-                        <label className="flex items-center space-x-2 text-sm text-slate-700">
-                            <input
-                                type="checkbox"
-                                checked={esVideoconsulta}
-                                onChange={(e) => setEsVideoconsulta(e.target.checked)}
-                                className="rounded border-slate-300 text-indigo-600 shadow-sm focus:ring-indigo-500"
-                            />
-                            <span>Marcar como Videoconsulta</span>
-                        </label>
-                    </div>
-                    {/* Botones */}
-                    <div className="flex justify-end space-x-3 pt-4">
-                        <button type="button" onClick={onCancel} className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200">Cancelar</button>
-                        <button type="button" onClick={handleSubmit} disabled={isSaving || !selectedTime} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:bg-indigo-300 flex items-center">
-                            {isSaving ? 'Guardando...' : 'Agendar Turno'}
-                        </button>
-                    </div>
-                </div>
-            </div>
-            <style>{`
-                @keyframes fadeInScale {
-                    0% { transform: scale(0.95); opacity: 0; }
-                    100% { transform: scale(1); opacity: 1; }
-                }
-                .animate-fadeInScale { animation: fadeInScale 0.3s forwards; }
-            `}</style>
-        </div>
-    );
-};
-
 
 // DefinirCirugiaModal Component
 const DefinirCirugiaModal = ({ onConfirm, onCancel }: { onConfirm: (tipo: CirugiaTipo, fecha: string) => void, onCancel: () => void }) => {
@@ -517,14 +188,14 @@ const DefinirCirugiaModal = ({ onConfirm, onCancel }: { onConfirm: (tipo: Cirugi
         </div>
     );
 };
-
-// EditarPacienteModal Component
+   // EditarPacienteModal Component
 const EditarPacienteModal = ({ paciente, onClose, onSuccess }: { paciente: PacienteFiliatorio, onClose: () => void, onSuccess: () => void }) => {
     const authContext = useContext(AuthContext);
     const [formData, setFormData] = useState(paciente);
     const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [obrasSociales, setObrasSociales] = useState<string[]>([]);
+    const [profesionales, setProfesionales] = useState<Profesional[]>([]);
 
     const user = authContext!.user!;
 
@@ -541,7 +212,15 @@ const EditarPacienteModal = ({ paciente, onClose, onSuccess }: { paciente: Pacie
             }
         };
         fetchObrasSociales();
+
+        api.getProfesionalesAdmin().then(data => {
+            setProfesionales(data.filter(p => p.activo));
+        }).catch(err => console.error("Error fetching professionals:", err));
     }, []);
+
+    const cirujanos = profesionales.filter(p => p.especialidad?.toLowerCase().includes('ciruj') || p.especialidad?.toLowerCase().includes('bariat'));
+    const nutricionistas = profesionales.filter(p => p.especialidad?.toLowerCase().includes('nutri'));
+    const psicologos = profesionales.filter(p => p.especialidad?.toLowerCase().includes('psic') || p.especialidad?.toLowerCase().includes('psiq'));
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
@@ -588,7 +267,7 @@ const EditarPacienteModal = ({ paciente, onClose, onSuccess }: { paciente: Pacie
                             </div>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
+                             <div>
                                 <label htmlFor="dni" className="block text-sm font-medium text-slate-700">DNI</label>
                                 <input type="text" name="dni" id="dni" value={formData.dni} onChange={handleChange} required className="mt-1 block w-full rounded-md border-slate-300" />
                             </div>
@@ -634,6 +313,53 @@ const EditarPacienteModal = ({ paciente, onClose, onSuccess }: { paciente: Pacie
                                 <input type="email" name="email" id="email" value={formData.email} onChange={handleChange} className="mt-1 block w-full rounded-md border-slate-300" />
                             </div>
                         </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label htmlFor="cirujanoAsignado" className="block text-sm font-medium text-slate-700">Cirujano Asignado</label>
+                                <select
+                                    name="cirujanoAsignado"
+                                    id="cirujanoAsignado"
+                                    value={formData.cirujanoAsignado || ''}
+                                    onChange={e => setFormData(prev => ({ ...prev, cirujanoAsignado: e.target.value }))}
+                                    className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                                >
+                                    <option value="">No asignado</option>
+                                    {cirujanos.map(p => (
+                                        <option key={p.email} value={p.email}>{p.apellido}, {p.nombres}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label htmlFor="nutricionistaAsignado" className="block text-sm font-medium text-slate-700">Nutricionista Asignado</label>
+                                <select
+                                    name="nutricionistaAsignado"
+                                    id="nutricionistaAsignado"
+                                    value={formData.nutricionistaAsignado || ''}
+                                    onChange={e => setFormData(prev => ({ ...prev, nutricionistaAsignado: e.target.value }))}
+                                    className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                                >
+                                    <option value="">No asignado</option>
+                                    {nutricionistas.map(p => (
+                                        <option key={p.email} value={p.email}>{p.apellido}, {p.nombres}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label htmlFor="psicologoAsignado" className="block text-sm font-medium text-slate-700">Psicólogo Asignado</label>
+                                <select
+                                    name="psicologoAsignado"
+                                    id="psicologoAsignado"
+                                    value={formData.psicologoAsignado || ''}
+                                    onChange={e => setFormData(prev => ({ ...prev, psicologoAsignado: e.target.value }))}
+                                    className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                                >
+                                    <option value="">No asignado</option>
+                                    {psicologos.map(p => (
+                                        <option key={p.email} value={p.email}>{p.apellido}, {p.nombres}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
                         <div className="flex items-end gap-4">
                             <div className="flex-grow">
                                 <label htmlFor="fotoPerfil" className="block text-sm font-medium text-slate-700">Foto de Perfil (URL)</label>
@@ -674,7 +400,7 @@ const FichaModal = ({ paciente, equipoAsignado, onClose, onEdit, canEdit }: {
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl m-4 flex flex-col max-h-[90vh]">
                 <div className="p-4 border-b flex justify-between items-center bg-slate-50">
-                    <h2 className="text-xl font-bold text-slate-800">Ficha Administrativa</h2>
+                    <h2 className="text-xl font-bold text-slate-800">Ficha del Paciente</h2>
                     <button onClick={onClose} className="text-slate-500 hover:text-slate-700 text-2xl font-bold">&times;</button>
                 </div>
                 <div className="p-6 overflow-y-auto space-y-6">
@@ -700,23 +426,13 @@ const FichaModal = ({ paciente, equipoAsignado, onClose, onEdit, canEdit }: {
 
                     <div>
                         <h3 className="text-lg font-semibold text-slate-700 border-b pb-2 mb-2 mt-4">Equipo Asignado</h3>
-                        <p className="text-xs text-slate-500 mb-3 -mt-2">Basado en la primera consulta registrada para cada especialidad.</p>
+                        <p className="text-xs text-slate-500 mb-3 -mt-2">Profesionales de cabecera asignados al paciente.</p>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             <div><strong className="text-slate-600">Cirujano:</strong> {equipoAsignado.cirujano}</div>
                             <div><strong className="text-slate-600">Nutricionista:</strong> {equipoAsignado.nutricionista}</div>
                             <div><strong className="text-slate-600">Psicólogo:</strong> {equipoAsignado.psicologo}</div>
                         </div>
                     </div>
-
-                    {filiatorio.etiquetaPrincipalActiva === 'POSBARIATRICO' && (
-                        <div>
-                            <h3 className="text-lg font-semibold text-slate-700 border-b pb-2 mb-2 mt-4">Detalles de Cirugía</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                <div><strong className="text-slate-600">Fecha de Cirugía:</strong> {filiatorio.fechaCirugia ? format(new Date(filiatorio.fechaCirugia.replace(/-/g, '/')), 'dd/MM/yyyy') : 'N/A'}</div>
-                                <div><strong className="text-slate-600">Tipo de Gestión:</strong> {filiatorio.tipoCirugia || 'N/A'}</div>
-                            </div>
-                        </div>
-                    )}
                 </div>
             </div>
         </div>
@@ -1289,11 +1005,12 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
     const [error, setError] = useState<string | null>(null);
     const [showTagDropdown, setShowTagDropdown] = useState(false);
     const [prioridad, setPrioridad] = useState<Priority>(Priority.NORMAL);
-   type ModalType = 'agendarTurno' | 'definirCirugia' | 'editarFicha' | 'verFicha' | 'createTask' | 'editResumen' | 'newEvolucion' | 'editEvolucion' | 'newEstudio' | 'weightCurve' | 'newInforme' | 'editInforme' | 'editCirugia' | 'editNutricion' | 'editPsicologia' | 'turnHistorial' | 'pedidosRecetas' | null;
+   type ModalType = 'agendarTurno' | 'definirCirugia' | 'editarFicha' | 'verFicha' | 'createTask' | 'editResumen' | 'newEvolucion' | 'editEvolucion' | 'newEstudio' | 'weightCurve' | 'newInforme' | 'editInforme' | 'editCirugia' | 'editNutricion' | 'editPsicologia' | 'turnHistorial' | 'pedidosRecetas' | 'folder' | null;
     const [modal, setModal] = useState<ModalType>(null);
     
     const [config, setConfig] = useState<ConfiguracionGeneral | null>(null);
     const [allProfesionales, setAllProfesionales] = useState<Profesional[]>([]);
+    const [crmSimpleProfessionals, setCrmSimpleProfessionals] = useState<CrmSimpleProfessionals>({ surgeons: [], nutritionists: [], psychologists: [], todos: [] });
     
     const chartRef = useRef<SVGSVGElement>(null);
     const [activeEstudiosTab, setActiveEstudiosTab] = useState<TipoEstudio>(TipoEstudio.LABORATORIO);
@@ -1321,11 +1038,13 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
         api.getPacienteCompleto(patientId, user.email),
         api.getConfiguracionGeneral(user.rol),
         api.getProfesionalesAdmin(),
-        api.getContactosCRM(),                          // ← agregá esta línea
-    ]).then(([pacienteData, configData, profsData, contactosData]) => {  // ← y este parámetro
+        api.getContactosCRM(),
+        api.getCrmSimpleProfessionals(),
+    ]).then(([pacienteData, configData, profsData, contactosData, crmProfs]) => {
         setPaciente(pacienteData);
         setConfig(configData);
         setAllProfesionales(profsData);
+        setCrmSimpleProfessionals(crmProfs);
         // Cargar prioridad del CRM
         const contacto = contactosData.find((c: any) => c.id === patientId);
         if (contacto) setPrioridad(contacto.priority);
@@ -1401,14 +1120,18 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
     };
 
     const equipoAsignado = useMemo(() => {
-        if (!paciente) return { cirujano: 'N/A', nutricionista: 'N/A', psicologo: 'N/A' };
+        if (!paciente) return { cirujano: 'No asignado', nutricionista: 'No asignado', psicologo: 'No asignado' };
         
+        const cirujanoProf = allProfesionales.find(p => p.email === paciente.filiatorio.cirujanoAsignado);
+        const nutricionistaProf = allProfesionales.find(p => p.email === paciente.filiatorio.nutricionistaAsignado);
+        const psicologoProf = allProfesionales.find(p => p.email === paciente.filiatorio.psicologoAsignado);
+
         return {
-            cirujano: paciente.filiatorio.cirujanoAsignado || 'No asignado',
-            nutricionista: paciente.filiatorio.nutricionistaAsignado || 'No asignado',
-            psicologo: paciente.filiatorio.psicologoAsignado || 'No asignado',
+            cirujano: cirujanoProf ? `${cirujanoProf.apellido}, ${cirujanoProf.nombres}` : 'No asignado',
+            nutricionista: nutricionistaProf ? `${nutricionistaProf.apellido}, ${nutricionistaProf.nombres}` : 'No asignado',
+            psicologo: psicologoProf ? `${psicologoProf.apellido}, ${psicologoProf.nombres}` : 'No asignado',
         };
-    }, [paciente]);
+    }, [paciente, allProfesionales]);
 
     const handleSaveResumen = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -1614,6 +1337,9 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
     if (!paciente || !paciente.historiaClinica) return <div className="text-center p-10">No se encontró al paciente o su historia clínica.</div>;
     
     const { filiatorio, historiaClinica } = paciente;
+    const edad = filiatorio.fechaNacimiento
+        ? differenceInYears(new Date(), new Date(filiatorio.fechaNacimiento.replace(/-/g, '/')))
+        : null;
     const etiquetaInfo = ETIQUETAS_FLUJO.find(e => e.nombreEtiquetaUnico === filiatorio.etiquetaPrincipalActiva) || { color: 'bg-gray-200 text-gray-800' };
 
     const getPostOpStageLabel = (surgeryDate?: string | null): string => {
@@ -1628,11 +1354,27 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
         return PostOpStage.ALEJADO;
     };
 
-    // Prefer the actual surgery date (fechaRealizada) over the scheduled date
-    const fechaCirugiaEfectiva = paciente.cirugia?.fechaRealizada ?? filiatorio.fechaCirugia;
-
     const renderResumenClinico = () => (
         <div className="bg-white p-6 rounded-lg shadow space-y-4 h-full">
+            <div className="flex justify-between items-center border-b pb-3">
+                <h3 className="text-xl font-bold text-slate-800">Resumen Clínico</h3>
+                {activeResumenSubTab === 'general' && (user.rol === UserRole.MEDICO || isSuperAdmin) && (
+                    <div className="flex items-center gap-2">
+                         <button onClick={() => setModal('weightCurve')} className="flex items-center text-sm font-medium text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-md hover:bg-indigo-100"><ChartBarIcon/>Curva</button>
+                         <button onClick={() => { setResumenData(paciente.historiaClinica); setModal('editResumen'); }} className="flex items-center text-sm font-medium text-white bg-indigo-600 px-3 py-1.5 rounded-md shadow-sm hover:bg-indigo-700"><PencilIcon/>Editar</button>
+                    </div>
+                )}
+                {activeResumenSubTab === 'cirugia' && (user.rol === UserRole.MEDICO || isSuperAdmin) && (
+                    <button onClick={() => { setCirugiaData(paciente.cirugia || {}); setModal('editCirugia'); }} className="flex items-center text-sm font-medium text-white bg-indigo-600 px-3 py-1.5 rounded-md shadow-sm hover:bg-indigo-700"><PencilIcon/>Editar</button>
+                )}
+                {activeResumenSubTab === 'nutricion' && (user.rol === UserRole.MEDICO || isSuperAdmin) && (
+                    <button onClick={() => { setNutricionData(paciente.nutricion || {}); setModal('editNutricion'); }} className="flex items-center text-sm font-medium text-white bg-indigo-600 px-3 py-1.5 rounded-md shadow-sm hover:bg-indigo-700"><PencilIcon/>Editar</button>
+                )}
+                {activeResumenSubTab === 'psicologia' && user.especialidad?.toLowerCase().includes('psic') && (!paciente.psicologia || paciente.psicologia.psicologoEmailAutor === user.email) && (
+                    <button onClick={() => { setPsicologiaData(paciente.psicologia || {}); setModal('editPsicologia'); }} className="flex items-center text-sm font-medium text-white bg-indigo-600 px-3 py-1.5 rounded-md shadow-sm hover:bg-indigo-700"><PencilIcon/>{paciente.psicologia ? 'Editar' : 'Crear Notas'}</button>
+                )}
+            </div>
+
             <div className="border-b border-gray-200">
                 <nav className="-mb-px flex space-x-6 overflow-x-auto whitespace-nowrap scrollbar-thin">
                     <button onClick={() => setActiveResumenSubTab('general')} className={`py-2 px-1 border-b-2 text-sm font-medium ${activeResumenSubTab === 'general' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>General</button>
@@ -1645,15 +1387,6 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
             <div className="pt-4">
                 {activeResumenSubTab === 'general' && (
                     <div className="space-y-4">
-                        <div className="flex justify-between items-center">
-                            <h3 className="text-xl font-bold text-slate-800">Resumen Clínico</h3>
-                            {(user.rol === UserRole.MEDICO || isSuperAdmin) && (
-                                <div className="flex items-center gap-2">
-                                     <button onClick={() => setModal('weightCurve')} className="flex items-center text-sm font-medium text-indigo-600 bg-indigo-50 px-3 py-2 rounded-md hover:bg-indigo-100"><ChartBarIcon/>Curva</button>
-                                     <button onClick={() => { setResumenData(paciente.historiaClinica); setModal('editResumen'); }} className="flex items-center text-sm font-medium text-white bg-indigo-600 px-3 py-2 rounded-md shadow-sm hover:bg-indigo-700"><PencilIcon/>Editar</button>
-                                </div>
-                            )}
-                        </div>
                          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-center">
                             <div className="bg-slate-50 p-3 rounded-lg"><span className="text-xs text-slate-500">Peso Inicial</span><p className="font-bold text-lg">{historiaClinica.pesoInicial} kg</p></div>
                             <div className="bg-slate-50 p-3 rounded-lg"><span className="text-xs text-slate-500">Talla</span><p className="font-bold text-lg">{historiaClinica.talla} cm</p></div>
@@ -1717,25 +1450,15 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                 )}
                     
                 {activeResumenSubTab === 'cirugia' && (
-                    <div>
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-xl font-bold text-slate-800">Información Quirúrgica</h3>
-                            {(user.rol === UserRole.MEDICO || isSuperAdmin) && <button onClick={() => { setCirugiaData(paciente.cirugia || {}); setModal('editCirugia'); }} className="flex items-center text-sm font-medium text-white bg-indigo-600 px-3 py-2 rounded-md"><PencilIcon/>Editar</button>}
-                        </div>
-                        <div className="space-y-2 text-sm">
-                            <p><strong>Fecha Programada:</strong> {paciente.cirugia?.fechaProgramada ? format(new Date(paciente.cirugia.fechaProgramada.replace(/-/g, '/')), 'dd/MM/yyyy') : 'N/A'}</p>
-                            <p><strong>Fecha Realizada:</strong> {paciente.cirugia?.fechaRealizada ? format(new Date(paciente.cirugia.fechaRealizada.replace(/-/g, '/')), 'dd/MM/yyyy') : 'N/A'}</p>
-                            <p><strong>Tipo de Cirugía:</strong> {paciente.cirugia?.tipoCirugia || 'N/A'}</p>
-                            <p><strong>Notas:</strong> {paciente.cirugia?.notas || 'Sin notas.'}</p>
-                        </div>
+                    <div className="space-y-2 text-sm">
+                        <p><strong>Fecha Programada:</strong> {paciente.cirugia?.fechaProgramada ? format(new Date(paciente.cirugia.fechaProgramada.replace(/-/g, '/')), 'dd/MM/yyyy') : 'N/A'}</p>
+                        <p><strong>Fecha Realizada:</strong> {paciente.cirugia?.fechaRealizada ? format(new Date(paciente.cirugia.fechaRealizada.replace(/-/g, '/')), 'dd/MM/yyyy') : 'N/A'}</p>
+                        <p><strong>Tipo de Cirugía:</strong> {paciente.cirugia?.tipoCirugia || 'N/A'}</p>
+                        <p><strong>Notas:</strong> {paciente.cirugia?.notes || 'Sin notas.'}</p>
                     </div>
                 )}
                 {activeResumenSubTab === 'nutricion' && (
-                    <div>
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-xl font-bold text-slate-800">Seguimiento Nutricional</h3>
-                            {(user.rol === UserRole.MEDICO || isSuperAdmin) && <button onClick={() => { setNutricionData(paciente.nutricion || {}); setModal('editNutricion'); }} className="flex items-center text-sm font-medium text-white bg-indigo-600 px-3 py-2 rounded-md"><PencilIcon/>Editar</button>}
-                        </div>
+                    <div className="space-y-2">
                         <div className="space-y-2 text-sm">
                             <p><strong>Perímetro Cintura:</strong> {paciente.nutricion?.perimetroCintura ? `${paciente.nutricion.perimetroCintura} cm` : 'N/A'}</p>
                             <p><strong>Perímetro Cuello:</strong> {paciente.nutricion?.perimetroCuello ? `${paciente.nutricion.perimetroCuello} cm` : 'N/A'}</p>
@@ -1762,22 +1485,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                     </div>
                 )}
                 {activeResumenSubTab === 'psicologia' && (
-                    <div>
-                         <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-xl font-bold text-slate-800">Notas de Psicología</h3>
-                            
-
-{user.especialidad?.toLowerCase().includes('psic') &&
- (!paciente.psicologia || paciente.psicologia.psicologoEmailAutor === user.email) && (
-    <button
-        onClick={() => { setPsicologiaData(paciente.psicologia || {}); setModal('editPsicologia'); }}
-        className="flex items-center text-sm font-medium text-white bg-indigo-600 px-3 py-2 rounded-md"
-    >
-        <PencilIcon/>
-        {paciente.psicologia ? 'Editar' : 'Crear Notas'}
-    </button>
-)}
-                        </div>  
+                    <div className="space-y-2">
                         <div className="p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-r-lg">
                             <div className="flex items-center">
                                 <LockClosedIcon className="w-6 h-6 text-yellow-600 mr-3"/>
@@ -1791,7 +1499,6 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                 )}
             </div>
         </div>
-        
     );
 
     const renderEstudios = () => (
@@ -1967,7 +1674,29 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
     return (
         <div>
             {/* Modals */}
-            {modal === 'agendarTurno' && config && <AgendarTurnoModal onConfirm={handleConfirmarTurno} onCancel={() => setModal(null)} profesionales={allProfesionales.filter(p => p.rol === UserRole.MEDICO && p.activo)} pacienteId={filiatorio.idPaciente} config={config} currentUser={user} />}
+            {modal === 'agendarTurno' && (
+                <AgendarTurnoModal
+                    onClose={() => setModal(null)}
+                    onSuccess={() => {
+                        setModal(null);
+                        fetchData();
+                    }}
+                    pacientePreseleccionado={filiatorio}
+                    creadoPorEmail={user.email}
+                />
+            )}
+            {modal === 'folder' && (
+                <FolderModal 
+                    patient={{ id: filiatorio.idPaciente, firstName: filiatorio.nombres, lastName: filiatorio.apellido }}
+                    folder={paciente.carpeta || null}
+                    professionals={crmSimpleProfessionals}
+                    onSave={async (folder) => {
+                        await api.updateFolder(folder);
+                        fetchData();
+                    }}
+                    onClose={() => setModal(null)}
+                />
+            )}
             {modal === 'definirCirugia' && <DefinirCirugiaModal onConfirm={handleDefinirCirugia} onCancel={() => setModal(null)} />}
             {modal === 'editarFicha' && <EditarPacienteModal paciente={filiatorio} onClose={() => setModal(null)} onSuccess={() => { setModal(null); fetchData(); }} />}
             {modal === 'verFicha' && <FichaModal paciente={paciente} equipoAsignado={equipoAsignado} onClose={() => setModal(null)} onEdit={() => { setModal(null); setTimeout(() => setModal('editarFicha'), 100); }} canEdit={canEdit} />}
@@ -2335,7 +2064,12 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                     <div className="mt-4 sm:mt-0 sm:ml-6 flex-grow w-full">
                          
 <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-    <h2 className="text-2xl sm:text-3xl font-bold text-slate-800">{filiatorio.apellido}, {filiatorio.nombres}</h2>
+    <h2 className="text-2xl sm:text-3xl font-bold text-slate-800">
+        {filiatorio.apellido}, {filiatorio.nombres}
+        <span className="text-base font-normal text-slate-500 ml-3 block sm:inline mt-1 sm:mt-0">
+            (HC: {filiatorio.nroHc || 'N/A'} · {filiatorio.obraSocial || 'Sin Obra Social'} · {edad !== null ? `${edad} años` : 'Edad N/A'})
+        </span>
+    </h2>
     <div className="flex flex-col sm:flex-row items-center gap-3">
         {/* Selector de prioridad */}
         <div className="flex items-center gap-1.5">
@@ -2395,21 +2129,55 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
 </div>
                          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-4 sm:gap-6 mt-6 text-sm text-slate-600">
                             <button onClick={() => setModal('verFicha')} className="flex items-center gap-1 hover:text-indigo-600 hover:underline"><IdentificationIcon /> Ver Ficha</button>
-<button onClick={() => setModal('agendarTurno')} className="flex items-center gap-1 hover:text-indigo-600 hover:underline"><CalendarDaysIcon /> Agendar Turno</button>
-<button onClick={() => setModal('turnHistorial')} className="flex items-center gap-1 hover:text-cyan-600 hover:underline">
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 mr-1">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-    </svg>
-    Historial de Turnos
-</button>
-<button onClick={() => setModal('createTask')} className="flex items-center gap-1 hover:text-indigo-600 hover:underline"><ClipboardPlusIcon />+ Crear Tarea</button>
-<button onClick={() => handleOpenInformeModal()} className="flex items-center gap-1 hover:text-indigo-600 hover:underline"><PencilSquareIcon /> Ver/Crear Informes</button>
-<button onClick={() => setModal('pedidosRecetas')} className="flex items-center gap-1 hover:text-indigo-600 hover:underline">
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 mr-1">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-    </svg>
-    Pedidos / Recetas
-</button>
+                            <button onClick={() => setModal('agendarTurno')} className="flex items-center gap-1 hover:text-indigo-600 hover:underline"><CalendarDaysIcon /> Agendar Turno</button>
+                            <button onClick={() => setModal('turnHistorial')} className="flex items-center gap-1 hover:text-cyan-600 hover:underline">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 mr-1">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                                </svg>
+                                Historial de Turnos
+                            </button>
+                            <button onClick={() => setModal('createTask')} className="flex items-center gap-1 hover:text-indigo-600 hover:underline"><ClipboardPlusIcon />+ Crear Tarea</button>
+                            <button onClick={() => handleOpenInformeModal()} className="flex items-center gap-1 hover:text-indigo-600 hover:underline"><PencilSquareIcon /> Ver/Crear Informes</button>
+                            <button onClick={() => setModal('pedidosRecetas')} className="flex items-center gap-1 hover:text-indigo-600 hover:underline">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 mr-1">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                                </svg>
+                                Pedidos / Recetas
+                            </button>
+                            
+                            {/* Surgical Folder State Action */}
+                            {paciente.carpeta ? (
+                                <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-lg px-2.5 py-1 text-xs font-semibold text-indigo-800">
+                                    <span>📁 Carpeta: <strong>{paciente.carpeta.trackingState}</strong></span>
+                                    <button 
+                                        onClick={() => setModal('folder')} 
+                                        className="text-indigo-600 hover:text-indigo-900 underline ml-1"
+                                    >
+                                        Ver/Editar
+                                    </button>
+                                    <a 
+                                        href={`https://wa.me/${(() => {
+                                            const clean = filiatorio.telefono.replace(/\D/g, '');
+                                            return clean.startsWith('54') ? clean : ('549' + clean);
+                                        })()}?text=${encodeURIComponent(`Hola ${filiatorio.nombres}, te escribimos para informarte que el estado de tu carpeta quirúrgica es: ${paciente.carpeta.trackingState}.`)}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex items-center gap-1 bg-[#25D366] hover:bg-[#20ba5a] text-white px-2 py-0.5 rounded-full font-bold ml-1 text-[10px] uppercase transition-colors"
+                                    >
+                                        <svg className="w-3 h-3 fill-current" viewBox="0 0 24 24">
+                                            <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.42 9.864-9.864.002-2.637-1.03-5.115-2.905-6.99-1.876-1.875-4.353-2.904-6.992-2.905C6.009 1.846 1.58 6.27 1.576 11.71c-.001 1.712.464 3.385 1.348 4.908l-.99 3.616 3.713-.974z"/>
+                                        </svg>
+                                        WhatsApp
+                                    </a>
+                                </div>
+                            ) : (
+                                <button 
+                                    onClick={() => setModal('folder')} 
+                                    className="flex items-center gap-1 hover:text-indigo-700 hover:underline bg-indigo-50 border border-indigo-200 px-2.5 py-1.5 rounded-lg text-xs font-semibold"
+                                >
+                                    📁 Crear Carpeta Quirúrgica
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>

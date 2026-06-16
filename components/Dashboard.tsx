@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useContext, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
 import { PacienteFiliatorio, UserRole, ContactoCRM, ContactoTag, ContactoStatus, Priority, CrmHistoryEntry, Task, TaskStatus, TaskHistoryEntry, PostOpStage, Folder, FolderTrackingStatus, MessageTemplate, CrmSimpleProfessionals, ChecklistItemStatus, LostReason, ProspectoCanalOrigen, ProspectoEstadoSeguimiento, TurnoConPaciente, ConfiguracionGeneral, Turno, DiaSemana, EstadoTurnoDia, TurnoDiario, Profesional } from '../types';
 import { api } from '../services/mockApi';
 import { AuthContext } from '../App';
+import AgendarTurnoModal from './Agendarturnomodal';
 import { ETIQUETAS_FLUJO, normalizeString, CANALES_ORIGEN_LIST, ESTADOS_SEGUIMIENTO_LIST, ESTADO_TURNO_MAP } from '../constants';
 import { isAfter, subDays, isBefore, format, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, isSameDay, isToday, addMonths, subMonths, isSameMonth, getDay, startOfDay, addDays } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -103,11 +104,24 @@ const WhatsAppModal = ({ onClose, patient, templates }: {
     if (!patient) return null;
 
     const resolveTemplate = (text: string): string => {
+        const nextDate = patient.nextConsultation?.date
+            ? format(new Date(patient.nextConsultation.date.replace(/-/g, '/')), 'dd/MM/yyyy')
+            : '(sin fecha)';
         return text
-            .replace(/\[Nombre\]/g, patient.firstName || '')
-            .replace(/\[Proxima Cita\]/g, patient.nextConsultation?.date || '(sin fecha)')
-            .replace(/\[Hora Cita\]/g, patient.nextConsultation?.time || '(sin hora)')
-            .replace(/\[Profesional\]/g, patient.nextConsultation?.professional || '(sin profesional)');
+            .replace(/\[Nombre\]/gi, patient.firstName || '')
+            .replace(/\{Nombre\}/gi, patient.firstName || '')
+            .replace(/\{nombre\}/gi, patient.firstName || '')
+            .replace(/\[Proxima Cita\]/gi, nextDate)
+            .replace(/\[Fecha\]/gi, nextDate)
+            .replace(/\{Fecha\}/gi, nextDate)
+            .replace(/\{fecha\}/gi, nextDate)
+            .replace(/\[Hora Cita\]/gi, patient.nextConsultation?.time || '(sin hora)')
+            .replace(/\[Hora\]/gi, patient.nextConsultation?.time || '(sin hora)')
+            .replace(/\{Hora\}/gi, patient.nextConsultation?.time || '(sin hora)')
+            .replace(/\{hora\}/gi, patient.nextConsultation?.time || '(sin hora)')
+            .replace(/\[Profesional\]/gi, patient.nextConsultation?.professional || '(sin profesional)')
+            .replace(/\{Profesional\}/gi, patient.nextConsultation?.professional || '(sin profesional)')
+            .replace(/\{profesional\}/gi, patient.nextConsultation?.professional || '(sin profesional)');
     };
 
     const handleSelectTemplate = (template: MessageTemplate) => {
@@ -129,8 +143,54 @@ const WhatsAppModal = ({ onClose, patient, templates }: {
         }
     };
 
+    const formatPhoneForWhatsApp = (phoneStr: string): string => {
+        let clean = phoneStr.replace(/\D/g, '');
+        if (!clean) return '';
+
+        if (clean.startsWith('54')) {
+            if (clean.startsWith('549')) return clean;
+            if (clean.startsWith('543')) return '549' + clean.substring(2);
+            return clean;
+        }
+
+        if (clean.startsWith('0')) {
+            clean = clean.substring(1);
+        }
+
+        if (clean.startsWith('15') && (clean.length === 9 || clean.length === 10)) {
+            clean = '381' + clean.substring(2);
+        }
+
+        if (clean.startsWith('38115') && clean.length === 11) {
+            clean = '381' + clean.substring(5);
+        } else if (clean.length === 11) {
+            if (clean.substring(3, 5) === '15') {
+                clean = clean.substring(0, 3) + clean.substring(5);
+            } else if (clean.substring(2, 4) === '15') {
+                clean = clean.substring(0, 2) + clean.substring(4);
+            }
+        } else if (clean.length === 12) {
+            if (clean.substring(4, 6) === '15') {
+                clean = clean.substring(0, 4) + clean.substring(6);
+            }
+        }
+
+        if (clean.length === 7 || clean.length === 8) {
+            clean = '381' + clean;
+        }
+
+        return '549' + clean;
+    };
+
     const handleSend = () => {
         if (!message.trim() && !attachmentName) return;
+
+        // Trigger real WhatsApp Web / App using the robust phone formatter
+        const waPhone = formatPhoneForWhatsApp(patient.phone || '');
+        if (waPhone) {
+            window.open(`https://wa.me/${waPhone}?text=${encodeURIComponent(message.trim())}`, '_blank');
+        }
+
         const newMsg: WASentMessage = {
             id: `msg-${Date.now()}`,
             text: message.trim(),
@@ -366,13 +426,13 @@ const WhatsAppModal = ({ onClose, patient, templates }: {
                         <button
                             onClick={handleSend}
                             disabled={!message.trim() && !attachmentName}
-                            title="Enviar (simulado)"
+                            title="Enviar por WhatsApp"
                             className="p-2.5 text-white bg-green-600 rounded-full hover:bg-green-700 disabled:bg-slate-300 transition-colors"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" /></svg>
                         </button>
                     </div>
-                    <p className="text-center text-xs text-slate-400 mt-1.5">Envío simulado — no conectado a WhatsApp real</p>
+                    <p className="text-center text-xs text-green-600 font-semibold mt-1.5">✓ WhatsApp Habilitado — Se abrirá una nueva pestaña al hacer clic en enviar.</p>
                 </div>
             </div>
         </div>
@@ -807,7 +867,7 @@ const orden: FolderTrackingStatus[] = [
     );
 };
 
-const FoldersDashboardModal = ({ onClose, folders, onOpenFolder, contactos }: { onClose: () => void; folders: Folder[]; onOpenFolder: (patientId: string) => void; contactos: ContactoCRM[]; }) => {
+const FoldersDashboardView = ({ folders, onOpenFolder, contactos, searchTerm }: { folders: Folder[]; onOpenFolder: (patientId: string) => void; contactos: ContactoCRM[]; searchTerm: string; }) => {
     const [osFilter, setOsFilter] = useState('');
     const [stateFilter, setStateFilter] = useState<FolderTrackingStatus | ''>('');
 
@@ -816,59 +876,95 @@ const FoldersDashboardModal = ({ onClose, folders, onOpenFolder, contactos }: { 
     )).sort() as string[];
 
     const filtered = folders.filter(f => {
-        const contacto = contactos.find(c => c.id === f.patientId);
-        const matchesOS = !osFilter || (contacto?.socialInsurance === osFilter);
+        const c = contactos.find(c => c.id === f.patientId);
+        if (!c) return false;
+
+        const matchesOS = !osFilter || (c.socialInsurance === osFilter);
         const matchesState = !stateFilter || f.trackingState === stateFilter;
-        return matchesOS && matchesState;
+        if (!matchesOS || !matchesState) return false;
+
+        const searchLower = searchTerm.trim().toLowerCase();
+        if (!searchLower) return true;
+
+        const contactName = `${c.firstName || ''} ${c.lastName || ''}`.toLowerCase();
+        const isNumeric = /^\d+$/.test(searchLower);
+        const isPrefixedId = /^p-\d+$/.test(searchLower);
+        let matchesSearch = false;
+
+        if (isNumeric || isPrefixedId) {
+            const numericStr = isNumeric ? searchLower : searchLower.substring(2);
+            const searchNum = parseInt(numericStr, 10);
+            const exactId = `p-${numericStr}`;
+            
+            const hasExactMatch = contactos.some(other => 
+                other.isPatient && 
+                (other.nroHc === searchNum || other.id.toLowerCase() === exactId)
+            );
+
+            if (hasExactMatch) {
+                matchesSearch = c.isPatient && (c.nroHc === searchNum || c.id.toLowerCase() === exactId);
+            } else {
+                matchesSearch = contactName.includes(searchLower) || 
+                                (c.dni && c.dni.includes(searchLower)) || 
+                                (c.phone && c.phone.includes(searchLower)) ||
+                                c.id.toLowerCase().includes(searchLower) ||
+                                (c.nroHc && String(c.nroHc).includes(searchLower));
+            }
+        } else {
+            matchesSearch = contactName.includes(searchLower) || 
+                            (c.dni && c.dni.includes(searchLower)) || 
+                            (c.phone && c.phone.includes(searchLower)) ||
+                            c.id.toLowerCase().includes(searchLower) ||
+                            (c.nroHc && String(c.nroHc).includes(searchLower));
+        }
+
+        return matchesSearch;
     });
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-5xl">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
-                    <h2 className="text-xl font-bold text-slate-800">Dashboard de Carpetas</h2>
-                    <div className="flex flex-wrap gap-2">
-                        <select value={osFilter} onChange={e => setOsFilter(e.target.value)} className="rounded-md border-slate-300 text-sm">
-                            <option value="">Todas las obras sociales</option>
-                            {obrasSociales.map(os => <option key={os} value={os}>{os}</option>)}
-                        </select>
-                        <select value={stateFilter} onChange={e => setStateFilter(e.target.value as FolderTrackingStatus | '')} className="rounded-md border-slate-300 text-sm">
-                            <option value="">Todos los estados</option>
-                            {Object.values(FolderTrackingStatus).map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                    </div>
+        <div className="bg-white rounded-lg p-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+                <h2 className="text-lg font-bold text-slate-800">Listado de Carpetas Quirúrgicas</h2>
+                <div className="flex flex-wrap gap-2">
+                    <select value={osFilter} onChange={e => setOsFilter(e.target.value)} className="rounded-md border-slate-300 text-sm">
+                        <option value="">Todas las obras sociales</option>
+                        {obrasSociales.map(os => <option key={os} value={os}>{os}</option>)}
+                    </select>
+                    <select value={stateFilter} onChange={e => setStateFilter(e.target.value as FolderTrackingStatus | '')} className="rounded-md border-slate-300 text-sm">
+                        <option value="">Todos los estados</option>
+                        {Object.values(FolderTrackingStatus).map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
                 </div>
-                <p className="text-sm text-slate-500 mb-3">{filtered.length} carpeta{filtered.length !== 1 ? 's' : ''}</p>
-                <div className="max-h-[65vh] overflow-auto">
-                    <table className="min-w-full divide-y divide-slate-200">
-                        <thead className="bg-slate-50 sticky top-0">
-                            <tr>
-                                {['Paciente', 'Obra Social', 'Estado', 'Fecha Autorizada', 'Notas'].map(h => (
-                                    <th key={h} className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">{h}</th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-slate-200">
-                            {filtered.length === 0 ? (
-                                <tr><td colSpan={5} className="text-center py-8 text-slate-500 text-sm">No hay carpetas que coincidan con el filtro.</td></tr>
-                            ) : filtered.map(folder => {
-                                const contacto = contactos.find(c => c.id === folder.patientId);
-                                return (
-                                    <tr key={folder.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => onOpenFolder(folder.patientId)}>
-                                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-slate-800">{contacto ? `${contacto.lastName}, ${contacto.firstName}` : folder.patientId}</td>
-                                        <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{contacto?.socialInsurance || '-'}</td>
-                                        <td className="px-4 py-3 whitespace-nowrap text-sm">
-                                            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800">{folder.trackingState}</span>
-                                        </td>
-                                        <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{folder.authorizedDate || '-'}</td>
-                                        <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate" title={folder.notes || ''}>{folder.notes || '-'}</td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-                <div className="flex justify-end pt-6"><button onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200">Cerrar</button></div>
+            </div>
+            <p className="text-sm text-slate-500 mb-3">{filtered.length} carpeta{filtered.length !== 1 ? 's' : ''}</p>
+            <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-200">
+                    <thead className="bg-slate-50 sticky top-0">
+                        <tr>
+                            {['Paciente', 'Obra Social', 'Estado', 'Fecha Autorizada', 'Notas'].map(h => (
+                                <th key={h} className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">{h}</th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-slate-200 text-sm">
+                        {filtered.length === 0 ? (
+                            <tr><td colSpan={5} className="text-center py-8 text-slate-500 text-sm">No hay carpetas.</td></tr>
+                        ) : filtered.map(folder => {
+                            const contacto = contactos.find(c => c.id === folder.patientId);
+                            return (
+                                <tr key={folder.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => onOpenFolder(folder.patientId)}>
+                                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-slate-800">{contacto ? `${contacto.lastName}, ${contacto.firstName}` : folder.patientId}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{contacto?.socialInsurance || '-'}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                        <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800">{folder.trackingState}</span>
+                                    </td>
+                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{folder.authorizedDate || '-'}</td>
+                                    <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate" title={folder.notes || ''}>{folder.notes || '-'}</td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
             </div>
         </div>
     );
@@ -989,12 +1085,134 @@ const EstadisticasModal = ({ onClose }: { onClose: () => void }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    const now = new Date();
+    const [selectedMonth, setSelectedMonth] = useState<number | 'todos'>(now.getMonth());
+    const [selectedYear, setSelectedYear] = useState<number | 'todos'>(now.getFullYear());
+
     useEffect(() => {
         (api as any).getEstadisticas()
             .then(setStats)
             .catch((e: any) => setError(e.message || 'Error al cargar estadísticas'))
             .finally(() => setIsLoading(false));
     }, []);
+
+    const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    const years = [2025, 2026, 2027, 2028];
+
+    const filteredTurnos = useMemo(() => {
+        if (!stats?.rawTurnos) return [];
+        return stats.rawTurnos.filter((t: any) => {
+            const d = new Date(t.fecha_turno);
+            const matchesMonth = selectedMonth === 'todos' || d.getMonth() === selectedMonth;
+            const matchesYear = selectedYear === 'todos' || d.getFullYear() === selectedYear;
+            return matchesMonth && matchesYear;
+        });
+    }, [stats, selectedMonth, selectedYear]);
+
+    const filteredCrm = useMemo(() => {
+        if (!stats?.rawCrm) return [];
+        return stats.rawCrm.filter((c: any) => {
+            if (!c.fecha_ingreso) return false;
+            const d = new Date(c.fecha_ingreso);
+            const matchesMonth = selectedMonth === 'todos' || d.getMonth() === selectedMonth;
+            const matchesYear = selectedYear === 'todos' || d.getFullYear() === selectedYear;
+            return matchesMonth && matchesYear;
+        });
+    }, [stats, selectedMonth, selectedYear]);
+
+    const filteredPacientes = useMemo(() => {
+        if (!stats?.rawPacientes) return [];
+        return stats.rawPacientes.filter((p: any) => {
+            if (!p.created_at) return false;
+            const d = new Date(p.created_at);
+            const matchesMonth = selectedMonth === 'todos' || d.getMonth() === selectedMonth;
+            const matchesYear = selectedYear === 'todos' || d.getFullYear() === selectedYear;
+            return matchesMonth && matchesYear;
+        });
+    }, [stats, selectedMonth, selectedYear]);
+
+    const nuevosProspectosMes = useMemo(() => {
+        return filteredCrm.filter((c: any) => !c.is_patient).length;
+    }, [filteredCrm]);
+
+    const pacientesCreadosMes = useMemo(() => {
+        return filteredPacientes.length;
+    }, [filteredPacientes]);
+
+    const turnosPorEstado = useMemo(() => {
+        const counts: Record<string, number> = {};
+        filteredTurnos.forEach((t: any) => {
+            counts[t.estado] = (counts[t.estado] || 0) + 1;
+        });
+        return counts;
+    }, [filteredTurnos]);
+
+    const turnosPorProfesional = useMemo(() => {
+        const profStats: Record<string, { atendidos: number; cancelados: number; ausentes: number }> = {};
+        filteredTurnos.forEach((t: any) => {
+            const email = t.profesional_email;
+            if (!profStats[email]) profStats[email] = { atendidos: 0, cancelados: 0, ausentes: 0 };
+            if (t.estado === 'ATENDIDO') profStats[email].atendidos++;
+            if (t.estado === 'CANCELADO') profStats[email].cancelados++;
+            if (t.estado === 'AUSENTE') profStats[email].ausentes++;
+        });
+        return Object.entries(profStats).map(([email, s]) => {
+            const found = stats?.turnosPorProfesional?.find((p: any) => p.profesional.includes(email) || email.includes(p.profesional));
+            const name = found ? found.profesional : email;
+            return { profesional: name, ...s };
+        }).sort((a, b) => b.atendidos - a.atendidos);
+    }, [filteredTurnos, stats]);
+
+    const primerTurnoPorPaciente = useMemo(() => {
+        if (!stats?.rawTurnos) return new Map<string, any>();
+        const map = new Map<string, any>();
+        stats.rawTurnos.forEach((t: any) => {
+            if (!t.id_paciente) return;
+            const existing = map.get(t.id_paciente);
+            if (!existing || new Date(t.fecha_turno) < new Date(existing.fecha_turno)) {
+                map.set(t.id_paciente, t);
+            }
+        });
+        return map;
+    }, [stats?.rawTurnos]);
+
+    const primerasConsultasMes = useMemo(() => {
+        const list: any[] = [];
+        primerTurnoPorPaciente.forEach((t) => {
+            const d = new Date(t.fecha_turno);
+            const matchesMonth = selectedMonth === 'todos' || d.getMonth() === selectedMonth;
+            const matchesYear = selectedYear === 'todos' || d.getFullYear() === selectedYear;
+            if (matchesMonth && matchesYear) {
+                list.push(t);
+            }
+        });
+        return list;
+    }, [primerTurnoPorPaciente, selectedMonth, selectedYear]);
+
+    const clasificacionPrimeras = useMemo(() => {
+        let bariatricos = 0;
+        let ttoIndividual = 0;
+        let cirugiaGeneral = 0;
+
+        primerasConsultasMes.forEach((t: any) => {
+            const esp = (t.especialidad || '').toLowerCase();
+            if (esp.includes('bariat') || esp.includes('bariát')) {
+                bariatricos++;
+            } else if (esp.includes('nutri') || esp.includes('psic') || esp.includes('psiq')) {
+                ttoIndividual++;
+            } else if (esp.includes('general')) {
+                cirugiaGeneral++;
+            } else {
+                if (esp.includes('cirug') || esp.includes('médic') || esp.includes('medic')) {
+                    cirugiaGeneral++;
+                } else {
+                    ttoIndividual++;
+                }
+            }
+        });
+
+        return { bariatricos, ttoIndividual, cirugiaGeneral };
+    }, [primerasConsultasMes]);
 
     const etapaLabels: Record<string, string> = {
         PROSPECTO: 'Prospecto', PRECIRUGICO: 'Pre-Quirúrgico', POSBARIATRICO: 'Post-Bariátrico',
@@ -1017,13 +1235,31 @@ const EstadisticasModal = ({ onClose }: { onClose: () => void }) => {
                     {error && <div className="text-center py-12 text-red-500">{error}</div>}
                     {stats && !isLoading && (
                         <div className="space-y-6">
+                            {/* Month/Year selectors */}
+                            <div className="flex gap-4 mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200 no-print flex-wrap">
+                                <div className="flex items-center gap-2">
+                                    <label className="text-sm font-semibold text-slate-700">Mes:</label>
+                                    <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value === 'todos' ? 'todos' : parseInt(e.target.value, 10))} className="rounded-md border-slate-300 text-sm">
+                                        <option value="todos">Todos los meses</option>
+                                        {meses.map((m, idx) => <option key={m} value={idx}>{m}</option>)}
+                                    </select>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <label className="text-sm font-semibold text-slate-700">Año:</label>
+                                    <select value={selectedYear} onChange={e => setSelectedYear(e.target.value === 'todos' ? 'todos' : parseInt(e.target.value, 10))} className="rounded-md border-slate-300 text-sm">
+                                        <option value="todos">Todos los años</option>
+                                        {years.map(y => <option key={y} value={y}>{y}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+
                             {/* KPIs principales */}
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                                 {[
-                                    { label: 'Total Pacientes', value: stats.totalPacientes, color: 'bg-blue-50 text-blue-700 border-blue-200' },
-                                    { label: 'Prospectos activos', value: stats.totalProspectos, color: 'bg-purple-50 text-purple-700 border-purple-200' },
-                                    { label: 'Nuevos últimos 30 días', value: stats.nuevosUltimos30dias, color: 'bg-green-50 text-green-700 border-green-200' },
-                                    { label: 'Turnos registrados', value: Object.values(stats.turnosPorEstado as Record<string,number>).reduce((a, b) => a + b, 0), color: 'bg-amber-50 text-amber-700 border-amber-200' },
+                                    { label: 'Pacientes Nuevos', value: pacientesCreadosMes, color: 'bg-blue-50 text-blue-700 border-blue-200' },
+                                    { label: 'Prospectos Nuevos', value: nuevosProspectosMes, color: 'bg-purple-50 text-purple-700 border-purple-200' },
+                                    { label: 'Turnos del Período', value: filteredTurnos.length, color: 'bg-green-50 text-green-700 border-green-200' },
+                                    { label: 'Atendidos', value: filteredTurnos.filter((t: any) => t.estado === 'ATENDIDO').length, color: 'bg-amber-50 text-amber-700 border-amber-200' },
                                 ].map(kpi => (
                                     <div key={kpi.label} className={`rounded-xl border p-4 text-center ${kpi.color}`}>
                                         <p className="text-3xl font-bold">{kpi.value}</p>
@@ -1033,6 +1269,30 @@ const EstadisticasModal = ({ onClose }: { onClose: () => void }) => {
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* Consultas de Primera Vez */}
+                                <div className="bg-white rounded-lg border p-4">
+                                    <h3 className="font-semibold text-slate-700 mb-1">Consultas de Primera Vez</h3>
+                                    <p className="text-xs text-slate-500 mb-4">Primer turno en el sistema para cada paciente en el período seleccionado.</p>
+                                    <div className="grid grid-cols-3 gap-2 text-center">
+                                        <div className="bg-emerald-50 text-emerald-800 p-3 rounded-lg border border-emerald-150">
+                                            <p className="text-2xl font-bold">{clasificacionPrimeras.bariatricos}</p>
+                                            <p className="text-xs font-semibold mt-1">Bariátricos</p>
+                                        </div>
+                                        <div className="bg-sky-50 text-sky-800 p-3 rounded-lg border border-sky-150">
+                                            <p className="text-2xl font-bold">{clasificacionPrimeras.ttoIndividual}</p>
+                                            <p className="text-xs font-semibold mt-1">Tratamiento Individual</p>
+                                        </div>
+                                        <div className="bg-amber-50 text-amber-800 p-3 rounded-lg border border-amber-150">
+                                            <p className="text-2xl font-bold">{clasificacionPrimeras.cirugiaGeneral}</p>
+                                            <p className="text-xs font-semibold mt-1">Cirugía General</p>
+                                        </div>
+                                    </div>
+                                    <div className="mt-4 pt-3 border-t flex justify-between text-sm font-semibold text-slate-700 px-1">
+                                        <span>Total Primeras Consultas:</span>
+                                        <span>{primerasConsultasMes.length}</span>
+                                    </div>
+                                </div>
+
                                 {/* Pacientes por etapa */}
                                 <div className="bg-white rounded-lg border p-4">
                                     <h3 className="font-semibold text-slate-700 mb-3">Pacientes por etapa</h3>
@@ -1053,12 +1313,12 @@ const EstadisticasModal = ({ onClose }: { onClose: () => void }) => {
                                 <div className="bg-white rounded-lg border p-4">
                                     <h3 className="font-semibold text-slate-700 mb-3">Turnos por estado</h3>
                                     <div className="space-y-2">
-                                        {Object.entries(stats.turnosPorEstado as Record<string,number>).sort(([,a],[,b]) => b-a).map(([estado, count]) => {
+                                        {Object.entries(turnosPorEstado).sort(([,a],[,b]) => b-a).map(([estado, count]) => {
                                             const colorMap: Record<string,string> = { ATENDIDO: 'bg-green-500', CANCELADO: 'bg-red-500', AUSENTE: 'bg-amber-500', AGENDADO: 'bg-blue-500', CONFIRMADO: 'bg-indigo-500', EN_ESPERA: 'bg-purple-500' };
                                             return (
                                                 <div key={estado} className="flex items-center gap-2">
                                                     <div className="flex-grow bg-slate-100 rounded-full h-5 overflow-hidden">
-                                                        <div className={`${colorMap[estado] ?? 'bg-slate-400'} h-full rounded-full`} style={{ width: `${Math.min(100, (count / Math.max(...Object.values(stats.turnosPorEstado as Record<string,number>))) * 100)}%` }} />
+                                                        <div className={`${colorMap[estado] ?? 'bg-slate-400'} h-full rounded-full`} style={{ width: `${Math.min(100, (count / Math.max(1, ...Object.values(turnosPorEstado))) * 100)}%` }} />
                                                     </div>
                                                     <span className="text-xs text-slate-600 w-32 truncate">{estado}</span>
                                                     <span className="text-xs font-bold text-slate-800 w-6 text-right">{count}</span>
@@ -1068,29 +1328,16 @@ const EstadisticasModal = ({ onClose }: { onClose: () => void }) => {
                                     </div>
                                 </div>
 
-                                {/* Obra social top 10 */}
-                                <div className="bg-white rounded-lg border p-4">
-                                    <h3 className="font-semibold text-slate-700 mb-3">Pacientes por obra social (top 10)</h3>
-                                    <div className="space-y-2">
-                                        {Object.entries(stats.pacientesPorObraSocial as Record<string,number>).sort(([,a],[,b]) => b-a).slice(0,10).map(([os, count]) => (
-                                            <div key={os} className="flex items-center justify-between text-xs">
-                                                <span className="text-slate-600 truncate flex-grow">{os}</span>
-                                                <span className="font-bold text-slate-800 ml-2 flex-shrink-0">{count}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-
                                 {/* Por profesional */}
                                 <div className="bg-white rounded-lg border p-4">
                                     <h3 className="font-semibold text-slate-700 mb-3">Turnos por profesional</h3>
-                                    {stats.turnosPorProfesional.length === 0
-                                        ? <p className="text-xs text-slate-400">Sin datos de turnos.</p>
+                                    {turnosPorProfesional.length === 0
+                                        ? <p className="text-xs text-slate-400">Sin datos de turnos para este período.</p>
                                         : (
                                             <table className="w-full text-xs">
                                                 <thead><tr className="text-slate-400 border-b"><th className="text-left pb-1">Profesional</th><th className="text-right pb-1">Atend.</th><th className="text-right pb-1">Cancel.</th><th className="text-right pb-1">Ausente</th></tr></thead>
                                                 <tbody>
-                                                    {stats.turnosPorProfesional.map((p: any) => (
+                                                    {turnosPorProfesional.map((p: any) => (
                                                         <tr key={p.profesional} className="border-b border-slate-50">
                                                             <td className="py-1 text-slate-700 truncate max-w-[120px]">{p.profesional}</td>
                                                             <td className="py-1 text-right text-green-600 font-semibold">{p.atendidos}</td>
@@ -1152,7 +1399,7 @@ const BackupButton = () => {
 // ─── CRM DASHBOARD ────────────────────────────────────────────────────────────
 
 // [FIX 1] Added 'turn-history' to modal type union
-type CrmActiveView = 'prospects' | 'not-operated' | 'operated' | 'tasks' | 'history';
+type CrmActiveView = 'prospects' | 'not-operated' | 'operated' | 'tasks' | 'folders' | 'history';
 type ActiveModalType = 'whatsapp' | 'whatsapp-templates' | 'email' | 'tasks' | 'history' | 'turn-history' | 'folder' | 'folders-dashboard' | 'settings' | 'schedule-surgery' | 'surgery-details' | 'lost' | 'new-prospect' | 'new-patient' | 'convert-prospect' | 'estadisticas' | null;
 
 interface CrmDashboardProps {
@@ -1188,6 +1435,7 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
     const [seguimientoFilter, setSeguimientoFilter] = useState<'todos' | ProspectoEstadoSeguimiento>('todos');
     const [postOpStageFilter, setPostOpStageFilter] = useState<'todos' | PostOpStage>('todos');
     const [socialInsuranceFilter, setSocialInsuranceFilter] = useState('');
+    const [priorityFilter, setPriorityFilter] = useState<string>('todos');
     const [activeModal, setActiveModal] = useState<ActiveModalType>(null);
     const [selectedContacto, setSelectedContacto] = useState<ContactoCRM | null>(null);
     const contactRowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
@@ -1352,9 +1600,11 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
         const matchesSeguimiento = seguimientoFilter === 'todos' || c.estadoSeguimiento === seguimientoFilter;
         const matchesPostOpStage = postOpStageFilter === 'todos' || getPostOpStage(c.surgeryDate) === postOpStageFilter;
         const matchesOS = !socialInsuranceFilter || c.socialInsurance === socialInsuranceFilter;
+        const matchesPriority = priorityFilter === 'todos' || c.priority === priorityFilter;
 
-        if (activeView === 'prospects') return !c.isPatient && matchesSearch && matchesSeguimiento;
+        if (activeView === 'prospects') return !c.isPatient && matchesSearch && matchesSeguimiento && matchesPriority;
         if (!matchesSearch) return false;
+        if (!matchesPriority) return false;
         switch (activeView) {
             case 'not-operated': return c.isPatient && c.tag !== ContactoTag.POSBARIATRICO && matchesStatus && matchesTag && matchesOS;
             case 'operated': return c.isPatient && c.tag === ContactoTag.POSBARIATRICO && matchesStatus && matchesPostOpStage && matchesOS;
@@ -1362,14 +1612,21 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
         }
     });
 
-    const filteredTasks = tasks.filter(task => taskStatusFilter === 'todos' || task.status === taskStatusFilter);
+    const filteredTasks = tasks.filter(task => {
+        const matchesStatus = taskStatusFilter === 'todos' || task.status === taskStatusFilter;
+        const matchesSearch = !searchTerm || 
+            task.description.toLowerCase().includes(searchTerm.toLowerCase()) || 
+            task.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (task.assigneeEmail && task.assigneeEmail.toLowerCase().includes(searchTerm.toLowerCase()));
+        return matchesStatus && matchesSearch;
+    });
 
     const [currentPage, setCurrentPage] = useState(1);
     const PAGE_SIZE = 50;
 
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchTerm, statusFilter, tagFilter, taskStatusFilter, seguimientoFilter, postOpStageFilter, socialInsuranceFilter, activeView]);
+    }, [searchTerm, statusFilter, tagFilter, taskStatusFilter, seguimientoFilter, postOpStageFilter, socialInsuranceFilter, priorityFilter, activeView]);
 
     const paginatedContactos = useMemo(() => {
         return filteredContactos.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
@@ -1507,7 +1764,6 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
                 <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-start lg:justify-end">
                     <button onClick={() => setActiveModal('new-prospect')} className="flex items-center text-xs sm:text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors px-3 py-2 rounded-lg shadow-sm"><UserPlusIcon className="w-4 h-4 mr-1.5" />Ingresar Prospecto</button>
                     <button onClick={() => setActiveModal('new-patient')} className="flex items-center text-xs sm:text-sm font-semibold text-white bg-green-600 hover:bg-green-700 transition-colors px-3 py-2 rounded-lg shadow-sm"><UserPlusIcon className="w-4 h-4 mr-1.5" />Agregar Paciente</button>
-                    <button onClick={() => setActiveModal('folders-dashboard')} className="flex items-center text-xs sm:text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 transition-colors px-3 py-2 rounded-lg shadow-sm"><FolderIcon />Ver Carpetas</button>
                     <button onClick={() => { setSelectedContacto(null); setActiveModal('history'); }} className="flex items-center text-xs sm:text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 transition-colors px-3 py-2 rounded-lg shadow-sm"><HistoryIcon />Historial Global</button>
                     <button onClick={() => setActiveModal('whatsapp-templates')} className="flex items-center text-xs sm:text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 transition-colors px-3 py-2 rounded-lg shadow-sm"><ClipboardCheckIcon />Plantillas</button>
                     {(user.rol === UserRole.SUPERADMIN || user.rol === UserRole.ADMINISTRATIVO) && (
@@ -1524,69 +1780,81 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
 
             <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
                 <div className="flex flex-col gap-4">
-                    <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3">
+                    <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3 border-b border-slate-100 pb-3">
                         <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl overflow-x-auto whitespace-nowrap scrollbar-none w-full md:w-auto">
                             <NavButton view="prospects" label="Prospectos" icon={<UsersIcon />} />
                             <NavButton view="not-operated" label="No Operados" icon={<UsersIcon />} />
                             <NavButton view="operated" label="Operados" icon={<UsersIcon />} />
                             <NavButton view="tasks" label="Tareas" icon={<ClipboardCheckIcon />} />
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-                            {['prospects', 'not-operated', 'operated'].includes(activeView) && (
-                                <div className="relative w-full sm:w-64">
-                                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><SearchIcon /></div>
-                                    <input type="text" placeholder="Buscar por nombre, DNI o tel..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="block w-full rounded-lg border-slate-300 pl-9 text-sm focus:border-sky-500 focus:ring-sky-500 bg-slate-50 focus:bg-white transition-colors" />
-                                </div>
-                            )}
-                            {activeView === 'tasks' && (
-                                <select value={taskStatusFilter} onChange={(e) => setTaskStatusFilter(e.target.value as any)} className="block w-full sm:w-auto rounded-lg border-slate-300 text-sm shadow-sm focus:border-sky-500 focus:ring-sky-500 bg-white">
-                                    <option value="todos">Todas las Tareas</option>
-                                    <option value={TaskStatus.PENDIENTE}>Pendiente</option>
-                                    <option value={TaskStatus.HECHO}>Hecho</option>
-                                    <option value={TaskStatus.POSPUESTO}>Pospuesto</option>
-                                </select>
-                            )}
-                            {activeView === 'prospects' && (
-                                <div className="flex items-center gap-1.5 w-full sm:w-auto">
-                                    <span className="text-xs text-slate-500 hidden sm:inline">Seguimiento:</span>
-                                    <select value={seguimientoFilter} onChange={e => setSeguimientoFilter(e.target.value as any)} className="block w-full sm:w-auto rounded-lg border-slate-300 text-sm bg-white shadow-sm focus:border-sky-500 focus:ring-sky-500">
-                                        <option value="todos">Todos los Estados</option>
-                                        {Object.values(ProspectoEstadoSeguimiento).map(s => <option key={s} value={s}>{s}</option>)}
-                                    </select>
-                                </div>
-                            )}
+                            <NavButton view="folders" label="Ver Carpetas" icon={<FolderIcon />} />
                         </div>
                     </div>
 
-                    {['not-operated', 'operated'].includes(activeView) && (
-                        <div className="flex flex-wrap items-center gap-2 p-2 bg-slate-50/70 rounded-xl border border-slate-100">
+                    {['prospects', 'not-operated', 'operated', 'folders', 'tasks'].includes(activeView) && (
+                        <div className="flex flex-wrap items-center gap-3 p-2 bg-slate-50/70 rounded-xl border border-slate-100">
+                            {['prospects', 'not-operated', 'operated', 'folders', 'tasks'].includes(activeView) && (
+                                <div className="relative w-full sm:w-64">
+                                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><SearchIcon /></div>
+                                    <input type="text" placeholder={activeView === 'tasks' ? "Buscar por descripción, paciente o asignado..." : "Buscar por nombre, DNI o tel..."} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="block w-full rounded-lg border-slate-300 pl-9 text-sm focus:border-sky-500 focus:ring-sky-500 bg-white" />
+                                </div>
+                            )}
+
                             <span className="text-xs font-semibold text-slate-500 px-1">Filtros:</span>
-                            
+
+                            {activeView === 'tasks' && (
+                                <select value={taskStatusFilter} onChange={e => setTaskStatusFilter(e.target.value as any)} className="text-sm bg-white shadow-sm focus:ring-sky-500 focus:border-sky-500 rounded-md border-slate-300">
+                                    <option value={TaskStatus.PENDIENTE}>Pendientes</option>
+                                    <option value={TaskStatus.POSPUESTO}>Pospuestas</option>
+                                    <option value={TaskStatus.HECHO}>Realizadas</option>
+                                    <option value="todos">Todas las Tareas</option>
+                                </select>
+                            )}
+
+                            {['prospects', 'not-operated', 'operated'].includes(activeView) && (
+                                <select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)} className="text-sm bg-white shadow-sm focus:ring-sky-500 focus:border-sky-500 rounded-md border-slate-300">
+                                    <option value="todos">Todas las Prioridades</option>
+                                    <option value={Priority.ALTA}>Alta</option>
+                                    <option value={Priority.MEDIA}>Media</option>
+                                    <option value={Priority.NORMAL}>Normal</option>
+                                </select>
+                            )}
+
+                            {activeView === 'prospects' && (
+                                <select value={seguimientoFilter} onChange={e => setSeguimientoFilter(e.target.value as any)} className="text-sm bg-white shadow-sm focus:ring-sky-500 focus:border-sky-500 rounded-md border-slate-300">
+                                    <option value="todos">Todos los Estados</option>
+                                    {Object.values(ProspectoEstadoSeguimiento).map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                            )}
+
                             {activeView === 'not-operated' && (
-                                <select value={tagFilter} onChange={e => setTagFilter(e.target.value as any)} className="text-sm bg-white shadow-sm focus:ring-sky-500 focus:border-sky-500">
+                                <select value={tagFilter} onChange={e => setTagFilter(e.target.value as any)} className="text-sm bg-white shadow-sm focus:ring-sky-500 focus:border-sky-500 rounded-md border-slate-300">
                                     <option value="todos">Todas las Etiquetas</option>
                                     {Object.values(ContactoTag).filter(t => t !== ContactoTag.POSBARIATRICO).map(tag => <option key={tag} value={tag}>{tag.replace(/_/g, ' ')}</option>)}
                                 </select>
                             )}
 
                             {activeView === 'operated' && (
-                                <select value={postOpStageFilter} onChange={e => setPostOpStageFilter(e.target.value as any)} className="text-sm bg-white shadow-sm focus:ring-sky-500 focus:border-sky-500">
+                                <select value={postOpStageFilter} onChange={e => setPostOpStageFilter(e.target.value as any)} className="text-sm bg-white shadow-sm focus:ring-sky-500 focus:border-sky-500 rounded-md border-slate-300">
                                     <option value="todos">Todas las Etapas</option>
                                     {Object.values(PostOpStage).map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
                             )}
 
-                            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="text-sm bg-white shadow-sm focus:ring-sky-500 focus:border-sky-500">
-                                <option value="todos">Todos los Estados</option>
-                                <option value={ContactoStatus.ACTIVO}>Activo</option>
-                                <option value={ContactoStatus.INACTIVO}>Inactivo</option>
-                                <option value={ContactoStatus.PERDIDO}>Perdido</option>
-                            </select>
+                            {['not-operated', 'operated'].includes(activeView) && (
+                                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="text-sm bg-white shadow-sm focus:ring-sky-500 focus:border-sky-500 rounded-md border-slate-300">
+                                    <option value="todos">Todos los Estados</option>
+                                    <option value={ContactoStatus.ACTIVO}>Activo</option>
+                                    <option value={ContactoStatus.INACTIVO}>Inactivo</option>
+                                    <option value={ContactoStatus.PERDIDO}>Perdido</option>
+                                </select>
+                            )}
 
-                            <select value={socialInsuranceFilter} onChange={e => setSocialInsuranceFilter(e.target.value)} className="text-sm bg-white shadow-sm focus:ring-sky-500 focus:border-sky-500">
-                                <option value="">Todas las Obras Sociales</option>
-                                {uniqueObrasSociales.map(os => <option key={os} value={os}>{os}</option>)}
-                            </select>
+                            {['not-operated', 'operated'].includes(activeView) && (
+                                <select value={socialInsuranceFilter} onChange={e => setSocialInsuranceFilter(e.target.value)} className="text-sm bg-white shadow-sm focus:ring-sky-500 focus:border-sky-500 rounded-md border-slate-300">
+                                    <option value="">Todas las Obras Sociales</option>
+                                    {uniqueObrasSociales.map(os => <option key={os} value={os}>{os}</option>)}
+                                </select>
+                            )}
                         </div>
                     )}
                 </div>
@@ -1632,6 +1900,20 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
                                 />
                             )}
                             {activeView === 'tasks' && <TasksView tasks={filteredTasks} onUpdateTask={handleUpdateTask} onSelectPatient={onSelectPatient} contactos={contactos} onOpenModal={handleOpenModal} />}
+                            {activeView === 'folders' && (
+                                <FoldersDashboardView 
+                                    folders={folders} 
+                                    contactos={contactos} 
+                                    searchTerm={searchTerm}
+                                    onOpenFolder={(patientId) => {
+                                        const contacto = contactos.find(c => c.id === patientId);
+                                        if (contacto) {
+                                            setSelectedContacto(contacto);
+                                            setActiveModal('folder');
+                                        }
+                                    }} 
+                                />
+                            )}
                         </div>
                         {['prospects', 'not-operated', 'operated'].includes(activeView) && totalPages > 1 && (
                             <div className="flex justify-between items-center px-4 py-3 bg-white border-t border-slate-200 sm:px-6 mt-4">
@@ -1792,12 +2074,22 @@ const ProspectoRow: React.FC<ProspectoRowProps> = ({ contacto, onOpenModal, onUp
                         ) : (
                             <button onClick={() => onOpenModal('convert-prospect', contacto)} className="px-2.5 py-1.5 text-xs font-semibold text-white bg-green-600 rounded-md hover:bg-green-700">Convertir</button>
                         )}
-                        <button onClick={() => onOpenModal('whatsapp', contacto)} title="Generar WhatsApp" className="p-2 text-white bg-green-500 rounded-full hover:opacity-80 transition-all">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a8 8 0 100 16 8 8 0 000-16z" /></svg>
+                        <button onClick={() => onOpenModal('whatsapp', contacto)} title="Generar WhatsApp" className="p-2 text-white bg-green-500 rounded-full hover:opacity-80 transition-all flex items-center justify-center">
+                            <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                                <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.42 9.864-9.864.002-2.637-1.03-5.115-2.905-6.99-1.876-1.875-4.353-2.904-6.992-2.905C6.009 1.846 1.58 6.27 1.576 11.71c-.001 1.712.464 3.385 1.348 4.908l-.99 3.616 3.713-.974z"/>
+                            </svg>
                         </button>
-                        <button onClick={() => onOpenModal('tasks', contacto)} title="Tareas" className="p-2 text-white bg-blue-500 rounded-full hover:opacity-80 transition-all">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
-                        </button>
+                        {contacto.email && (
+                            <a 
+                                href={`mailto:${contacto.email}`} 
+                                title="Enviar Correo" 
+                                className="p-2.5 text-white bg-indigo-500 rounded-full hover:opacity-80 transition-all duration-200 transform hover:scale-110 flex items-center justify-center"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                </svg>
+                            </a>
+                        )}
                         {/* [FIX 4] Turn history button (only for patients) */}
                         {contacto.isPatient && (
                             <button onClick={() => onOpenModal('turn-history', contacto)} title="Historial de Turnos" className="p-2 text-white bg-cyan-600 rounded-full hover:opacity-80 transition-all">
@@ -2015,17 +2307,20 @@ const StatusBadge = ({ status }: { status: ContactoStatus }) => {
 
 const ContactoActions = ({ contacto, onOpenModal, onReactivate, hasFolder, hasPendingTasks, isOperatedView }: { contacto: ContactoCRM, onOpenModal: (modal: ActiveModalType, contacto: ContactoCRM) => void, onReactivate: (contacto: ContactoCRM) => void, hasFolder: boolean, hasPendingTasks: boolean, isOperatedView?: boolean }) => {
     const allActionButtons: { modal: ActiveModalType; icon: React.ReactNode; title: string; color: string; pulse: boolean }[] = [
-        { modal: 'whatsapp', icon: <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a8 8 0 100 16 8 8 0 000-16z" /></svg>, title: 'Generar WhatsApp con IA', color: 'bg-green-500', pulse: false },
+        { modal: 'whatsapp', icon: (
+            <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.42 9.864-9.864.002-2.637-1.03-5.115-2.905-6.99-1.876-1.875-4.353-2.904-6.992-2.905C6.009 1.846 1.58 6.27 1.576 11.71c-.001 1.712.464 3.385 1.348 4.908l-.99 3.616 3.713-.974z"/>
+            </svg>
+        ), title: 'WhatsApp', color: 'bg-[#25D366]', pulse: false },
         { modal: 'folder', icon: <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>, title: 'Gestionar Carpeta', color: 'bg-amber-500', pulse: hasFolder },
         { modal: 'tasks', icon: <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>, title: 'Ver/Añadir Tareas', color: 'bg-blue-500', pulse: hasPendingTasks },
-        // [FIX 4] Turn history button in ContactoRow
         { modal: 'turn-history', icon: <CalendarDaysIcon className="h-5 w-5" />, title: 'Historial de Turnos', color: 'bg-cyan-600', pulse: false },
         { modal: 'history', icon: <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>, title: 'Historial CRM', color: 'bg-purple-500', pulse: false },
         { modal: 'lost', icon: <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>, title: 'Marcar como Perdido', color: 'bg-red-500', pulse: false },
     ];
 
     const actionButtons = isOperatedView
-        ? allActionButtons.filter(btn => btn.modal !== 'folder')
+        ? allActionButtons.filter(btn => btn.modal !== 'folder' && btn.modal !== 'lost')
         : allActionButtons;
 
     if (contacto.lostReason) {
@@ -2046,6 +2341,17 @@ const ContactoActions = ({ contacto, onOpenModal, onReactivate, hasFolder, hasPe
                     </button>
                 );
             })}
+            {contacto.email && (
+                <a 
+                    href={`mailto:${contacto.email}`} 
+                    title="Enviar Correo" 
+                    className="p-2.5 text-white bg-indigo-500 rounded-full hover:opacity-80 transition-all duration-200 transform hover:scale-110 flex items-center justify-center"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                </a>
+            )}
         </div>
     );
 };
@@ -2073,6 +2379,7 @@ const LiquidacionDiariaModal = ({ onClose }: { onClose: () => void }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [profesionales, setProfesionales] = useState<Profesional[]>([]);
+    const [selectedProfEmail, setSelectedProfEmail] = useState<string>('todos');
 
     useEffect(() => { api.getProfesionalesAdmin().then(setProfesionales).catch(() => {}); }, []);
     useEffect(() => {
@@ -2088,7 +2395,8 @@ const LiquidacionDiariaModal = ({ onClose }: { onClose: () => void }) => {
         const prof = profesionales.find(p => p.email === email);
         return prof ? `${prof.nombres} ${prof.apellido}` : email;
     };
-    const turnosAtendidos = turnos.filter(t => t.estado === EstadoTurnoDia.ATENDIDO);
+    const turnosFiltrados = turnos.filter(t => selectedProfEmail === 'todos' || t.profesionalEmail === selectedProfEmail);
+    const turnosAtendidos = turnosFiltrados.filter(t => t.estado === EstadoTurnoDia.ATENDIDO);
     const summary = useMemo(() => {
         const totalRecaudado = turnosAtendidos.reduce((acc, t) => acc + (t.valorCobrado || 0), 0);
         const porProfesional = turnosAtendidos.reduce<Record<string, { count: number, total: number }>>((acc, t) => {
@@ -2105,10 +2413,23 @@ const LiquidacionDiariaModal = ({ onClose }: { onClose: () => void }) => {
             <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl m-4 flex flex-col max-h-[90vh]">
                 <div className="p-4 border-b bg-slate-50 no-print"><h2 className="text-xl font-bold text-slate-800">Cierre de Caja Diario (Liquidación)</h2></div>
                 <div className="p-6 flex-grow overflow-y-auto print-section">
-                    <div className="flex justify-between items-center mb-4 no-print">
+                    <div className="flex flex-wrap gap-4 items-center mb-4 no-print">
                         <div className="flex items-center gap-2">
                             <label className="text-sm font-medium">Fecha:</label>
-                            <input type="date" value={format(fecha, 'yyyy-MM-dd')} onChange={e => setFecha(new Date(e.target.value.replace(/-/g, '/')))} className="rounded-md border-slate-300" />
+                            <input type="date" value={format(fecha, 'yyyy-MM-dd')} onChange={e => setFecha(new Date(e.target.value.replace(/-/g, '/')))} className="rounded-md border-slate-300 text-sm" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <label className="text-sm font-medium">Profesional:</label>
+                            <select 
+                                value={selectedProfEmail} 
+                                onChange={e => setSelectedProfEmail(e.target.value)} 
+                                className="rounded-md border-slate-300 text-sm"
+                            >
+                                <option value="todos">Todos los profesionales</option>
+                                {profesionales.map(p => (
+                                    <option key={p.email} value={p.email}>{p.apellido}, {p.nombres}</option>
+                                ))}
+                            </select>
                         </div>
                     </div>
                     <div className="border-b pb-4 mb-4"><h3 className="text-2xl font-bold text-center">Liquidación del {format(fecha, 'dd/MM/yyyy')}</h3></div>
@@ -2189,16 +2510,98 @@ function useDebouncedCallback<A extends any[]>(callback: (...args: A) => void, w
     }, [wait]);
 }
 
+// ─── PATIENT SEARCH BAR ──────────────────────────────────────────────────────
+const PatientSearchBar = ({ allPatients, onSelectPatient }: { allPatients: PacienteFiliatorio[], onSelectPatient: (patient: PacienteFiliatorio) => void }) => {
+    const [query, setQuery] = useState('');
+    const [results, setResults] = useState<PacienteFiliatorio[]>([]);
+    const [isOpen, setIsOpen] = useState(false);
+
+    useEffect(() => {
+        const isDigit = /^\d+$/.test(query);
+        if (query.length < (isDigit ? 1 : 2)) { setResults([]); setIsOpen(false); return; }
+        
+        const lowerQuery = query.trim().toLowerCase();
+        const isNumeric = /^\d+$/.test(lowerQuery);
+        const isPrefixedId = /^p-\d+$/.test(lowerQuery);
+        
+        let filtered = [];
+        
+        if (isNumeric || isPrefixedId) {
+            const numericStr = isNumeric ? lowerQuery : lowerQuery.substring(2);
+            const searchNum = parseInt(numericStr, 10);
+            const exactId = `p-${numericStr}`;
+            
+            const hasExactMatch = allPatients.some(p => 
+                p.nroHc === searchNum || (p.idPaciente && p.idPaciente.toLowerCase() === exactId)
+            );
+            
+            if (hasExactMatch) {
+                filtered = allPatients.filter(p => 
+                    p.nroHc === searchNum || (p.idPaciente && p.idPaciente.toLowerCase() === exactId)
+                );
+            } else {
+                const normQuery = normalizeString(query);
+                filtered = allPatients.filter(p => 
+                    normalizeString(`${p.apellido} ${p.nombres}`).includes(normQuery) || 
+                    p.dni.includes(normQuery) ||
+                    (p.idPaciente && p.idPaciente.toLowerCase().includes(normQuery)) ||
+                    (p.nroHc && String(p.nroHc).includes(normQuery))
+                );
+            }
+        } else {
+            const normQuery = normalizeString(query);
+            filtered = allPatients.filter(p => 
+                normalizeString(`${p.apellido} ${p.nombres}`).includes(normQuery) || 
+                p.dni.includes(normQuery) ||
+                (p.idPaciente && p.idPaciente.toLowerCase().includes(normQuery)) ||
+                (p.nroHc && String(p.nroHc).includes(normQuery))
+            );
+        }
+        setResults(filtered);
+        setIsOpen(true);
+    }, [query, allPatients]);
+
+    const handleSelect = (patient: PacienteFiliatorio) => { setQuery(''); setResults([]); setIsOpen(false); onSelectPatient(patient); };
+
+    return (
+        <div className="relative">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><SearchIcon /></div>
+            <input type="text" placeholder="Buscar paciente por nombre, apellido, DNI, HC o ID..." value={query} onChange={e => setQuery(e.target.value)} onBlur={() => setTimeout(() => setIsOpen(false), 200)} onFocus={() => query.length > 1 && setIsOpen(true)} className="block w-full rounded-md border-slate-300 pl-10 shadow-sm text-base p-3" />
+            {isOpen && results.length > 0 && (
+                <div className="absolute z-10 mt-1 w-full bg-white shadow-lg rounded-md max-h-60 overflow-y-auto border border-slate-200">
+                    <ul>
+                        {results.map(patient => (
+                            <li key={patient.idPaciente} onClick={() => handleSelect(patient)} className="p-3 hover:bg-slate-100 cursor-pointer border-b last:border-b-0">
+                                <p className="font-medium text-slate-800">{patient.apellido}, {patient.nombres}</p>
+                                <p className="text-sm text-slate-500">DNI: {patient.dni} {patient.nroHc ? `· HC: ${patient.nroHc}` : ''} · ID: {patient.idPaciente}</p>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+            {isOpen && results.length === 0 && query.length > 1 && (
+                <div className="absolute z-10 mt-1 w-full bg-white shadow-lg rounded-md p-4 border border-slate-200 text-sm text-slate-500">No se encontraron pacientes.</div>
+            )}
+        </div>
+    );
+};
+
 // ─── [FIX 3] TORRE DE CONTROL — with date picker ─────────────────────────────
 const TorreDeControl = ({ onSelectPatient }: { onSelectPatient: (patient: PacienteFiliatorio) => void }) => {
     const authContext = useContext(AuthContext);
     const [currentDate, setCurrentDate] = useState(new Date());
     const [turnos, setTurnos] = useState<TurnoDiario[]>([]);
     const [profesionales, setProfesionales] = useState<Profesional[]>([]);
+    const [allPatients, setAllPatients] = useState<PacienteFiliatorio[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showGestionProfs, setShowGestionProfs] = useState(false);
     const [showLiquidacion, setShowLiquidacion] = useState(false);
+    const [turnoAReagendar, setTurnoAReagendar] = useState<any | null>(null);
     const user = authContext!.user!;
+
+    useEffect(() => {
+        api.getPacientes(UserRole.MEDICO).then(setAllPatients).catch(() => {});
+    }, []);
 
     const fetchData = useCallback(() => {
         setIsLoading(true);
@@ -2258,7 +2661,6 @@ const TorreDeControl = ({ onSelectPatient }: { onSelectPatient: (patient: Pacien
                     <button onClick={() => setShowLiquidacion(true)} className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border rounded-md hover:bg-slate-50">
                         <CalculatorIcon />Liquidación
                     </button>
-                    {/* [FIX 3] Date picker for fast navigation */}
                     <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-md px-1">
                         <button onClick={() => changeDay(-1)} className="p-1.5 rounded hover:bg-slate-100 transition-colors" title="Día anterior"><ChevronLeftIcon /></button>
                         <input
@@ -2274,6 +2676,10 @@ const TorreDeControl = ({ onSelectPatient }: { onSelectPatient: (patient: Pacien
                         Hoy
                     </button>
                 </div>
+            </div>
+            
+            <div className="p-4 bg-slate-50 border-b">
+                <PatientSearchBar allPatients={allPatients} onSelectPatient={onSelectPatient} />
             </div>
 
             {isLoading ? (
@@ -2293,17 +2699,55 @@ const TorreDeControl = ({ onSelectPatient }: { onSelectPatient: (patient: Pacien
                                         return (
                                             <div key={turno.idTurno} className={`p-2.5 rounded-md shadow-sm border-l-4 ${estadoInfo.color} ${estadoInfo.colorFondo} space-y-2`}>
                                                 <div className="flex justify-between items-start">
-                                                    <div>
-                                                        <p className="font-bold text-sm text-slate-800">{format(new Date(turno.fechaTurno), 'HH:mm')}</p>
-                                                        <div className="flex items-center gap-1 mt-1">
-                                                            {turno.esVideoconsulta && <span title="Videoconsulta"><VideoCameraIcon /></span>}
-                                                            {turno.esSobreturno && <span title="Sobreturno"><PlusCircleIcon /></span>}
-                                                            <button onClick={() => onSelectPatient(turno.paciente)} className="block text-left font-medium text-sm text-indigo-600 hover:underline truncate">
-                                                                {turno.paciente.apellido}, {turno.paciente.nombres}
-                                                            </button>
+                                                    <div className="flex-grow min-w-0">
+                                                        <div className="flex justify-between items-center w-full mb-1">
+                                                            <p className="font-bold text-sm text-slate-800">{format(new Date(turno.fechaTurno), 'HH:mm')}</p>
+                                                            {turno.estado !== EstadoTurnoDia.CANCELADO && (
+                                                                <div className="flex gap-2">
+                                                                    <button 
+                                                                        onClick={() => setTurnoAReagendar(turno)} 
+                                                                        className="text-[10px] text-indigo-600 hover:text-indigo-900 font-semibold"
+                                                                    >
+                                                                        Reagendar
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={() => {
+                                                                            if (window.confirm("¿Está seguro de que desea cancelar este turno?")) {
+                                                                                handleUpdateTurno(turno.idTurno, { estado: EstadoTurnoDia.CANCELADO });
+                                                                            }
+                                                                        }} 
+                                                                        className="text-[10px] text-red-600 hover:text-red-900 font-semibold"
+                                                                    >
+                                                                        Cancelar
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex flex-col mt-1">
+                                                            <div className="flex items-center gap-1">
+                                                                {turno.esVideoconsulta && <span title="Videoconsulta"><VideoCameraIcon /></span>}
+                                                                {turno.esSobreturno && <span title="Sobreturno"><PlusCircleIcon /></span>}
+                                                                <button onClick={() => onSelectPatient(turno.paciente)} className="block text-left font-medium text-sm text-indigo-600 hover:underline truncate">
+                                                                    {turno.paciente.apellido}, {turno.paciente.nombres}
+                                                                </button>
+                                                                {turno.paciente.email && (
+                                                                    <a 
+                                                                        href={`mailto:${turno.paciente.email}`}
+                                                                        className="text-slate-400 hover:text-indigo-600 ml-1 inline-block align-middle"
+                                                                        title={`Enviar mail a ${turno.paciente.email}`}
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                                                        </svg>
+                                                                    </a>
+                                                                )}
+                                                            </div>
+                                                            <span className="text-[10px] text-slate-500 font-semibold uppercase mt-0.5">
+                                                                🏷️ {turno.paciente.etiquetaPrincipalActiva.replace(/_/g, ' ')}
+                                                            </span>
                                                         </div>
                                                     </div>
-                                                    <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${estadoInfo.colorFondo}`}>{estadoInfo.texto}</span>
+                                                    <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${estadoInfo.colorFondo} ml-2`}>{estadoInfo.texto}</span>
                                                 </div>
                                                 <div className="grid grid-cols-12 gap-1 text-xs">
                                                     <div className="col-span-4">
@@ -2347,6 +2791,30 @@ const TorreDeControl = ({ onSelectPatient }: { onSelectPatient: (patient: Pacien
 
             {showGestionProfs && <GestionProfesionalesModal onClose={() => { setShowGestionProfs(false); fetchData(); }} />}
             {showLiquidacion && <LiquidacionDiariaModal onClose={() => setShowLiquidacion(false)} />}
+            {turnoAReagendar && (
+                <AgendarTurnoModal
+                    onClose={() => setTurnoAReagendar(null)}
+                    onSuccess={() => {
+                        setTurnoAReagendar(null);
+                        fetchData();
+                    }}
+                    turnoAEditar={{
+                        idTurno: turnoAReagendar.idTurno,
+                        idPaciente: turnoAReagendar.paciente.idPaciente,
+                        fechaTurno: turnoAReagendar.fechaTurno,
+                        profesionalEmail: turnoAReagendar.profesionalEmail,
+                        especialidad: turnoAReagendar.especialidad,
+                        creadoPorEmail: turnoAReagendar.creadoPorEmail,
+                        esVideoconsulta: turnoAReagendar.esVideoconsulta,
+                        esSobreturno: turnoAReagendar.esSobreturno,
+                        estado: turnoAReagendar.estado,
+                        notaInterna: turnoAReagendar.notaInterna,
+                        valorCobrado: turnoAReagendar.valorCobrado,
+                        metodoPago: turnoAReagendar.metodoPago,
+                    }}
+                    creadoPorEmail={user.email}
+                />
+            )}
         </div>
     );
 };
@@ -2411,87 +2879,12 @@ function MedicoDashboard({ onSelectPatient, onNavigateToCrm }: DashboardProps) {
 
     useEffect(() => { api.getPacientes(UserRole.MEDICO).then(setAllPatients).finally(() => setIsLoading(false)); }, []);
 
-    const PatientSearchBar = () => {
-        const [query, setQuery] = useState('');
-        const [results, setResults] = useState<PacienteFiliatorio[]>([]);
-        const [isOpen, setIsOpen] = useState(false);
-
-        useEffect(() => {
-            const isDigit = /^\d+$/.test(query);
-            if (query.length < (isDigit ? 1 : 2)) { setResults([]); setIsOpen(false); return; }
-            
-            const lowerQuery = query.trim().toLowerCase();
-            const isNumeric = /^\d+$/.test(lowerQuery);
-            const isPrefixedId = /^p-\d+$/.test(lowerQuery);
-            
-            let filtered = [];
-            
-            if (isNumeric || isPrefixedId) {
-                const numericStr = isNumeric ? lowerQuery : lowerQuery.substring(2);
-                const searchNum = parseInt(numericStr, 10);
-                const exactId = `p-${numericStr}`;
-                
-                const hasExactMatch = allPatients.some(p => 
-                    p.nroHc === searchNum || (p.idPaciente && p.idPaciente.toLowerCase() === exactId)
-                );
-                
-                if (hasExactMatch) {
-                    filtered = allPatients.filter(p => 
-                        p.nroHc === searchNum || (p.idPaciente && p.idPaciente.toLowerCase() === exactId)
-                    );
-                } else {
-                    const normQuery = normalizeString(query);
-                    filtered = allPatients.filter(p => 
-                        normalizeString(`${p.apellido} ${p.nombres}`).includes(normQuery) || 
-                        p.dni.includes(normQuery) ||
-                        (p.idPaciente && p.idPaciente.toLowerCase().includes(normQuery)) ||
-                        (p.nroHc && String(p.nroHc).includes(normQuery))
-                    );
-                }
-            } else {
-                const normQuery = normalizeString(query);
-                filtered = allPatients.filter(p => 
-                    normalizeString(`${p.apellido} ${p.nombres}`).includes(normQuery) || 
-                    p.dni.includes(normQuery) ||
-                    (p.idPaciente && p.idPaciente.toLowerCase().includes(normQuery)) ||
-                    (p.nroHc && String(p.nroHc).includes(normQuery))
-                );
-            }
-            setResults(filtered);
-            setIsOpen(true);
-        }, [query]);
-
-        const handleSelect = (patient: PacienteFiliatorio) => { setQuery(''); setResults([]); setIsOpen(false); onSelectPatient(patient); };
-
-        return (
-            <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><SearchIcon /></div>
-                <input type="text" placeholder="Buscar paciente por nombre, apellido, DNI, HC o ID..." value={query} onChange={e => setQuery(e.target.value)} onBlur={() => setTimeout(() => setIsOpen(false), 200)} onFocus={() => query.length > 1 && setIsOpen(true)} className="block w-full rounded-md border-slate-300 pl-10 shadow-sm text-base p-3" />
-                {isOpen && results.length > 0 && (
-                    <div className="absolute z-10 mt-1 w-full bg-white shadow-lg rounded-md max-h-60 overflow-y-auto border border-slate-200">
-                        <ul>
-                            {results.map(patient => (
-                                <li key={patient.idPaciente} onClick={() => handleSelect(patient)} className="p-3 hover:bg-slate-100 cursor-pointer border-b last:border-b-0">
-                                    <p className="font-medium text-slate-800">{patient.apellido}, {patient.nombres}</p>
-                                    <p className="text-sm text-slate-500">DNI: {patient.dni} {patient.nroHc ? `· HC: ${patient.nroHc}` : ''} · ID: {patient.idPaciente}</p>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                )}
-                {isOpen && results.length === 0 && query.length > 1 && (
-                    <div className="absolute z-10 mt-1 w-full bg-white shadow-lg rounded-md p-4 border border-slate-200 text-sm text-slate-500">No se encontraron pacientes.</div>
-                )}
-            </div>
-        );
-    };
-
     if (isLoading) return <div className="text-center p-10 text-slate-500">Cargando...</div>;
 
     return (
         <div className="space-y-6">
             <h2 className="text-2xl font-bold text-slate-800">Panel del Profesional</h2>
-            <PatientSearchBar />
+            <PatientSearchBar allPatients={allPatients} onSelectPatient={onSelectPatient} />
             <TareasPendientesWidget onSelectPatient={onSelectPatient} allPatients={allPatients} onNavigateToCrm={onNavigateToCrm} />
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6" style={{ minHeight: 'calc(100vh - 18rem)' }}>
                 <div className="xl:col-span-1"><AgendaProfesional onDateSelect={setSelectedDate} selectedDate={selectedDate} /></div>

@@ -305,8 +305,9 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
             .map(item => `• ${item.urgente ? '[URGENTE] ' : ''}${item.descripcion}${item.indicaciones ? ` (${item.indicaciones})` : ''}`)
             .join('\n');
         const text = `*PEDIDO DE ESTUDIOS*\n\nPaciente: ${filiatorio.apellido}, ${filiatorio.nombres}\nDNI: ${filiatorio.dni}\n\n*Se solicita:*\n${itemsText}${diagnostico ? `\n\n_Dx: ${diagnostico}_` : ''}\n\n_${firmaNombre}${showSignature ? ` - ${firmaMatricula}` : ''}_`;
-        const phone = filiatorio.telefono?.replace(/\D/g, '') || '';
-        window.open(`https://wa.me/${phone ? '549' + phone : ''}?text=${encodeURIComponent(text)}`, '_blank');
+        const clean = filiatorio.telefono?.replace(/\D/g, '') || '';
+        const waPhone = clean ? (clean.startsWith('54') ? clean : ('549' + clean)) : '';
+        window.open(`https://wa.me/${waPhone}?text=${encodeURIComponent(text)}`, '_blank');
     };
 
     const today = format(new Date(), "dd 'de' MMMM 'de' yyyy", { locale: es });
@@ -607,8 +608,9 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
             .map((item, idx) => `${idx + 1}. ${item.medicamento}${item.dosis ? ` — ${item.dosis}` : ''}${item.frecuencia ? `, ${item.frecuencia}` : ''}${item.duracion ? ` por ${item.duracion}` : ''}${item.indicaciones ? `\n   _${item.indicaciones}_` : ''}`)
             .join('\n');
         const text = `*RECETA MÉDICA*\n\nPaciente: ${filiatorio.apellido}, ${filiatorio.nombres}\nDNI: ${filiatorio.dni}\n${diagnostico ? `Diagnóstico: ${diagnostico}\n` : ''}\n${itemsText}${indicacionesGenerales ? `\n\nIndicaciones: ${indicacionesGenerales}` : ''}\n\n_Dr/a. ${user.apellido}, ${user.nombres}${showSignature ? ` — ${firmaMatricula}` : ''}_`;
-        const phone = filiatorio.telefono?.replace(/\D/g, '') || '';
-        window.open(`https://wa.me/${phone ? '549' + phone : ''}?text=${encodeURIComponent(text)}`, '_blank');
+        const clean = filiatorio.telefono?.replace(/\D/g, '') || '';
+        const waPhone = clean ? (clean.startsWith('54') ? clean : ('549' + clean)) : '';
+        window.open(`https://wa.me/${waPhone}?text=${encodeURIComponent(text)}`, '_blank');
     };
 
     const today = format(new Date(), "dd 'de' MMMM 'de' yyyy", { locale: es });

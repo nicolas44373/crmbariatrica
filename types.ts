@@ -224,6 +224,7 @@ export interface PacienteCompleto {
     cirugia?: CirugiaInfo;
     nutricion?: NutricionInfo;
     psicologia?: PsicologiaInfo;
+    carpeta?: Folder;
 }
 
 export interface BloqueHorario {

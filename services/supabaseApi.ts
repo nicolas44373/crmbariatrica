@@ -601,16 +601,31 @@ async function deleteProfesional(
   if (turnosFuturos && turnosFuturos.length > 0) {
     throw new Error(
       'No se puede eliminar: el profesional tiene turnos futuros asignados. ' +
-      'Reasignelos o marcalo como Inactivo.'
+      'Reasígnelos o márquelo como Inactivo.'
     );
   }
 
+  // 1. Eliminar configuración de turnos si existe
+  await supabase
+    .from('configuraciones_profesionales')
+    .delete()
+    .eq('profesional_email', email);
+
+  // 2. Intentar eliminar el profesional
   const { error } = await supabase
     .from('profesionales')
     .delete()
     .eq('email', email);
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (error.code === '23503') { // Foreign key constraint violation
+      throw new Error(
+        'No se puede eliminar el profesional porque tiene historial clínico o turnos asociados. ' +
+        'Por favor, desactívalo desmarcando la opción "Activo" en su ficha para que no aparezca en las agendas.'
+      );
+    }
+    throw new Error(error.message);
+  }
 }
 
 // ─── CONFIGURACIÓN ────────────────────────────────────────────────────────────
@@ -695,6 +710,7 @@ async function getPacienteCompleto(
     { data: cirugiaRow },
     { data: nutricionRow },
     { data: psicologiaRow },
+    { data: carpetaRow },
   ] = await Promise.all([
     supabase.from('pacientes').select('*').eq('id_paciente', idPaciente).single(),
     supabase.from('historias_clinicas').select('*').eq('id_paciente', idPaciente).limit(1),
@@ -705,6 +721,7 @@ async function getPacienteCompleto(
     supabase.from('cirugias').select('*').eq('id_paciente', idPaciente).maybeSingle(),
     supabase.from('nutricion_info').select('*').eq('id_paciente', idPaciente).maybeSingle(),
     supabase.from('psicologia_info').select('*').eq('id_paciente', idPaciente).maybeSingle(),
+    supabase.from('carpetas_quirurgicas').select('*').eq('id_paciente', idPaciente).maybeSingle(),
   ]);
 
   if (errPac || !pacRow) throw new Error('Paciente no encontrado');
@@ -734,6 +751,7 @@ async function getPacienteCompleto(
   const cirugia = cirugiaRow ? mapCirugia(cirugiaRow) : undefined;
   const nutricion = nutricionRow ? mapNutricion(nutricionRow) : undefined;
   let psicologia = psicologiaRow ? mapPsicologia(psicologiaRow) : undefined;
+  const carpeta = carpetaRow ? mapFolder(carpetaRow) : undefined;
 
   // Control de acceso
   if (!user || user.rol === UserRole.MEDICO) {
@@ -764,7 +782,7 @@ async function getPacienteCompleto(
   estudios.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
   informes.sort((a, b) => new Date(b.fechaCreacion).getTime() - new Date(a.fechaCreacion).getTime());
 
-  return { filiatorio, historiaClinica, evoluciones, turnos, estudios, informes, cirugia, nutricion, psicologia };
+  return { filiatorio, historiaClinica, evoluciones, turnos, estudios, informes, cirugia, nutricion, psicologia, carpeta };
 }
 
 async function createPaciente(
@@ -1001,7 +1019,7 @@ async function createTurno(
 async function updateDetallesTurno(
   turnoId: string,
   updates: Partial<Turno>,
-  user: Profesional
+  user?: any
 ): Promise<Turno> {
   const { data: current } = await supabase
     .from('turnos').select('estado, hora_llegada, hora_atencion').eq('id_turno', turnoId).single();
@@ -1016,6 +1034,8 @@ async function updateDetallesTurno(
   if (updates.fechaTurno      !== undefined) dbUpdates.fecha_turno      = updates.fechaTurno;
   if (updates.esSobreturno    !== undefined) dbUpdates.es_sobreturno    = updates.esSobreturno;
   if (updates.esVideoconsulta !== undefined) dbUpdates.es_videoconsulta = updates.esVideoconsulta;
+  if (updates.profesionalEmail!== undefined) dbUpdates.profesional_email = updates.profesionalEmail;
+  if (updates.especialidad    !== undefined) dbUpdates.especialidad     = updates.especialidad;
 
   if (updates.estado && current) {
     if (updates.estado === EstadoTurnoDia.EN_ESPERA && !current.hora_llegada)
@@ -1783,16 +1803,16 @@ export interface EstadisticasGenerales {
   nuevosUltimos30dias: number;
 }
 
-async function getEstadisticas(): Promise<EstadisticasGenerales> {
+async function getEstadisticas(): Promise<any> {
   const [
     pacientes,
     turnos,
     crm,
     { data: profs },
   ] = await Promise.all([
-    fetchAll<any>(supabase.from('pacientes').select('etiqueta_activa, obra_social, created_at')),
-    fetchAll<any>(supabase.from('turnos').select('estado, profesional_email, fecha_turno')),
-    fetchAll<any>(supabase.from('crm_contactos').select('is_patient, fecha_ingreso')),
+    fetchAll<any>(supabase.from('pacientes').select('id_paciente, etiqueta_activa, obra_social, created_at')),
+    fetchAll<any>(supabase.from('turnos').select('id_paciente, estado, profesional_email, fecha_turno, especialidad')),
+    fetchAll<any>(supabase.from('crm_contactos').select('id, is_patient, fecha_ingreso')),
     supabase.from('profesionales').select('email, nombres, apellido'),
   ]);
 
@@ -1842,6 +1862,9 @@ async function getEstadisticas(): Promise<EstadisticasGenerales> {
     totalPacientes,
     totalProspectos,
     nuevosUltimos30dias,
+    rawTurnos: turnos,
+    rawCrm: crm,
+    rawPacientes: pacientes,
   };
 }
 

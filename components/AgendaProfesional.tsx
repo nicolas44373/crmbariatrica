@@ -93,9 +93,26 @@ export default function AgendaProfesional({ onDateSelect, selectedDate }: Agenda
         if (viewMode === 'week') {
             const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
             const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
+            const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1);
+            let label = '';
+            if (weekStart.getMonth() === weekEnd.getMonth()) {
+                const monthName = capitalize(format(weekStart, 'LLLL', { locale: es }));
+                const yearShort = format(weekStart, 'yy');
+                label = `${format(weekStart, 'd')}-${format(weekEnd, 'd')} ${monthName} ${yearShort}`;
+            } else {
+                const startMonth = capitalize(format(weekStart, 'LLLL', { locale: es }));
+                const endMonth = capitalize(format(weekEnd, 'LLLL', { locale: es }));
+                const startYear = format(weekStart, 'yy');
+                const endYear = format(weekEnd, 'yy');
+                if (startYear === endYear) {
+                    label = `${format(weekStart, 'd')} ${startMonth} - ${format(weekEnd, 'd')} ${endMonth} ${endYear}`;
+                } else {
+                    label = `${format(weekStart, 'd')} ${startMonth} ${startYear} - ${format(weekEnd, 'd')} ${endMonth} ${endYear}`;
+                }
+            }
             return {
                 days: eachDayOfInterval({ start: weekStart, end: weekEnd }),
-                periodLabel: `Semana del ${format(weekStart, 'd \'de\' LLLL', { locale: es })} al ${format(weekEnd, 'd \'de\' LLLL \'de\' yyyy', { locale: es })}`
+                periodLabel: label
             };
         } else { // month view
             const monthStart = startOfMonth(currentDate);

@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { PacienteFiliatorio, TurnoConPaciente, Profesional, EstadoTurnoDia } from '../types';
+import React, { useState, useEffect, useContext } from 'react';
+import { PacienteFiliatorio, TurnoConPaciente, Profesional, EstadoTurnoDia, Turno } from '../types';
 import { api } from '../services/mockApi';
 import { ESTADO_TURNO_MAP } from '../constants';
 // FIX: Consolidated date-fns imports to use named imports from the main package to fix callable expression errors.
 import { format, endOfWeek, eachDayOfInterval, isSameDay, addWeeks, subWeeks, startOfWeek } from 'date-fns';
 // FIX: Changed 'es' import to a named import to fix locale type errors.
 import { es } from 'date-fns/locale';
+import AgendarTurnoModal from './Agendarturnomodal';
+import { AuthContext } from '../App';
 
 interface AdminAgendaViewProps {
   onSelectPatient: (patient: PacienteFiliatorio) => void;
@@ -40,6 +42,7 @@ const PlusCircleIcon = () => (
 
 
 export default function AdminAgendaView({ onSelectPatient }: AdminAgendaViewProps) {
+    const authContext = useContext(AuthContext);
     const [selectedProfesionalEmail, setSelectedProfesionalEmail] = useState<string>('');
     const [profesionales, setProfesionales] = useState<Profesional[]>([]);
     const [allProfesionales, setAllProfesionales] = useState<Profesional[]>([]);
@@ -47,6 +50,20 @@ export default function AdminAgendaView({ onSelectPatient }: AdminAgendaViewProp
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [currentDate, setCurrentDate] = useState(new Date());
+    const [turnoAReagendar, setTurnoAReagendar] = useState<TurnoConPaciente | null>(null);
+
+    const fetchTurnos = () => {
+        if (!selectedProfesionalEmail) {
+            setTurnos([]);
+            return;
+        }
+        setIsLoading(true);
+        setError(null);
+        api.getTurnosParaProfesional(selectedProfesionalEmail)
+            .then(setTurnos)
+            .catch(() => setError("No se pudieron cargar los turnos para este profesional."))
+            .finally(() => setIsLoading(false));
+    };
 
     useEffect(() => {
         Promise.all([
@@ -63,21 +80,42 @@ export default function AdminAgendaView({ onSelectPatient }: AdminAgendaViewProp
     }, []);
 
     useEffect(() => {
-        if (!selectedProfesionalEmail) {
-            setTurnos([]);
-            return;
-        }
-        setIsLoading(true);
-        setError(null);
-        api.getTurnosParaProfesional(selectedProfesionalEmail)
-            .then(setTurnos)
-            .catch(() => setError("No se pudieron cargar los turnos para este profesional."))
-            .finally(() => setIsLoading(false));
+        fetchTurnos();
     }, [selectedProfesionalEmail]);
+
+    const handleCancelarTurno = async (turnoId: string) => {
+        if (!window.confirm("¿Está seguro de que desea cancelar este turno?")) return;
+        try {
+            await api.updateDetallesTurno(turnoId, { estado: EstadoTurnoDia.CANCELADO });
+            fetchTurnos();
+        } catch (err) {
+            console.error("Failed to cancel turno:", err);
+            setError("No se pudo cancelar el turno.");
+        }
+    };
 
     const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
     const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
     const daysOfWeek = eachDayOfInterval({ start: weekStart, end: weekEnd });
+
+    const periodLabel = (() => {
+        const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1);
+        if (weekStart.getMonth() === weekEnd.getMonth()) {
+            const monthName = capitalize(format(weekStart, 'LLLL', { locale: es }));
+            const yearShort = format(weekStart, 'yy');
+            return `${format(weekStart, 'd')}-${format(weekEnd, 'd')} ${monthName} ${yearShort}`;
+        } else {
+            const startMonth = capitalize(format(weekStart, 'LLLL', { locale: es }));
+            const endMonth = capitalize(format(weekEnd, 'LLLL', { locale: es }));
+            const startYear = format(weekStart, 'yy');
+            const endYear = format(weekEnd, 'yy');
+            if (startYear === endYear) {
+                return `${format(weekStart, 'd')} ${startMonth} - ${format(weekEnd, 'd')} ${endMonth} ${endYear}`;
+            } else {
+                return `${format(weekStart, 'd')} ${startMonth} ${startYear} - ${format(weekEnd, 'd')} ${endMonth} ${endYear}`;
+            }
+        }
+    })();
 
     const getCreadorNombre = (email: string) => {
         const profesional = allProfesionales.find(p => p.email === email);
@@ -116,7 +154,7 @@ export default function AdminAgendaView({ onSelectPatient }: AdminAgendaViewProp
                         <ChevronLeftIcon/>
                     </button>
                     <h3 className="text-md sm:text-lg font-semibold text-slate-700 text-center flex-shrink-0" onClick={() => setCurrentDate(new Date())} style={{cursor: 'pointer'}} title="Volver a la semana actual">
-                         {format(weekStart, 'd \'de\' LLLL', { locale: es })} - {format(weekEnd, 'd \'de\' LLLL \'de\' yyyy', { locale: es })}
+                          {periodLabel}
                     </h3>
                     <button onClick={() => changeWeek('next')} className="p-2 rounded-full hover:bg-slate-200 transition-colors">
                         <ChevronRightIcon/>
@@ -147,6 +185,22 @@ export default function AdminAgendaView({ onSelectPatient }: AdminAgendaViewProp
                                             <div key={turno.idTurno} className={`p-3 rounded-lg shadow-sm ${estadoInfo.colorFondo} border-l-4 ${estadoInfo.color}`}>
                                                 <div className="flex justify-between items-center">
                                                     <p className="font-bold text-sm text-slate-800">{format(new Date(turno.fechaTurno), 'HH:mm')}</p>
+                                                    {turno.estado !== EstadoTurnoDia.CANCELADO && (
+                                                        <div className="flex gap-2">
+                                                            <button 
+                                                                onClick={() => setTurnoAReagendar(turno)} 
+                                                                className="text-[10px] text-indigo-600 hover:text-indigo-900 font-semibold"
+                                                            >
+                                                                Reagendar
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => handleCancelarTurno(turno.idTurno)} 
+                                                                className="text-[10px] text-red-600 hover:text-red-900 font-semibold"
+                                                            >
+                                                                Cancelar
+                                                            </button>
+                                                        </div>
+                                                    )}
                                                     <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${estadoInfo.colorFondo}`}>
                                                         {estadoInfo.texto}
                                                     </span>
@@ -174,6 +228,32 @@ export default function AdminAgendaView({ onSelectPatient }: AdminAgendaViewProp
                         </div>
                     ))}
                 </div>
+            )}
+            {turnoAReagendar && (
+                <AgendarTurnoModal
+                    onClose={() => setTurnoAReagendar(null)}
+                    onSuccess={() => {
+                        setTurnoAReagendar(null);
+                        fetchTurnos();
+                    }}
+                    turnoAEditar={{
+                        idTurno: turnoAReagendar.idTurno,
+                        idPaciente: turnoAReagendar.paciente.idPaciente,
+                        fechaTurno: turnoAReagendar.fechaTurno,
+                        profesionalEmail: turnoAReagendar.profesionalEmail,
+                        especialidad: turnoAReagendar.especialidad,
+                        creadoPorEmail: turnoAReagendar.creadoPorEmail,
+                        esVideoconsulta: turnoAReagendar.esVideoconsulta,
+                        esSobreturno: turnoAReagendar.esSobreturno,
+                        estado: turnoAReagendar.estado,
+                        notaInterna: turnoAReagendar.notaInterna,
+                        valorCobrado: turnoAReagendar.valorCobrado,
+                        metodoPago: turnoAReagendar.metodoPago,
+                    }}
+                    pacientePreseleccionado={turnoAReagendar.paciente}
+                    profesionalPreseleccionado={allProfesionales.find(p => p.email === turnoAReagendar.profesionalEmail)}
+                    creadoPorEmail={authContext?.user?.email ?? ''}
+                />
             )}
         </div>
     );
