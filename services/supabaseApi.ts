@@ -26,6 +26,7 @@ import {
   CrmHistoryEntry,
   Task,
   Folder,
+  FolderNote,
   CrmSimpleProfessionals,
   MessageTemplate,
   ProspectoCanalOrigen,
@@ -261,6 +262,30 @@ function mapInforme(row: any): InformeClinico {
 }
 
 function mapFolder(row: any): Folder {
+  let parsedNotes: FolderNote[] = [];
+  if (row.notas) {
+    try {
+      const parsed = JSON.parse(row.notas);
+      if (Array.isArray(parsed)) {
+        parsedNotes = parsed;
+      } else {
+        parsedNotes = [{
+          id: 'legacy-1',
+          fecha: row.fecha_pedido || new Date().toISOString().split('T')[0],
+          autor: 'Historial',
+          texto: String(row.notas)
+        }];
+      }
+    } catch (e) {
+      parsedNotes = [{
+        id: 'legacy-1',
+        fecha: row.fecha_pedido || new Date().toISOString().split('T')[0],
+        autor: 'Historial',
+        texto: row.notas
+      }];
+    }
+  }
+
   return {
     id: row.id_carpeta,
     patientId: row.id_paciente,
@@ -277,7 +302,7 @@ function mapFolder(row: any): Folder {
     submittedDate: row.fecha_presentacion_os ?? null,
     authorizedDate: row.fecha_autorizacion ?? null,
     driveLink: row.link_drive ?? '',
-    notes: row.notas ?? '',
+    notes: parsedNotes,
     surgeon: row.cirujano_nombre ?? '',
     nutritionist: row.nutricionista_nombre ?? '',
     psychologist: row.psicologo_nombre ?? '',
@@ -799,9 +824,15 @@ async function createPaciente(
   if (!canAny(userRole)) throw new Error('Permiso denegado para crear pacientes.');
 
   const { data: profs } = await supabase.from('profesionales').select('*').eq('activo', true);
-  const cirujano = (profs ?? []).find((p: any) => (p.especialidad ?? '').toLowerCase().includes('cirug'));
+  const cirujano = (profs ?? []).find((p: any) => {
+    const esp = (p.especialidad ?? '').toLowerCase();
+    return esp.includes('cirug') || esp.includes('ciruj') || esp.includes('bariat');
+  });
   const nutricionista = (profs ?? []).find((p: any) => (p.especialidad ?? '').toLowerCase().includes('nutri'));
-  const psicologo = (profs ?? []).find((p: any) => (p.especialidad ?? '').toLowerCase().includes('psic'));
+  const psicologo = (profs ?? []).find((p: any) => {
+    const esp = (p.especialidad ?? '').toLowerCase();
+    return esp.includes('psic') || esp.includes('psiq');
+  });
 
   const { data, error } = await supabase.from('pacientes').insert({
     apellido: pacienteData.apellido,
@@ -881,9 +912,9 @@ async function updatePacienteFiliatorio(
   if (updates.telefono          !== undefined) dbUpdates.telefono                    = updates.telefono;
   if (updates.email             !== undefined) dbUpdates.email                       = updates.email;
   // DESPUÉS — string vacío se convierte a NULL, que sí acepta la FK
-  if (updates.cirujanoAsignado      !== undefined) dbUpdates.cirujano_assigned_email      = updates.cirujanoAsignado      || null;
-  if (updates.nutricionistaAsignado !== undefined) dbUpdates.nutricionista_assigned_email = updates.nutricionistaAsignado || null;
-  if (updates.psicologoAsignado     !== undefined) dbUpdates.psicologo_assigned_email     = updates.psicologoAsignado     || null;
+  if (updates.cirujanoAsignado      !== undefined) dbUpdates.cirujano_asignado_email      = updates.cirujanoAsignado      || null;
+  if (updates.nutricionistaAsignado !== undefined) dbUpdates.nutricionista_asignado_email = updates.nutricionistaAsignado || null;
+  if (updates.psicologoAsignado     !== undefined) dbUpdates.psicologo_asignado_email     = updates.psicologoAsignado     || null;
   if (updates.fotoPerfil            !== undefined) dbUpdates.foto_perfil                 = updates.fotoPerfil            || null;
   if (updates.nroHc                 !== undefined) dbUpdates.nro_hc                      = updates.nroHc;
   if (updates.sexo                  !== undefined) dbUpdates.sexo                        = updates.sexo;
@@ -1685,6 +1716,17 @@ function isValidUUID(str: string): boolean {
 }
 
 async function updateFolder(folder: Folder): Promise<Folder> {
+  // 1. Fetch current folder to see previous state (to avoid duplicate history entries)
+  let oldState: string | null = null;
+  if (folder.id && isValidUUID(folder.id)) {
+    const { data: existing } = await supabase
+      .from('carpetas_quirurgicas')
+      .select('estado_tracking')
+      .eq('id_paciente', folder.patientId)
+      .maybeSingle();
+    oldState = existing?.estado_tracking || null;
+  }
+
   // Build the payload — only include id_carpeta if it's already a real UUID.
   // When creating a new folder the frontend sets a temporary string like
   // "folder-P-007"; omitting it lets Supabase generate a proper UUID.
@@ -1697,7 +1739,7 @@ async function updateFolder(folder: Folder): Promise<Folder> {
     fecha_presentacion_os:    folder.submittedDate,
     fecha_autorizacion:       folder.authorizedDate,
     link_drive:               folder.driveLink,
-    notas:                    folder.notes,
+    notas:                    JSON.stringify(folder.notes),
     cirujano_nombre:          folder.surgeon,
     nutricionista_nombre:     folder.nutritionist,
     psicologo_nombre:         folder.psychologist,
@@ -1715,6 +1757,29 @@ async function updateFolder(folder: Folder): Promise<Folder> {
     .select()
     .single();
   if (error) handleSupabaseError(error);
+
+  // Trigger: if a folder is updated to FolderTrackingStatus.AUTORIZADA and it wasn't authorized before:
+  if (folder.trackingState === FolderTrackingStatus.AUTORIZADA && oldState !== FolderTrackingStatus.AUTORIZADA) {
+    // a. Update patient's tag to 'DEFINIR_CIRUGIA'
+    await supabase
+      .from('pacientes')
+      .update({ etiqueta_activa: 'DEFINIR_CIRUGIA' })
+      .eq('id_paciente', folder.patientId);
+
+    // b. Insert system note into 'evoluciones'
+    const currentUser = await getCurrentUser();
+    const authorEmail = currentUser?.email ?? 'sistema@plenus.com';
+    const authorSpecialty = currentUser?.especialidad ?? 'Coordinación';
+
+    await supabase.from('evoluciones').insert({
+      id_paciente:        folder.patientId,
+      profesional_email:  authorEmail,
+      especialidad:       authorSpecialty,
+      nota_clinica:       'Automático - Carpeta autorizada',
+      fecha_consulta:     new Date().toISOString(),
+    });
+  }
+
   return mapFolder(data);
 }
 
@@ -1734,9 +1799,9 @@ async function getCrmSimpleProfessionals(): Promise<CrmSimpleProfessionals> {
     const name = `${p.nombres} ${p.apellido}`;
     const esp  = (p.especialidad ?? '').toLowerCase();
     todos.push({ nombre: name, email: p.email });
-    if (esp.includes('cirug'))      surgeons.push(name);
+    if (esp.includes('cirug') || esp.includes('ciruj') || esp.includes('bariat')) surgeons.push(name);
     else if (esp.includes('nutri')) nutritionists.push(name);
-    else if (esp.includes('psic'))  psychologists.push(name);
+    else if (esp.includes('psic') || esp.includes('psiq'))  psychologists.push(name);
   });
 
   return { surgeons, nutritionists, psychologists, todos };

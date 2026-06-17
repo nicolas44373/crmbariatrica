@@ -15,6 +15,7 @@ import VistaDiariaProfesional from './VistaDiariaProfesional';
 import AdminAgendaView from './AdminAgendaView';
 import GestionProfesionalesModal from './GestionProfesionalesModal';
 import { TurnHistoryModal } from './TurnHistoryModal';
+import { FolderModal } from './FolderModal';
 
 // --- ICONS ---
 const UsersIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m-7.5-2.962a3.75 3.75 0 1 0-7.5 0 3.75 3.75 0 0 0 7.5 0ZM10.5 1.5a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z" /></svg>);
@@ -720,156 +721,95 @@ const HistoryModal = ({ onClose, history, patientName }: { onClose: () => void; 
     </div>
 );
 
-const FolderModal = ({ patient, folder, professionals, onSave, onClose }: { patient: ContactoCRM, folder: Folder | null, professionals: CrmSimpleProfessionals, onSave: (folder: Folder) => Promise<void>, onClose: () => void }) => {
-    const [isSaving, setIsSaving] = useState(false);
-    const [saveError, setSaveError] = useState<string | null>(null);
-    const [currentFolder, setCurrentFolder] = useState<Folder>(() => {
-        if (folder) return folder;
-        return {
-            id: `folder-${patient.id}`,
-            patientId: patient.id,
-            checklist: { consentimiento: ChecklistItemStatus.PENDIENTE, presupuesto: ChecklistItemStatus.PENDIENTE, informeCirujano: ChecklistItemStatus.PENDIENTE, informeNutricionista: ChecklistItemStatus.PENDIENTE, informePsicologo: ChecklistItemStatus.PENDIENTE },
-            trackingState: FolderTrackingStatus.NO_PRESENTADA,
-            requestDate: null, deliveredToPatientDate: null, submittedDate: null, authorizedDate: null,
-            driveLink: '', notes: '',
-            surgeon: professionals.surgeons[0] || '',
-            nutritionist: professionals.nutritionists[0] || '',
-            psychologist: professionals.psychologists[0] || '',
-            scheduledSurgeryDate: null, scheduledSurgeryTime: null,
-        };
-    });
+const formatPhoneForWhatsApp = (phoneStr: string): string => {
+    let clean = phoneStr.replace(/\D/g, '');
+    if (!clean) return '';
 
-    useEffect(() => {
-        if (!folder) {
-            api.getPacienteCompleto(patient.id, '').then(p => {
-                if (p?.filiatorio) {
-                    setCurrentFolder(prev => ({
-                        ...prev,
-                        surgeon: p.filiatorio.cirujanoAsignado || professionals.surgeons[0],
-                        nutritionist: p.filiatorio.nutricionistaAsignado || professionals.nutritionists[0],
-                        psychologist: p.filiatorio.psicologoAsignado || professionals.psychologists[0],
-                    }));
-                }
-            }).catch(e => console.error("Could not fetch patient details for folder", e as Error));
+    if (clean.startsWith('54')) {
+        if (clean.startsWith('549')) return clean;
+        if (clean.startsWith('543')) return '549' + clean.substring(2);
+        return clean;
+    }
+
+    if (clean.startsWith('0')) {
+        clean = clean.substring(1);
+    }
+
+    if (clean.startsWith('15') && (clean.length === 9 || clean.length === 10)) {
+        clean = '381' + clean.substring(2);
+    }
+
+    if (clean.startsWith('38115') && clean.length === 11) {
+        clean = '381' + clean.substring(5);
+    } else if (clean.length === 11) {
+        if (clean.substring(3, 5) === '15') {
+            clean = clean.substring(0, 3) + clean.substring(5);
+        } else if (clean.substring(2, 4) === '15') {
+            clean = clean.substring(0, 2) + clean.substring(4);
         }
-    }, [patient.id, folder, professionals]);
+    } else if (clean.length === 12) {
+        if (clean.substring(4, 6) === '15') {
+            clean = clean.substring(0, 4) + clean.substring(6);
+        }
+    }
 
-    const handleChecklistChange = (item: keyof Folder['checklist'], value: string) => {
-        setCurrentFolder(prev => ({ ...prev, checklist: { ...prev.checklist, [item]: value as ChecklistItemStatus } }));
-    };
-    const handleFieldChange = (field: keyof Folder, value: string) => {
-    setCurrentFolder(prev => {
-        const updated = { ...prev, [field]: value || null };
+    if (clean.length === 7 || clean.length === 8) {
+        clean = '381' + clean;
+    }
 
-        // Solo auto-avanzar si el nuevo estado sería "mayor" al actual
-       const autoEstado = (() => {
-    if (field === 'authorizedDate'        && value) return FolderTrackingStatus.AUTORIZADA;
-    if (field === 'submittedDate'          && value) return FolderTrackingStatus.PRESENTADA_EN_OS;
-    if (field === 'deliveredToPatientDate' && value) return FolderTrackingStatus.ENTREGADA_AL_PACIENTE;
-    if (field === 'requestDate'            && value) return FolderTrackingStatus.PEDIDO_GENERADO;
+    return '549' + clean;
+};
+
+function getFolderStateDate(folder: Folder): string | null {
+    if (folder.trackingState === FolderTrackingStatus.AUTORIZADA) {
+        return folder.authorizedDate;
+    }
+    if (folder.trackingState === FolderTrackingStatus.PRESENTADA_EN_OS) {
+        return folder.submittedDate;
+    }
+    if (folder.trackingState === FolderTrackingStatus.ENTREGADA_AL_PACIENTE) {
+        return folder.deliveredToPatientDate;
+    }
+    if (folder.trackingState === FolderTrackingStatus.PEDIDO_GENERADO) {
+        return folder.requestDate;
+    }
+    if (folder.trackingState === FolderTrackingStatus.RECHAZADA || folder.trackingState === FolderTrackingStatus.ANULADA) {
+        const notes = Array.isArray(folder.notes) ? folder.notes : [];
+        if (notes.length > 0) {
+            return notes[0].fecha;
+        }
+        // Fallback
+        const dates = [folder.authorizedDate, folder.submittedDate, folder.deliveredToPatientDate, folder.requestDate].filter(Boolean) as string[];
+        if (dates.length > 0) {
+            dates.sort();
+            return dates[dates.length - 1];
+        }
+    }
     return null;
-})();
+}
 
-const orden: FolderTrackingStatus[] = [
-    FolderTrackingStatus.NO_PRESENTADA,
-    FolderTrackingStatus.PEDIDO_GENERADO,
-    FolderTrackingStatus.ENTREGADA_AL_PACIENTE,
-    FolderTrackingStatus.PRESENTADA_EN_OS,
-    FolderTrackingStatus.EN_AUDITORIA,
-    FolderTrackingStatus.AUTORIZADA,
-    FolderTrackingStatus.RECHAZADA,
-];
+function getDaysInCurrentState(folder: Folder): number | null {
+    const dateStr = getFolderStateDate(folder);
+    if (!dateStr) return null;
+    const stateDate = new Date(dateStr.replace(/-/g, '/'));
+    const today = new Date();
+    stateDate.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+    const diffTime = today.getTime() - stateDate.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays >= 0 ? diffDays : 0;
+}
 
-        if (autoEstado) {
-            const idxActual = orden.indexOf(prev.trackingState);
-            const idxNuevo  = orden.indexOf(autoEstado);
-            if (idxNuevo > idxActual) {
-                updated.trackingState = autoEstado;
-            }
-        }
-
-        return updated;
-    });
-};
-    const handleSave = async () => {
-        setIsSaving(true);
-        setSaveError(null);
-        try {
-            await onSave(currentFolder);
-            onClose();
-        } catch (e: any) {
-            setSaveError(e?.message || 'No se pudo guardar la carpeta. Intente de nuevo.');
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    const checklistItems = [
-        { key: 'consentimiento', label: 'Consentimiento' },
-        { key: 'presupuesto', label: 'Presupuesto' },
-        { key: 'informeCirujano', label: 'Informe Cirujano' },
-        { key: 'informeNutricionista', label: 'Informe Nutricionista' },
-        { key: 'informePsicologo', label: 'Informe Psicólogo' },
-    ];
-
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl m-4 flex flex-col max-h-[90vh]">
-                <div className="p-4 border-b"><h2 className="text-xl font-bold text-slate-800">Gestionar Carpeta para {patient.firstName} {patient.lastName}</h2></div>
-                <div className="p-6 flex-grow overflow-y-auto grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="md:col-span-1 space-y-4">
-                        <h3 className="font-semibold text-slate-700">Checklist de Documentos</h3>
-                        {checklistItems.map(item => (
-                            <div key={item.key}>
-                                <label className="text-sm font-medium text-slate-600">{item.label}</label>
-                                <select value={currentFolder.checklist[item.key as keyof Folder['checklist']]} onChange={e => handleChecklistChange(item.key as keyof Folder['checklist'], e.target.value)} className="mt-1 block w-full rounded-md border-slate-300 text-sm">
-                                    <option>Pendiente</option><option>Recibido</option><option>No Aplica</option>
-                                </select>
-                            </div>
-                        ))}
-                    </div>
-                    <div className="md:col-span-2 space-y-4">
-                        <h3 className="font-semibold text-slate-700">Seguimiento y Fechas Clave</h3>
-                        <div>
-                            <label className="text-sm font-medium text-slate-600">Estado General</label>
-                            <select value={currentFolder.trackingState} onChange={e => handleFieldChange('trackingState', e.target.value)} className="mt-1 block w-full rounded-md border-slate-300">
-                                {Object.values(FolderTrackingStatus).map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div><label className="text-sm">Fecha Pedido</label><input type="date" value={currentFolder.requestDate || ''} onChange={e => handleFieldChange('requestDate', e.target.value)} className="mt-1 w-full rounded-md border-slate-300 text-sm" /></div>
-                            <div><label className="text-sm">Fecha Entrega Paciente</label><input type="date" value={currentFolder.deliveredToPatientDate || ''} onChange={e => handleFieldChange('deliveredToPatientDate', e.target.value)} className="mt-1 w-full rounded-md border-slate-300 text-sm" /></div>
-                            <div><label className="text-sm">Fecha Presentada</label><input type="date" value={currentFolder.submittedDate || ''} onChange={e => handleFieldChange('submittedDate', e.target.value)} className="mt-1 w-full rounded-md border-slate-300 text-sm" /></div>
-                            <div><label className="text-sm">Fecha Autorizada</label><input type="date" value={currentFolder.authorizedDate || ''} onChange={e => handleFieldChange('authorizedDate', e.target.value)} className="mt-1 w-full rounded-md border-slate-300 text-sm" /></div>
-                        </div>
-                        <h3 className="font-semibold text-slate-700 pt-4">Equipo y Notas</h3>
-                        <div className="grid grid-cols-3 gap-4">
-                            <div><label className="text-sm">Cirujano</label><select value={currentFolder.surgeon} onChange={e => handleFieldChange('surgeon', e.target.value)} className="mt-1 w-full rounded-md border-slate-300 text-sm">{professionals.surgeons.map(s => <option key={s}>{s}</option>)}</select></div>
-                            <div><label className="text-sm">Nutricionista</label><select value={currentFolder.nutritionist} onChange={e => handleFieldChange('nutritionist', e.target.value)} className="mt-1 w-full rounded-md border-slate-300 text-sm">{professionals.nutritionists.map(n => <option key={n}>{n}</option>)}</select></div>
-                            <div><label className="text-sm">Psicólogo</label><select value={currentFolder.psychologist} onChange={e => handleFieldChange('psychologist', e.target.value)} className="mt-1 w-full rounded-md border-slate-300 text-sm">{professionals.psychologists.map(p => <option key={p}>{p}</option>)}</select></div>
-                        </div>
-                        <div><label className="text-sm">Link a Drive</label><input type="text" value={currentFolder.driveLink} onChange={e => handleFieldChange('driveLink', e.target.value)} placeholder="https://..." className="mt-1 w-full rounded-md border-slate-300 text-sm" /></div>
-                        <div><label className="text-sm">Notas</label><textarea value={currentFolder.notes} onChange={e => handleFieldChange('notes', e.target.value)} rows={3} className="mt-1 w-full rounded-md border-slate-300 text-sm"></textarea></div>
-                        {currentFolder.trackingState === FolderTrackingStatus.AUTORIZADA && (
-                            <div className="pt-4 border-t"><button className="w-full py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700">Programar Cirugía</button></div>
-                        )}
-                    </div>
-                </div>
-                <div className="p-4 bg-slate-50 border-t flex flex-col gap-2">
-                    {saveError && <p className="text-sm text-red-600 text-center">{saveError}</p>}
-                    <div className="flex justify-end space-x-3">
-                    <button onClick={onClose} disabled={isSaving} className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200">Cancelar</button>
-                    <button onClick={handleSave} disabled={isSaving} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">{isSaving ? 'Guardando...' : 'Guardar Carpeta'}</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const FoldersDashboardView = ({ folders, onOpenFolder, contactos, searchTerm }: { folders: Folder[]; onOpenFolder: (patientId: string) => void; contactos: ContactoCRM[]; searchTerm: string; }) => {
+const FoldersDashboardView = ({ folders, onOpenFolder, contactos, searchTerm, onSelectPatient }: { 
+    folders: Folder[]; 
+    onOpenFolder: (patientId: string) => void; 
+    contactos: ContactoCRM[]; 
+    searchTerm: string; 
+    onSelectPatient: (patient: PacienteFiliatorio) => void;
+}) => {
     const [osFilter, setOsFilter] = useState('');
     const [stateFilter, setStateFilter] = useState<FolderTrackingStatus | ''>('');
+    const [daysFilter, setDaysFilter] = useState<'todos' | '7' | '15' | '30' | '60'>('todos');
 
     const obrasSociales = Array.from(new Set(
         folders.map(f => contactos.find(c => c.id === f.patientId)?.socialInsurance).filter(Boolean)
@@ -879,9 +819,22 @@ const FoldersDashboardView = ({ folders, onOpenFolder, contactos, searchTerm }: 
         const c = contactos.find(c => c.id === f.patientId);
         if (!c) return false;
 
+        // Rule 5: POSBARIATRICO patients folders disappear from active dashboard
+        if (c.tag === ContactoTag.POSBARIATRICO) return false;
+
+        // Rule 4: ANULADA folders disappear from active dashboard unless filtered explicitly
+        if (f.trackingState === FolderTrackingStatus.ANULADA && stateFilter !== FolderTrackingStatus.ANULADA) return false;
+
         const matchesOS = !osFilter || (c.socialInsurance === osFilter);
         const matchesState = !stateFilter || f.trackingState === stateFilter;
         if (!matchesOS || !matchesState) return false;
+
+        // Antigüedad (Días en estado actual) Filter
+        const days = getDaysInCurrentState(f);
+        if (daysFilter !== 'todos') {
+            const minDays = parseInt(daysFilter, 10);
+            if (days === null || days <= minDays) return false;
+        }
 
         const searchLower = searchTerm.trim().toLowerCase();
         if (!searchLower) return true;
@@ -921,45 +874,139 @@ const FoldersDashboardView = ({ folders, onOpenFolder, contactos, searchTerm }: 
         return matchesSearch;
     });
 
+    const handleOpenDossier = async (patientId: string) => {
+        try {
+            const p = await api.getPacienteCompleto(patientId, '');
+            if (p?.filiatorio) {
+                onSelectPatient(p.filiatorio);
+            }
+        } catch (e) {
+            console.error("Error al abrir expediente:", e);
+        }
+    };
+
+    const handleWhatsApp = (phone: string) => {
+        const waPhone = formatPhoneForWhatsApp(phone);
+        if (waPhone) {
+            window.open(`https://wa.me/${waPhone}`, '_blank');
+        } else {
+            alert('El paciente no tiene un número de teléfono válido cargado.');
+        }
+    };
+
+    // Badge styling for status
+    const statusBadges: Record<FolderTrackingStatus, string> = {
+        [FolderTrackingStatus.NO_PRESENTADA]: 'bg-slate-100 text-slate-700 border border-slate-300',
+        [FolderTrackingStatus.PEDIDO_GENERADO]: 'bg-blue-100 text-blue-800 border border-blue-300',
+        [FolderTrackingStatus.ENTREGADA_AL_PACIENTE]: 'bg-purple-100 text-purple-800 border border-purple-300',
+        [FolderTrackingStatus.PRESENTADA_EN_OS]: 'bg-amber-100 text-amber-800 border border-amber-300',
+        [FolderTrackingStatus.EN_AUDITORIA]: 'bg-yellow-100 text-yellow-800 border border-yellow-300',
+        [FolderTrackingStatus.AUTORIZADA]: 'bg-green-100 text-green-800 border border-green-300',
+        [FolderTrackingStatus.RECHAZADA]: 'bg-rose-100 text-rose-800 border border-rose-300',
+        [FolderTrackingStatus.ANULADA]: 'bg-red-100 text-red-800 border border-red-300',
+    };
+
     return (
-        <div className="bg-white rounded-lg p-4">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
-                <h2 className="text-lg font-bold text-slate-800">Listado de Carpetas Quirúrgicas</h2>
+        <div className="bg-white rounded-lg p-4 shadow-sm border">
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 mb-4">
+                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <span>📂</span> Listado de Carpetas Quirúrgicas
+                </h2>
                 <div className="flex flex-wrap gap-2">
                     <select value={osFilter} onChange={e => setOsFilter(e.target.value)} className="rounded-md border-slate-300 text-sm">
                         <option value="">Todas las obras sociales</option>
                         {obrasSociales.map(os => <option key={os} value={os}>{os}</option>)}
                     </select>
+                    
                     <select value={stateFilter} onChange={e => setStateFilter(e.target.value as FolderTrackingStatus | '')} className="rounded-md border-slate-300 text-sm">
                         <option value="">Todos los estados</option>
                         {Object.values(FolderTrackingStatus).map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
+
+                    <select value={daysFilter} onChange={e => setDaysFilter(e.target.value as any)} className="rounded-md border-slate-300 text-sm">
+                        <option value="todos">Cualquier antigüedad</option>
+                        <option value="7">Más de 7 días sin cambios</option>
+                        <option value="15">Más de 15 días sin cambios</option>
+                        <option value="30">Más de 30 días sin cambios</option>
+                        <option value="60">Más de 60 días sin cambios</option>
+                    </select>
                 </div>
             </div>
-            <p className="text-sm text-slate-500 mb-3">{filtered.length} carpeta{filtered.length !== 1 ? 's' : ''}</p>
-            <div className="overflow-x-auto">
+            <p className="text-sm text-slate-500 mb-3">{filtered.length} carpeta{filtered.length !== 1 ? 's' : ''} encontrada{filtered.length !== 1 ? 's' : ''}</p>
+            <div className="overflow-x-auto rounded-lg border">
                 <table className="min-w-full divide-y divide-slate-200">
                     <thead className="bg-slate-50 sticky top-0">
                         <tr>
-                            {['Paciente', 'Obra Social', 'Estado', 'Fecha Autorizada', 'Notas'].map(h => (
-                                <th key={h} className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">{h}</th>
+                            {['Paciente', 'Obra Social', 'Estado', 'Días en Estado', 'Última Nota', 'Acciones'].map(h => (
+                                <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
                             ))}
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-slate-200 text-sm">
                         {filtered.length === 0 ? (
-                            <tr><td colSpan={5} className="text-center py-8 text-slate-500 text-sm">No hay carpetas.</td></tr>
+                            <tr><td colSpan={6} className="text-center py-8 text-slate-500 text-sm">No hay carpetas quirúrgicas que coincidan con los filtros.</td></tr>
                         ) : filtered.map(folder => {
                             const contacto = contactos.find(c => c.id === folder.patientId);
+                            const days = getDaysInCurrentState(folder);
+                            const latestNote = folder.notes && folder.notes.length > 0 ? folder.notes[0].texto : '-';
                             return (
-                                <tr key={folder.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => onOpenFolder(folder.patientId)}>
-                                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-slate-800">{contacto ? `${contacto.lastName}, ${contacto.firstName}` : folder.patientId}</td>
+                                <tr key={folder.id} className="hover:bg-slate-50 transition-colors">
+                                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">
+                                        <button
+                                            onClick={() => handleOpenDossier(folder.patientId)}
+                                            className="text-indigo-600 hover:underline text-left font-semibold"
+                                        >
+                                            {contacto ? `${contacto.lastName}, ${contacto.firstName}` : folder.patientId}
+                                        </button>
+                                    </td>
                                     <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{contacto?.socialInsurance || '-'}</td>
                                     <td className="px-4 py-3 whitespace-nowrap text-sm">
-                                        <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800">{folder.trackingState}</span>
+                                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${statusBadges[folder.trackingState] || 'bg-slate-100 text-slate-800'}`}>
+                                            {folder.trackingState}
+                                        </span>
                                     </td>
-                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{folder.authorizedDate || '-'}</td>
-                                    <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate" title={folder.notes || ''}>{folder.notes || '-'}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600 font-mono">
+                                        {days !== null ? `${days} días` : '-'}
+                                    </td>
+                                    <td className="px-4 py-3 text-xs text-slate-500 max-w-xs truncate" title={latestNote}>
+                                        {latestNote}
+                                    </td>
+                                    <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                        <div className="flex items-center gap-2">
+                                            {/* Open dossier */}
+                                            <button
+                                                onClick={() => handleOpenDossier(folder.patientId)}
+                                                title="Ver Ficha del Paciente"
+                                                className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded transition"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2z" />
+                                                </svg>
+                                            </button>
+                                            
+                                            {/* WhatsApp */}
+                                            <button
+                                                onClick={() => contacto && handleWhatsApp(contacto.phone)}
+                                                title="Enviar WhatsApp"
+                                                className="p-1 text-slate-500 hover:text-green-600 hover:bg-slate-100 rounded transition"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4.5 w-4.5 text-green-500" fill="currentColor" viewBox="0 0 448 512">
+                                                    <path d="M380.9 97.1C339 55.1 283.2 32 223.9 32c-122.4 0-222 99.6-222 222 0 39.1 10.2 77.3 29.6 111L3 512l148.5-39c32.8 17.8 70 27.2 108.3 27.2 122.4 0 222-99.6 222-222 0-59.3-23-115.1-64.9-157.1zM223.9 474.7c-33.1 0-65.6-8.9-94.1-25.7l-6.7-4-88.1 23.1 23.5-85.9-4.4-7c-18.5-29.4-28.2-63.3-28.2-98.2 0-101.7 82.8-184.5 184.5-184.5 49.3 0 95.6 19.2 130.4 54.1 34.8 34.9 56.2 81.2 56.1 130.5 0 101.8-84.9 184.7-186.6 184.7zm101.1-138.2c-5.5-2.8-32.8-16.2-37.9-18-5.1-1.9-8.8-2.8-12.5 2.8-3.7 5.6-14.3 18-17.6 21.8-3.2 3.7-6.5 4.2-12 1.4-32.6-16.3-54-29.1-75.5-66-5.7-9.8 5.7-9.1 16.3-30.3 1.8-3.7 .9-6.9-.5-9.7-1.4-2.8-12.5-30.1-17.1-41.2-4.5-10.8-9.1-9.3-12.5-9.5-3.2-.2-6.9-.2-10.6-.2-3.7 0-9.7 1.4-14.8 6.9-5.1 5.6-19.4 19-19.4 46.3 0 27.3 19.9 53.7 22.6 57.4 2.8 3.7 39.1 59.7 94.8 83.8 35.2 15.2 49 16.5 66.6 13.9 10.7-1.6 32.8-13.4 37.4-26.4 4.6-13 4.6-24.1 3.2-26.4-1.3-2.5-5-3.9-10.5-6.6z" />
+                                                </svg>
+                                            </button>
+                                            
+                                            {/* Open folder modal */}
+                                            <button
+                                                onClick={() => onOpenFolder(folder.patientId)}
+                                                title="Gestionar Carpeta"
+                                                className="p-1 text-slate-500 hover:text-amber-600 hover:bg-slate-100 rounded transition"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </td>
                                 </tr>
                             );
                         })}
@@ -1203,7 +1250,7 @@ const EstadisticasModal = ({ onClose }: { onClose: () => void }) => {
             } else if (esp.includes('general')) {
                 cirugiaGeneral++;
             } else {
-                if (esp.includes('cirug') || esp.includes('médic') || esp.includes('medic')) {
+                if (esp.includes('cirug') || esp.includes('ciruj') || esp.includes('médic') || esp.includes('medic')) {
                     cirugiaGeneral++;
                 } else {
                     ttoIndividual++;
@@ -1965,6 +2012,7 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
                                             setActiveModal('folder');
                                         }
                                     }} 
+                                    onSelectPatient={onSelectPatient}
                                 />
                             )}
                         </div>

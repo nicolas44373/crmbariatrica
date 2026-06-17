@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Folder, FolderTrackingStatus, ChecklistItemStatus, CrmSimpleProfessionals } from '../types';
+import React, { useState, useEffect, useContext } from 'react';
+import { Folder, FolderTrackingStatus, ChecklistItemStatus, CrmSimpleProfessionals, FolderNote } from '../types';
 import { api } from '../services/mockApi';
+import { AuthContext } from '../App';
 
 interface FolderModalProps {
     patient: { id: string; firstName: string; lastName: string; };
@@ -11,8 +12,21 @@ interface FolderModalProps {
 }
 
 export const FolderModal = ({ patient, folder, professionals, onSave, onClose }: FolderModalProps) => {
+    const authContext = useContext(AuthContext);
+    const currentUser = authContext?.user;
+    const currentAuthor = currentUser ? `${currentUser.nombres} ${currentUser.apellido}` : 'Coordinación';
+
     const [isSaving, setIsSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
+
+    // Reactivation states
+    const [showReactivateInput, setShowReactivateInput] = useState(false);
+    const [reactivationDate, setReactivationDate] = useState(() => new Date().toISOString().split('T')[0]);
+
+    // Note input states
+    const [newNoteText, setNewNoteText] = useState('');
+    const [newNoteDate, setNewNoteDate] = useState(() => new Date().toISOString().split('T')[0]);
+
     const [currentFolder, setCurrentFolder] = useState<Folder>(() => {
         if (folder) return folder;
         return {
@@ -31,7 +45,7 @@ export const FolderModal = ({ patient, folder, professionals, onSave, onClose }:
             submittedDate: null, 
             authorizedDate: null,
             driveLink: '', 
-            notes: '',
+            notes: [],
             surgeon: professionals.surgeons[0] || '',
             nutritionist: professionals.nutritionists[0] || '',
             psychologist: professionals.psychologists[0] || '',
@@ -59,46 +73,125 @@ export const FolderModal = ({ patient, folder, professionals, onSave, onClose }:
         setCurrentFolder(prev => ({ ...prev, checklist: { ...prev.checklist, [item]: value as ChecklistItemStatus } }));
     };
 
-    const handleFieldChange = (field: keyof Folder, value: string) => {
+    // Helper to calculate automatic status
+    const getAutoStatus = (
+        req: string | null,
+        del: string | null,
+        sub: string | null,
+        auth: string | null,
+        curr: FolderTrackingStatus
+    ): FolderTrackingStatus => {
+        if (curr === FolderTrackingStatus.RECHAZADA || curr === FolderTrackingStatus.ANULADA) {
+            return curr;
+        }
+        if (auth) return FolderTrackingStatus.AUTORIZADA;
+        if (sub) return FolderTrackingStatus.PRESENTADA_EN_OS;
+        if (del) return FolderTrackingStatus.ENTREGADA_AL_PACIENTE;
+        if (req) return FolderTrackingStatus.PEDIDO_GENERADO;
+        return FolderTrackingStatus.NO_PRESENTADA;
+    };
+
+    const handleDateChange = (field: 'requestDate' | 'deliveredToPatientDate' | 'submittedDate' | 'authorizedDate', value: string | null) => {
         setCurrentFolder(prev => {
-            const updated = { ...prev, [field]: value || null };
+            const nextVal = value || null;
+            const req = field === 'requestDate' ? nextVal : prev.requestDate;
+            const del = field === 'deliveredToPatientDate' ? nextVal : prev.deliveredToPatientDate;
+            const sub = field === 'submittedDate' ? nextVal : prev.submittedDate;
+            const auth = field === 'authorizedDate' ? nextVal : prev.authorizedDate;
 
-            // Solo auto-avanzar si el nuevo estado sería "mayor" al actual
-            const autoEstado = (() => {
-                if (field === 'authorizedDate' && value) return FolderTrackingStatus.AUTORIZADA;
-                if (field === 'submittedDate' && value) return FolderTrackingStatus.PRESENTADA_EN_OS;
-                if (field === 'deliveredToPatientDate' && value) return FolderTrackingStatus.ENTREGADA_AL_PACIENTE;
-                if (field === 'requestDate' && value) return FolderTrackingStatus.PEDIDO_GENERADO;
-                return null;
-            })();
-
-            const orden: FolderTrackingStatus[] = [
-                FolderTrackingStatus.NO_PRESENTADA,
-                FolderTrackingStatus.PEDIDO_GENERADO,
-                FolderTrackingStatus.ENTREGADA_AL_PACIENTE,
-                FolderTrackingStatus.PRESENTADA_EN_OS,
-                FolderTrackingStatus.EN_AUDITORIA,
-                FolderTrackingStatus.AUTORIZADA,
-                FolderTrackingStatus.RECHAZADA,
-            ];
-
-            if (autoEstado) {
-                const idxActual = orden.indexOf(prev.trackingState);
-                const idxNuevo = orden.indexOf(autoEstado);
-                if (idxNuevo > idxActual) {
-                    updated.trackingState = autoEstado;
-                }
-            }
-
-            return updated;
+            const newStatus = getAutoStatus(req, del, sub, auth, prev.trackingState);
+            return {
+                ...prev,
+                [field]: nextVal,
+                trackingState: newStatus
+            };
         });
+    };
+
+    const handleFieldChange = (field: keyof Folder, value: any) => {
+        setCurrentFolder(prev => ({ ...prev, [field]: value || null }));
+    };
+
+    const handleMarkAsRejected = () => {
+        if (!newNoteText.trim()) {
+            alert('Debe escribir el motivo del rechazo en el campo de "Nueva Nota".');
+            return;
+        }
+        const newNote: FolderNote = {
+            id: `note-${Date.now()}`,
+            fecha: newNoteDate,
+            autor: currentAuthor,
+            texto: `[RECHAZADA] Motivo: ${newNoteText.trim()}`
+        };
+        setCurrentFolder(prev => ({
+            ...prev,
+            trackingState: FolderTrackingStatus.RECHAZADA,
+            notes: [newNote, ...prev.notes]
+        }));
+        setNewNoteText('');
+    };
+
+    const handleAnnulFolder = () => {
+        if (!newNoteText.trim()) {
+            alert('Debe escribir el motivo de la anulación en el campo de "Nueva Nota".');
+            return;
+        }
+        if (window.confirm('¿Está seguro de que desea anular esta gestión? La carpeta se archivará y desaparecerá del dashboard activo.')) {
+            const newNote: FolderNote = {
+                id: `note-${Date.now()}`,
+                fecha: newNoteDate,
+                autor: currentAuthor,
+                texto: `[ANULADA] Motivo: ${newNoteText.trim()}`
+            };
+            setCurrentFolder(prev => ({
+                ...prev,
+                trackingState: FolderTrackingStatus.ANULADA,
+                notes: [newNote, ...prev.notes]
+            }));
+            setNewNoteText('');
+        }
+    };
+
+    const handleReactivateFolder = () => {
+        if (!reactivationDate) {
+            alert('Debe ingresar una Fecha de Presentación válida.');
+            return;
+        }
+        const newNote: FolderNote = {
+            id: `note-${Date.now()}`,
+            fecha: new Date().toISOString().split('T')[0],
+            autor: currentAuthor,
+            texto: `Reactivación de carpeta. Nueva fecha de presentación ante obra social: ${reactivationDate}`
+        };
+        setCurrentFolder(prev => ({
+            ...prev,
+            trackingState: FolderTrackingStatus.PRESENTADA_EN_OS,
+            submittedDate: reactivationDate,
+            authorizedDate: null, // Clear authorized date upon reactivation
+            notes: [newNote, ...prev.notes]
+        }));
+        setShowReactivateInput(false);
     };
 
     const handleSave = async () => {
         setIsSaving(true);
         setSaveError(null);
         try {
-            await onSave(currentFolder);
+            // Append any pending typed new note
+            let folderToSave = currentFolder;
+            if (newNoteText.trim()) {
+                const newNote: FolderNote = {
+                    id: `note-${Date.now()}`,
+                    fecha: newNoteDate,
+                    autor: currentAuthor,
+                    texto: newNoteText.trim()
+                };
+                folderToSave = {
+                    ...currentFolder,
+                    notes: [newNote, ...currentFolder.notes]
+                };
+            }
+            await onSave(folderToSave);
             onClose();
         } catch (e: any) {
             setSaveError(e?.message || 'No se pudo guardar la carpeta. Intente de nuevo.');
@@ -115,135 +208,248 @@ export const FolderModal = ({ patient, folder, professionals, onSave, onClose }:
         { key: 'informePsicologo', label: 'Informe Psicólogo' },
     ];
 
+    // Badge styling for status
+    const statusBadges: Record<FolderTrackingStatus, string> = {
+        [FolderTrackingStatus.NO_PRESENTADA]: 'bg-slate-100 text-slate-700 border border-slate-300',
+        [FolderTrackingStatus.PEDIDO_GENERADO]: 'bg-blue-100 text-blue-800 border border-blue-300',
+        [FolderTrackingStatus.ENTREGADA_AL_PACIENTE]: 'bg-purple-100 text-purple-800 border border-purple-300',
+        [FolderTrackingStatus.PRESENTADA_EN_OS]: 'bg-amber-100 text-amber-800 border border-amber-300',
+        [FolderTrackingStatus.EN_AUDITORIA]: 'bg-yellow-100 text-yellow-800 border border-yellow-300',
+        [FolderTrackingStatus.AUTORIZADA]: 'bg-green-100 text-green-800 border border-green-300',
+        [FolderTrackingStatus.RECHAZADA]: 'bg-rose-100 text-rose-800 border border-rose-300',
+        [FolderTrackingStatus.ANULADA]: 'bg-red-100 text-red-800 border border-red-300',
+    };
+
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl m-4 flex flex-col max-h-[90vh]">
-                <div className="p-4 border-b">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-5xl m-4 flex flex-col max-h-[90vh]">
+                <div className="p-4 border-b flex justify-between items-center bg-slate-50">
                     <h2 className="text-xl font-bold text-slate-800">
-                        Gestionar Carpeta para {patient.firstName} {patient.lastName}
+                        Gestionar Carpeta — {patient.lastName}, {patient.firstName}
                     </h2>
+                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-2xl font-bold">&times;</button>
                 </div>
-                <div className="p-6 flex-grow overflow-y-auto grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="md:col-span-1 space-y-4">
-                        <h3 className="font-semibold text-slate-700">Checklist de Documentos</h3>
+                <div className="p-6 flex-grow overflow-y-auto grid grid-cols-1 md:grid-cols-12 gap-6">
+                    {/* Checklist Column */}
+                    <div className="md:col-span-3 space-y-4 border-r pr-6">
+                        <h3 className="font-semibold text-slate-700 border-b pb-2 flex items-center gap-2">
+                            <span>📋</span> Checklist Documental
+                        </h3>
                         {checklistItems.map(item => (
-                            <div key={item.key}>
+                            <div key={item.key} className="flex flex-col">
                                 <label className="text-sm font-medium text-slate-600">{item.label}</label>
                                 <select 
                                     value={currentFolder.checklist[item.key as keyof Folder['checklist']]} 
                                     onChange={e => handleChecklistChange(item.key as keyof Folder['checklist'], e.target.value)} 
-                                    className="mt-1 block w-full rounded-md border-slate-300 text-sm"
+                                    className="mt-1 block w-full rounded-md border-slate-300 text-sm shadow-sm"
                                 >
-                                    <option>Pendiente</option>
-                                    <option>Recibido</option>
-                                    <option>No Aplica</option>
+                                    <option value={ChecklistItemStatus.PENDIENTE}>Pendiente</option>
+                                    <option value={ChecklistItemStatus.RECIBIDO}>Recibido</option>
+                                    <option value={ChecklistItemStatus.NO_APLICA}>No Aplica</option>
                                 </select>
                             </div>
                         ))}
                     </div>
-                    <div className="md:col-span-2 space-y-4">
-                        <h3 className="font-semibold text-slate-700">Seguimiento y Fechas Clave</h3>
-                        <div>
-                            <label className="text-sm font-medium text-slate-600">Estado General</label>
-                            <select 
-                                value={currentFolder.trackingState} 
-                                onChange={e => handleFieldChange('trackingState', e.target.value)} 
-                                className="mt-1 block w-full rounded-md border-slate-300"
-                            >
-                                {Object.values(FolderTrackingStatus).map(s => (
-                                    <option key={s} value={s}>{s}</option>
-                                ))}
-                            </select>
-                        </div>
+
+                    {/* Dates and Tracking Column */}
+                    <div className="md:col-span-5 space-y-4 border-r pr-6">
+                        <h3 className="font-semibold text-slate-700 border-b pb-2 flex items-center justify-between">
+                            <span>📅 Seguimiento y Fechas</span>
+                            <span className={`px-3 py-1 rounded-full text-xs font-semibold uppercase ${statusBadges[currentFolder.trackingState]}`}>
+                                {currentFolder.trackingState}
+                            </span>
+                        </h3>
+
                         <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <label className="text-sm">Fecha Pedido</label>
+                                <label className="text-xs font-medium text-slate-500">Fecha Pedido</label>
                                 <input 
                                     type="date" 
                                     value={currentFolder.requestDate || ''} 
-                                    onChange={e => handleFieldChange('requestDate', e.target.value)} 
+                                    onChange={e => handleDateChange('requestDate', e.target.value)} 
                                     className="mt-1 w-full rounded-md border-slate-300 text-sm" 
                                 />
                             </div>
                             <div>
-                                <label className="text-sm">Fecha Entrega Paciente</label>
+                                <label className="text-xs font-medium text-slate-500">Fecha Entrega Paciente</label>
                                 <input 
                                     type="date" 
                                     value={currentFolder.deliveredToPatientDate || ''} 
-                                    onChange={e => handleFieldChange('deliveredToPatientDate', e.target.value)} 
+                                    onChange={e => handleDateChange('deliveredToPatientDate', e.target.value)} 
                                     className="mt-1 w-full rounded-md border-slate-300 text-sm" 
                                 />
                             </div>
                             <div>
-                                <label className="text-sm">Fecha Presentada</label>
+                                <label className="text-xs font-medium text-slate-500">Fecha Presentada OS</label>
                                 <input 
                                     type="date" 
                                     value={currentFolder.submittedDate || ''} 
-                                    onChange={e => handleFieldChange('submittedDate', e.target.value)} 
+                                    onChange={e => handleDateChange('submittedDate', e.target.value)} 
                                     className="mt-1 w-full rounded-md border-slate-300 text-sm" 
                                 />
                             </div>
                             <div>
-                                <label className="text-sm">Fecha Autorizada</label>
+                                <label className="text-xs font-medium text-slate-500">Fecha Autorizada</label>
                                 <input 
                                     type="date" 
                                     value={currentFolder.authorizedDate || ''} 
-                                    onChange={e => handleFieldChange('authorizedDate', e.target.value)} 
+                                    onChange={e => handleDateChange('authorizedDate', e.target.value)} 
                                     className="mt-1 w-full rounded-md border-slate-300 text-sm" 
                                 />
                             </div>
                         </div>
-                        <h3 className="font-semibold text-slate-700 pt-4">Equipo y Notas</h3>
-                        <div className="grid grid-cols-3 gap-4">
+
+                        <div className="grid grid-cols-3 gap-3 pt-2">
                             <div>
-                                <label className="text-sm">Cirujano</label>
+                                <label className="text-xs font-medium text-slate-500">Cirujano</label>
                                 <select 
                                     value={currentFolder.surgeon} 
                                     onChange={e => handleFieldChange('surgeon', e.target.value)} 
-                                    className="mt-1 w-full rounded-md border-slate-300 text-sm"
+                                    className="mt-1 w-full rounded-md border-slate-300 text-xs"
                                 >
-                                    {professionals.surgeons.map(s => <option key={s}>{s}</option>)}
+                                    {professionals.surgeons.map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
                             </div>
                             <div>
-                                <label className="text-sm">Nutricionista</label>
+                                <label className="text-xs font-medium text-slate-500">Nutricionista</label>
                                 <select 
                                     value={currentFolder.nutritionist} 
                                     onChange={e => handleFieldChange('nutritionist', e.target.value)} 
-                                    className="mt-1 w-full rounded-md border-slate-300 text-sm"
+                                    className="mt-1 w-full rounded-md border-slate-300 text-xs"
                                 >
-                                    {professionals.nutritionists.map(n => <option key={n}>{n}</option>)}
+                                    {professionals.nutritionists.map(n => <option key={n} value={n}>{n}</option>)}
                                 </select>
                             </div>
                             <div>
-                                <label className="text-sm">Psicólogo</label>
+                                <label className="text-xs font-medium text-slate-500">Psicólogo</label>
                                 <select 
                                     value={currentFolder.psychologist} 
                                     onChange={e => handleFieldChange('psychologist', e.target.value)} 
-                                    className="mt-1 w-full rounded-md border-slate-300 text-sm"
+                                    className="mt-1 w-full rounded-md border-slate-300 text-xs"
                                 >
-                                    {professionals.psychologists.map(p => <option key={p}>{p}</option>)}
+                                    {professionals.psychologists.map(p => <option key={p} value={p}>{p}</option>)}
                                 </select>
                             </div>
                         </div>
+
                         <div>
-                            <label className="text-sm">Link a Drive</label>
+                            <label className="text-xs font-medium text-slate-500">Link a Drive</label>
                             <input 
                                 type="text" 
                                 value={currentFolder.driveLink} 
                                 onChange={e => handleFieldChange('driveLink', e.target.value)} 
-                                placeholder="https://..." 
+                                placeholder="https://drive.google.com/..." 
                                 className="mt-1 w-full rounded-md border-slate-300 text-sm" 
                             />
                         </div>
-                        <div>
-                            <label className="text-sm">Notas</label>
-                            <textarea 
-                                value={currentFolder.notes} 
-                                onChange={e => handleFieldChange('notes', e.target.value)} 
-                                rows={3} 
-                                className="mt-1 w-full rounded-md border-slate-300 text-sm"
-                            ></textarea>
+
+                        {/* Folder Management Actions */}
+                        <div className="pt-4 border-t space-y-3">
+                            <span className="text-xs font-bold text-slate-400 block uppercase tracking-wider">Acciones Especiales</span>
+                            
+                            {showReactivateInput ? (
+                                <div className="p-3 bg-teal-50 border border-teal-200 rounded-md space-y-2">
+                                    <label className="block text-xs font-medium text-teal-800">Nueva Fecha de Presentación (Obligatoria)</label>
+                                    <input 
+                                        type="date" 
+                                        value={reactivationDate} 
+                                        onChange={e => setReactivationDate(e.target.value)} 
+                                        className="w-full rounded-md border-teal-300 text-sm text-slate-800"
+                                    />
+                                    <div className="flex justify-end gap-2 pt-1">
+                                        <button 
+                                            type="button" 
+                                            onClick={() => setShowReactivateInput(false)}
+                                            className="px-2 py-1 text-xs text-slate-600 bg-white border border-slate-300 rounded hover:bg-slate-50"
+                                        >
+                                            Cancelar
+                                        </button>
+                                        <button 
+                                            type="button" 
+                                            onClick={handleReactivateFolder}
+                                            className="px-2 py-1 text-xs text-white bg-teal-600 rounded hover:bg-teal-700"
+                                        >
+                                            Confirmar Reactivación
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="flex flex-wrap gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={handleMarkAsRejected}
+                                        className="flex-1 py-2 px-3 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-md transition shadow"
+                                    >
+                                        🔴 Rechazada
+                                    </button>
+                                    
+                                    <button
+                                        type="button"
+                                        onClick={handleAnnulFolder}
+                                        className="flex-1 py-2 px-3 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-md transition shadow"
+                                    >
+                                        🚫 Anular Gestión
+                                    </button>
+
+                                    {currentFolder.trackingState === FolderTrackingStatus.RECHAZADA && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowReactivateInput(true)}
+                                            className="w-full py-2 px-3 text-xs font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-md transition shadow"
+                                        >
+                                            🔄 Reactivar Carpeta
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Notes History Column */}
+                    <div className="md:col-span-4 space-y-4 flex flex-col max-h-[60vh] md:max-h-none">
+                        <h3 className="font-semibold text-slate-700 border-b pb-2 flex items-center gap-2">
+                            <span>📝</span> Historial de Notas
+                        </h3>
+
+                        {/* Add New Note Section */}
+                        <div className="bg-slate-50 p-3 rounded-lg border space-y-2">
+                            <div className="flex justify-between items-center">
+                                <span className="text-xs font-bold text-slate-600">Nueva Nota</span>
+                                <span className="text-xs text-slate-500 font-medium">Por: {currentAuthor}</span>
+                            </div>
+                            <textarea
+                                value={newNoteText}
+                                onChange={e => setNewNoteText(e.target.value)}
+                                placeholder="Escribe observaciones, motivos de rechazo, anulación, etc..."
+                                className="w-full rounded-md border-slate-300 text-xs p-2"
+                                rows={3}
+                            />
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-500 font-medium whitespace-nowrap">Fecha nota:</span>
+                                <input
+                                    type="date"
+                                    value={newNoteDate}
+                                    onChange={e => setNewNoteDate(e.target.value)}
+                                    className="rounded border-slate-300 text-xs py-0.5 px-2 w-full"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Scrollable list of notes */}
+                        <div className="flex-grow overflow-y-auto space-y-3 pr-1">
+                            {(!currentFolder.notes || currentFolder.notes.length === 0) ? (
+                                <p className="text-xs text-slate-400 text-center py-8">No hay notas registradas.</p>
+                            ) : (
+                                currentFolder.notes.map((note) => (
+                                    <div key={note.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200 shadow-sm space-y-1">
+                                        <div className="flex justify-between items-center text-[10px] text-slate-400 font-bold">
+                                            <span>📅 {note.fecha}</span>
+                                            <span>👤 {note.autor}</span>
+                                        </div>
+                                        <p className="text-xs text-slate-700 whitespace-pre-wrap font-medium">{note.texto}</p>
+                                    </div>
+                                ))
+                            )}
                         </div>
                     </div>
                 </div>

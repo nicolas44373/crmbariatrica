@@ -351,6 +351,14 @@ export enum FolderTrackingStatus {
     EN_AUDITORIA = 'En Auditoría',
     AUTORIZADA = 'Autorizada',
     RECHAZADA = 'Rechazada',
+    ANULADA = 'Anulada',
+}
+
+export interface FolderNote {
+    id: string;
+    fecha: string; // YYYY-MM-DD
+    autor: string;
+    texto: string;
 }
 
 export enum ChecklistItemStatus {
@@ -409,7 +417,7 @@ export interface Folder {
     submittedDate: string | null; // YYYY-MM-DD
     authorizedDate: string | null; // YYYY-MM-DD
     driveLink: string;
-    notes: string;
+    notes: FolderNote[];
     surgeon: string;
     nutritionist: string;
     psychologist: string;
