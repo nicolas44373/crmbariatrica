@@ -70,6 +70,9 @@ export interface PacienteFiliatorio {
   localidad?: string;
   cp?: string;
   telefono2?: string;
+  modalidadCobertura?: string;
+  cgOperado?: boolean;
+  tiProfesionalEmail?: string;
 }
 
 // Corresponds to: Tabla 2: HISTORIA_CLINICA_ESTATICA
@@ -309,6 +312,8 @@ export enum ContactoTag {
     CARPETA_ENTREGADA = 'CARPETA_ENTREGADA',
     PERIOPERATORIO = 'PERIOPERATORIO',
     POSBARIATRICO = 'POSBARIATRICO',
+    CIRUGIA_GENERAL = 'CIRUGIA_GENERAL',
+    TRATAMIENTO_INDIVIDUAL = 'TRATAMIENTO_INDIVIDUAL',
 }
 
 export enum ContactoStatus {
@@ -440,4 +445,7 @@ export interface ContactoCRM {
     canalOrigen?: ProspectoCanalOrigen;
     estadoSeguimiento?: ProspectoEstadoSeguimiento;
     ultimoContacto?: string; // YYYY-MM-DD
+    modalidadCobertura?: string;
+    cgOperado?: boolean;
+    tiProfesionalEmail?: string;
 }

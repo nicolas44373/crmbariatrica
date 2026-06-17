@@ -280,17 +280,32 @@ const EditarPacienteModal = ({ paciente, onClose, onSuccess }: { paciente: Pacie
                             <label htmlFor="direccion" className="block text-sm font-medium text-slate-700">Dirección</label>
                             <input type="text" name="direccion" id="direccion" value={formData.direccion || ''} onChange={handleChange} className="mt-1 block w-full rounded-md border-slate-300" />
                         </div>
-                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div>
-                                <label htmlFor="obraSocial" className="block text-sm font-medium text-slate-700">Obra Social</label>
+                                <label htmlFor="modalidadCobertura" className="block text-sm font-medium text-slate-700">Modalidad de Cobertura</label>
+                                <select
+                                    name="modalidadCobertura"
+                                    id="modalidadCobertura"
+                                    value={formData.modalidadCobertura || 'Obra Social'}
+                                    onChange={e => setFormData(prev => ({ ...prev, modalidadCobertura: e.target.value }))}
+                                    className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                                >
+                                    <option value="Obra Social">Obra Social</option>
+                                    <option value="Prepaga">Prepaga</option>
+                                    <option value="Particular">Particular</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label htmlFor="obraSocial" className="block text-sm font-medium text-slate-700">Obra Social / Prepaga</label>
                                 <input 
                                     type="text" 
                                     name="obraSocial" 
                                     id="obraSocial" 
                                     list="obras-sociales-list"
-                                    value={formData.obraSocial} 
+                                    value={formData.obraSocial || ''} 
                                     onChange={handleChange} 
-                                    className="mt-1 block w-full rounded-md border-slate-300" 
+                                    disabled={formData.modalidadCobertura === 'Particular'}
+                                    className="mt-1 block w-full rounded-md border-slate-300 disabled:bg-slate-100 disabled:text-slate-400" 
                                 />
                                 <datalist id="obras-sociales-list">
                                     {obrasSociales.map(os => (
@@ -300,7 +315,15 @@ const EditarPacienteModal = ({ paciente, onClose, onSuccess }: { paciente: Pacie
                             </div>
                             <div>
                                 <label htmlFor="nroAfiliado" className="block text-sm font-medium text-slate-700">Nro de Afiliado</label>
-                                <input type="text" name="nroAfiliado" id="nroAfiliado" value={formData.nroAfiliado} onChange={handleChange} className="mt-1 block w-full rounded-md border-slate-300" />
+                                <input 
+                                    type="text" 
+                                    name="nroAfiliado" 
+                                    id="nroAfiliado" 
+                                    value={formData.nroAfiliado || ''} 
+                                    onChange={handleChange} 
+                                    disabled={formData.modalidadCobertura === 'Particular'}
+                                    className="mt-1 block w-full rounded-md border-slate-300 disabled:bg-slate-100 disabled:text-slate-400" 
+                                />
                             </div>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -360,6 +383,45 @@ const EditarPacienteModal = ({ paciente, onClose, onSuccess }: { paciente: Pacie
                                 </select>
                             </div>
                         </div>
+
+                        {formData.etiquetaPrincipalActiva === 'CIRUGIA_GENERAL' && (
+                            <div className="flex items-center space-x-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                                <input
+                                    type="checkbox"
+                                    name="cgOperado"
+                                    id="cgOperado"
+                                    checked={formData.cgOperado || false}
+                                    onChange={e => setFormData(prev => ({ ...prev, cgOperado: e.target.checked }))}
+                                    className="h-4 w-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500"
+                                />
+                                <label htmlFor="cgOperado" className="text-sm font-medium text-slate-700 select-none">
+                                    ¿Paciente ya fue operado? (Cirugía General)
+                                </label>
+                            </div>
+                        )}
+
+                        {formData.etiquetaPrincipalActiva === 'TRATAMIENTO_INDIVIDUAL' && (
+                            <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+                                <label htmlFor="tiProfesionalEmail" className="block text-sm font-medium text-slate-700">
+                                    Profesional Tratante Asignado
+                                </label>
+                                <select
+                                    name="tiProfesionalEmail"
+                                    id="tiProfesionalEmail"
+                                    value={formData.tiProfesionalEmail || ''}
+                                    onChange={e => setFormData(prev => ({ ...prev, tiProfesionalEmail: e.target.value }))}
+                                    className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white"
+                                >
+                                    <option value="">No asignado</option>
+                                    {profesionales.map(p => (
+                                        <option key={p.email} value={p.email}>
+                                            {p.apellido}, {p.nombres} ({p.especialidad || 'Sin esp.'})
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
+
                         <div className="flex items-end gap-4">
                             <div className="flex-grow">
                                 <label htmlFor="fotoPerfil" className="block text-sm font-medium text-slate-700">Foto de Perfil (URL)</label>
@@ -385,9 +447,10 @@ const EditarPacienteModal = ({ paciente, onClose, onSuccess }: { paciente: Pacie
 
 
 // FichaModal Component
-const FichaModal = ({ paciente, equipoAsignado, onClose, onEdit, canEdit }: { 
+const FichaModal = ({ paciente, equipoAsignado, allProfesionales, onClose, onEdit, canEdit }: { 
     paciente: PacienteCompleto;
     equipoAsignado: { cirujano: string; nutricionista: string; psicologo: string; };
+    allProfesionales: Profesional[];
     onClose: () => void;
     onEdit: () => void;
     canEdit: boolean;
@@ -419,20 +482,48 @@ const FichaModal = ({ paciente, equipoAsignado, onClose, onEdit, canEdit }: {
                         <div><strong className="text-slate-600">Fecha de Nacimiento:</strong> {filiatorio.fechaNacimiento ? format(new Date(filiatorio.fechaNacimiento.replace(/-/g, '/')), 'dd/MM/yyyy') : 'N/A'}</div>
                         <div><strong className="text-slate-600">Edad:</strong> {edad !== null ? `${edad} años` : 'N/A'}</div>
                         <div className="lg:col-span-3"><strong className="text-slate-600">Dirección:</strong> {filiatorio.direccion || 'No especificada'}</div>
-                        <div><strong className="text-slate-600">Obra Social:</strong> {filiatorio.obraSocial} ({filiatorio.nroAfiliado})</div>
+                        <div><strong className="text-slate-600">Obra Social / Prepaga:</strong> {filiatorio.obraSocial || 'N/A'} ({filiatorio.nroAfiliado || 'N/A'})</div>
+                        <div><strong className="text-slate-600">Modalidad Cobertura:</strong> {filiatorio.modalidadCobertura || 'Obra Social'}</div>
                         <div><strong className="text-slate-600">Teléfono:</strong> {filiatorio.telefono}</div>
                         <div className="lg:col-span-2"><strong className="text-slate-600">Email:</strong> {filiatorio.email}</div>
                     </div>
 
-                    <div>
-                        <h3 className="text-lg font-semibold text-slate-700 border-b pb-2 mb-2 mt-4">Equipo Asignado</h3>
-                        <p className="text-xs text-slate-500 mb-3 -mt-2">Profesionales de cabecera asignados al paciente.</p>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            <div><strong className="text-slate-600">Cirujano:</strong> {equipoAsignado.cirujano}</div>
-                            <div><strong className="text-slate-600">Nutricionista:</strong> {equipoAsignado.nutricionista}</div>
-                            <div><strong className="text-slate-600">Psicólogo:</strong> {equipoAsignado.psicologo}</div>
+                    {filiatorio.etiquetaPrincipalActiva === 'CIRUGIA_GENERAL' ? (
+                        <div>
+                            <h3 className="text-lg font-semibold text-slate-700 border-b pb-2 mb-2 mt-4">Detalles Cirugía General</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <strong className="text-slate-600">Estado Quirúrgico:</strong>{' '}
+                                    <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${filiatorio.cgOperado ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-800'}`}>
+                                        {filiatorio.cgOperado ? 'Operado' : 'No Operado'}
+                                    </span>
+                                </div>
+                            </div>
                         </div>
-                    </div>
+                    ) : filiatorio.etiquetaPrincipalActiva === 'TRATAMIENTO_INDIVIDUAL' ? (
+                        <div>
+                            <h3 className="text-lg font-semibold text-slate-700 border-b pb-2 mb-2 mt-4">Detalles Tratamiento Individual</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <strong className="text-slate-600">Profesional Tratante:</strong>{' '}
+                                    {(() => {
+                                        const prof = allProfesionales.find(p => p.email === filiatorio.tiProfesionalEmail);
+                                        return prof ? `${prof.apellido}, ${prof.nombres}` : (filiatorio.tiProfesionalEmail || 'Sin asignar');
+                                    })()}
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div>
+                            <h3 className="text-lg font-semibold text-slate-700 border-b pb-2 mb-2 mt-4">Equipo Asignado</h3>
+                            <p className="text-xs text-slate-500 mb-3 -mt-2">Profesionales de cabecera asignados al paciente.</p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                <div><strong className="text-slate-600">Cirujano:</strong> {equipoAsignado.cirujano}</div>
+                                <div><strong className="text-slate-600">Nutricionista:</strong> {equipoAsignado.nutricionista}</div>
+                                <div><strong className="text-slate-600">Psicólogo:</strong> {equipoAsignado.psicologo}</div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
@@ -1454,7 +1545,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                         <p><strong>Fecha Programada:</strong> {paciente.cirugia?.fechaProgramada ? format(new Date(paciente.cirugia.fechaProgramada.replace(/-/g, '/')), 'dd/MM/yyyy') : 'N/A'}</p>
                         <p><strong>Fecha Realizada:</strong> {paciente.cirugia?.fechaRealizada ? format(new Date(paciente.cirugia.fechaRealizada.replace(/-/g, '/')), 'dd/MM/yyyy') : 'N/A'}</p>
                         <p><strong>Tipo de Cirugía:</strong> {paciente.cirugia?.tipoCirugia || 'N/A'}</p>
-                        <p><strong>Notas:</strong> {paciente.cirugia?.notes || 'Sin notas.'}</p>
+                        <p><strong>Notas:</strong> {paciente.cirugia?.notas || 'Sin notas.'}</p>
                     </div>
                 )}
                 {activeResumenSubTab === 'nutricion' && (
@@ -1699,7 +1790,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
             )}
             {modal === 'definirCirugia' && <DefinirCirugiaModal onConfirm={handleDefinirCirugia} onCancel={() => setModal(null)} />}
             {modal === 'editarFicha' && <EditarPacienteModal paciente={filiatorio} onClose={() => setModal(null)} onSuccess={() => { setModal(null); fetchData(); }} />}
-            {modal === 'verFicha' && <FichaModal paciente={paciente} equipoAsignado={equipoAsignado} onClose={() => setModal(null)} onEdit={() => { setModal(null); setTimeout(() => setModal('editarFicha'), 100); }} canEdit={canEdit} />}
+            {modal === 'verFicha' && <FichaModal paciente={paciente} equipoAsignado={equipoAsignado} allProfesionales={allProfesionales} onClose={() => setModal(null)} onEdit={() => { setModal(null); setTimeout(() => setModal('editarFicha'), 100); }} canEdit={canEdit} />}
             {modal === 'createTask' && <CreateTaskModal open={modal==='createTask'} onClose={() => setModal(null)} allProfesionales={allProfesionales} onConfirm={handleConfirmTask} />}
             {(modal === 'newInforme' || modal === 'editInforme') && currentInforme && (
                 <InformeModal 
@@ -2121,7 +2212,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
             </div>
             {filiatorio.etiquetaPrincipalActiva === 'POSBARIATRICO' && (
                 <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-cyan-100 text-cyan-800">
-                    Etapa post-op: {getPostOpStageLabel(fechaCirugiaEfectiva)}
+                    Etapa post-op: {getPostOpStageLabel(paciente.cirugia?.fechaRealizada || filiatorio.fechaCirugia)}
                 </span>
             )}
         </div>
@@ -2146,37 +2237,41 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                             </button>
                             
                             {/* Surgical Folder State Action */}
-                            {paciente.carpeta ? (
-                                <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-lg px-2.5 py-1 text-xs font-semibold text-indigo-800">
-                                    <span>📁 Carpeta: <strong>{paciente.carpeta.trackingState}</strong></span>
+                            {filiatorio.modalidadCobertura !== 'Particular' && 
+                             filiatorio.etiquetaPrincipalActiva !== 'CIRUGIA_GENERAL' && 
+                             filiatorio.etiquetaPrincipalActiva !== 'TRATAMIENTO_INDIVIDUAL' && (
+                                paciente.carpeta ? (
+                                    <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-lg px-2.5 py-1 text-xs font-semibold text-indigo-800">
+                                        <span>📁 Carpeta: <strong>{paciente.carpeta.trackingState}</strong></span>
+                                        <button 
+                                            onClick={() => setModal('folder')} 
+                                            className="text-indigo-600 hover:text-indigo-900 underline ml-1"
+                                        >
+                                            Ver/Editar
+                                        </button>
+                                        <a 
+                                            href={`https://wa.me/${(() => {
+                                                const clean = filiatorio.telefono.replace(/\D/g, '');
+                                                return clean.startsWith('54') ? clean : ('549' + clean);
+                                            })()}?text=${encodeURIComponent(`Hola ${filiatorio.nombres}, te escribimos para informarte que el estado de tu carpeta quirúrgica es: ${paciente.carpeta.trackingState}.`)}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center gap-1 bg-[#25D366] hover:bg-[#20ba5a] text-white px-2 py-0.5 rounded-full font-bold ml-1 text-[10px] uppercase transition-colors"
+                                        >
+                                            <svg className="w-3 h-3 fill-current" viewBox="0 0 24 24">
+                                                <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.42 9.864-9.864.002-2.637-1.03-5.115-2.905-6.99-1.876-1.875-4.353-2.904-6.992-2.905C6.009 1.846 1.58 6.27 1.576 11.71c-.001 1.712.464 3.385 1.348 4.908l-.99 3.616 3.713-.974z"/>
+                                            </svg>
+                                            WhatsApp
+                                        </a>
+                                    </div>
+                                ) : (
                                     <button 
                                         onClick={() => setModal('folder')} 
-                                        className="text-indigo-600 hover:text-indigo-900 underline ml-1"
+                                        className="flex items-center gap-1 hover:text-indigo-700 hover:underline bg-indigo-50 border border-indigo-200 px-2.5 py-1.5 rounded-lg text-xs font-semibold"
                                     >
-                                        Ver/Editar
+                                        📁 Crear Carpeta Quirúrgica
                                     </button>
-                                    <a 
-                                        href={`https://wa.me/${(() => {
-                                            const clean = filiatorio.telefono.replace(/\D/g, '');
-                                            return clean.startsWith('54') ? clean : ('549' + clean);
-                                        })()}?text=${encodeURIComponent(`Hola ${filiatorio.nombres}, te escribimos para informarte que el estado de tu carpeta quirúrgica es: ${paciente.carpeta.trackingState}.`)}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="flex items-center gap-1 bg-[#25D366] hover:bg-[#20ba5a] text-white px-2 py-0.5 rounded-full font-bold ml-1 text-[10px] uppercase transition-colors"
-                                    >
-                                        <svg className="w-3 h-3 fill-current" viewBox="0 0 24 24">
-                                            <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.42 9.864-9.864.002-2.637-1.03-5.115-2.905-6.99-1.876-1.875-4.353-2.904-6.992-2.905C6.009 1.846 1.58 6.27 1.576 11.71c-.001 1.712.464 3.385 1.348 4.908l-.99 3.616 3.713-.974z"/>
-                                        </svg>
-                                        WhatsApp
-                                    </a>
-                                </div>
-                            ) : (
-                                <button 
-                                    onClick={() => setModal('folder')} 
-                                    className="flex items-center gap-1 hover:text-indigo-700 hover:underline bg-indigo-50 border border-indigo-200 px-2.5 py-1.5 rounded-lg text-xs font-semibold"
-                                >
-                                    📁 Crear Carpeta Quirúrgica
-                                </button>
+                                )
                             )}
                         </div>
                     </div>

@@ -134,8 +134,8 @@ function mapPaciente(row: any): PacienteFiliatorio {
     email: row.email ?? '',
     etiquetaPrincipalActiva: row.etiqueta_activa ?? 'NUEVO_INGRESO',
     cirujanoAsignado: row.cirujano_assigned_email ?? row.cirujano_asignado_email ?? '',
-    nutricionistaAsignado: row.nutricionista_asignado_email ?? '',
-    psicologoAsignado: row.psicologo_asignado_email ?? '',
+    nutricionistaAsignado: row.nutricionista_assigned_email ?? row.nutricionista_asignado_email ?? '',
+    psicologoAsignado: row.psicologo_assigned_email ?? row.psicologo_asignado_email ?? '',
     fechaCirugia: row.fecha_cirugia ?? undefined,
     tipoCirugia: row.tipo_gestion_cirugia ?? undefined,
     fotoPerfil: row.foto_perfil ?? undefined,
@@ -145,6 +145,9 @@ function mapPaciente(row: any): PacienteFiliatorio {
     localidad: row.localidad ?? '',
     cp: row.cp ?? '',
     telefono2: row.telefono_2 ?? '',
+    modalidadCobertura: row.modalidad_cobertura ?? 'Obra Social',
+    cgOperado: row.cg_operado ?? false,
+    tiProfesionalEmail: row.ti_profesional_email ?? '',
   };
 }
 
@@ -322,6 +325,9 @@ function mapContacto(row: any): ContactoCRM {
     folderId: null,
     lastConsultationDate: null,
     nextConsultation: null,
+    modalidadCobertura: row.modalidad_cobertura ?? 'Obra Social',
+    cgOperado: row.cg_operado ?? false,
+    tiProfesionalEmail: row.ti_profesional_email ?? '',
   };
 }
 
@@ -817,6 +823,9 @@ async function createPaciente(
     localidad: pacienteData.localidad ?? null,
     cp: pacienteData.cp ?? null,
     telefono_2: pacienteData.telefono2 ?? null,
+    modalidad_cobertura: pacienteData.modalidadCobertura ?? 'Obra Social',
+    cg_operado: pacienteData.cgOperado ?? false,
+    ti_profesional_email: pacienteData.tiProfesionalEmail ?? null,
   }).select().single();
 
   if (error) handleSupabaseError(error);
@@ -872,9 +881,9 @@ async function updatePacienteFiliatorio(
   if (updates.telefono          !== undefined) dbUpdates.telefono                    = updates.telefono;
   if (updates.email             !== undefined) dbUpdates.email                       = updates.email;
   // DESPUÉS — string vacío se convierte a NULL, que sí acepta la FK
-  if (updates.cirujanoAsignado      !== undefined) dbUpdates.cirujano_asignado_email      = updates.cirujanoAsignado      || null;
-  if (updates.nutricionistaAsignado !== undefined) dbUpdates.nutricionista_asignado_email = updates.nutricionistaAsignado || null;
-  if (updates.psicologoAsignado     !== undefined) dbUpdates.psicologo_asignado_email     = updates.psicologoAsignado     || null;
+  if (updates.cirujanoAsignado      !== undefined) dbUpdates.cirujano_assigned_email      = updates.cirujanoAsignado      || null;
+  if (updates.nutricionistaAsignado !== undefined) dbUpdates.nutricionista_assigned_email = updates.nutricionistaAsignado || null;
+  if (updates.psicologoAsignado     !== undefined) dbUpdates.psicologo_assigned_email     = updates.psicologoAsignado     || null;
   if (updates.fotoPerfil            !== undefined) dbUpdates.foto_perfil                 = updates.fotoPerfil            || null;
   if (updates.nroHc                 !== undefined) dbUpdates.nro_hc                      = updates.nroHc;
   if (updates.sexo                  !== undefined) dbUpdates.sexo                        = updates.sexo;
@@ -882,6 +891,9 @@ async function updatePacienteFiliatorio(
   if (updates.localidad             !== undefined) dbUpdates.localidad                   = updates.localidad;
   if (updates.cp                    !== undefined) dbUpdates.cp                          = updates.cp;
   if (updates.telefono2             !== undefined) dbUpdates.telefono_2                  = updates.telefono2;
+  if (updates.modalidadCobertura    !== undefined) dbUpdates.modalidad_cobertura          = updates.modalidadCobertura    || 'Obra Social';
+  if (updates.cgOperado             !== undefined) dbUpdates.cg_operado                   = updates.cgOperado;
+  if (updates.tiProfesionalEmail    !== undefined) dbUpdates.ti_profesional_email         = updates.tiProfesionalEmail    || null;
 
   const { data, error } = await supabase
     .from('pacientes').update(dbUpdates).eq('id_paciente', idPaciente).select().single();
@@ -1349,7 +1361,7 @@ async function getContactosCRM(): Promise<ContactoCRM[]> {
     { data: profs },
   ] = await Promise.all([
     fetchAll<any>(supabase.from('crm_contactos').select('*')),
-    fetchAll<any>(supabase.from('pacientes').select('id_paciente, nro_hc, dni, apellido, nombres, telefono, email, obra_social, etiqueta_activa, created_at, fecha_cirugia')),
+    fetchAll<any>(supabase.from('pacientes').select('id_paciente, nro_hc, dni, apellido, nombres, telefono, email, obra_social, etiqueta_activa, created_at, fecha_cirugia, modalidad_cobertura, cg_operado, ti_profesional_email')),
     fetchAll<any>(supabase.from('evoluciones').select('id_paciente, fecha_consulta').eq('is_deleted', false)),
     fetchAll<any>(supabase.from('turnos').select('id_paciente, fecha_turno, profesional_email').gt('fecha_turno', new Date().toISOString())),
     fetchAll<any>(supabase.from('cirugias').select('id_paciente, fecha_realizada, fecha_programada, tipo_cirugia')),
@@ -1428,8 +1440,8 @@ async function getContactosCRM(): Promise<ContactoCRM[]> {
       isPatient: true,
       canalOrigen: crm.canal_origen ?? undefined,
       estadoSeguimiento: crm.estado_seguimiento ?? undefined,
-      lostReason: crm.motivo_perdida ?? null,
-      lostTimestamp: crm.fecha_perdida ?? null,
+      lostReason: crm.lostReason ?? crm.motivo_perdida ?? null,
+      lostTimestamp: crm.lostTimestamp ?? crm.fecha_perdida ?? null,
       surgeryDate: pac.fecha_cirugia ?? cirugia?.fecha_realizada ?? cirugia?.fecha_programada ?? null,
       surgeryType: cirugia?.tipo_cirugia ?? null,
       folderId: carpetaMap[pac.id_paciente] ?? null,
@@ -1439,6 +1451,9 @@ async function getContactosCRM(): Promise<ContactoCRM[]> {
         time: format(new Date(nextTurno.fecha_turno), 'HH:mm'),
         professional: profMap[nextTurno.profesional_email] ?? nextTurno.profesional_email,
       } : null,
+      modalidadCobertura: pac.modalidad_cobertura ?? crm.modalidad_cobertura ?? 'Obra Social',
+      cgOperado: pac.cg_operado ?? false,
+      tiProfesionalEmail: pac.ti_profesional_email ?? '',
     });
   }
 
@@ -1456,6 +1471,7 @@ async function updateContactoCRM(id: string, updates: Partial<ContactoCRM>): Pro
   if (updates.estadoSeguimiento !== undefined) dbUpdates.estado_seguimiento = updates.estadoSeguimiento;
   if (updates.lostReason        !== undefined) dbUpdates.motivo_perdida    = updates.lostReason;
   if (updates.lostTimestamp     !== undefined) dbUpdates.fecha_perdida     = updates.lostTimestamp;
+  if (updates.modalidadCobertura!== undefined) dbUpdates.modalidad_cobertura= updates.modalidadCobertura;
 
   // Simple UPDATE — only touch the columns that changed
   const { error } = await supabase
@@ -1510,13 +1526,28 @@ async function getCrmHistory(): Promise<CrmHistoryEntry[]> {
   // 1. Contact registrations
   const { data: contacts } = await supabase
     .from('crm_contactos')
-    .select('id_contacto, fecha_ingreso, pacientes(apellido, nombres)')
+    .select('id_contacto, fecha_ingreso')
     .order('fecha_ingreso', { ascending: false })
     .limit(100);
 
+  const contactIds = (contacts ?? []).map((c: any) => c.id_contacto).filter(Boolean);
+  let pacMap: Record<string, { apellido: string; nombres: string }> = {};
+
+  if (contactIds.length > 0) {
+    const { data: pacs } = await supabase
+      .from('pacientes')
+      .select('id_paciente, apellido, nombres')
+      .in('id_paciente', contactIds);
+
+    (pacs ?? []).forEach((p: any) => {
+      pacMap[p.id_paciente] = { apellido: p.apellido ?? '', nombres: p.nombres ?? '' };
+    });
+  }
+
   (contacts ?? []).forEach((row: any, i: number) => {
-    const nombre = row.pacientes
-      ? `${row.pacientes.apellido ?? ''}, ${row.pacientes.nombres ?? ''}`
+    const pacInfo = pacMap[row.id_contacto];
+    const nombre = pacInfo
+      ? `${pacInfo.apellido ?? ''}, ${pacInfo.nombres ?? ''}`
       : row.id_contacto;
     entries.push({
       id: `reg-${i}`,

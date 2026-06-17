@@ -16,6 +16,8 @@ export const ETIQUETAS_FLUJO: EtiquetaFlujo[] = [
   { nombreEtiquetaUnico: 'CARPETA_ENTREGADA', ordenSecuencia: 55, descripcionParaUsuario: 'Paciente recibió la carpeta para presentar en su obra social.', color: 'bg-teal-100 text-teal-800' },
   { nombreEtiquetaUnico: 'PERIOPERATORIO', ordenSecuencia: 60, descripcionParaUsuario: 'Paciente con fecha de cirugía asignada.', color: 'bg-red-100 text-red-800' },
   { nombreEtiquetaUnico: 'POSBARIATRICO', ordenSecuencia: 70, descripcionParaUsuario: 'Paciente en seguimiento post-cirugía.', color: 'bg-green-100 text-green-800' },
+  { nombreEtiquetaUnico: 'CIRUGIA_GENERAL', ordenSecuencia: 80, descripcionParaUsuario: 'Paciente del flujo de Cirugía General.', color: 'bg-rose-100 text-rose-800' },
+  { nombreEtiquetaUnico: 'TRATAMIENTO_INDIVIDUAL', ordenSecuencia: 90, descripcionParaUsuario: 'Paciente en tratamiento individual.', color: 'bg-purple-100 text-purple-800' },
 ];
 
 export const PROFESIONALES: Profesional[] = [

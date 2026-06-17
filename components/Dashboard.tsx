@@ -1399,7 +1399,7 @@ const BackupButton = () => {
 // ─── CRM DASHBOARD ────────────────────────────────────────────────────────────
 
 // [FIX 1] Added 'turn-history' to modal type union
-type CrmActiveView = 'prospects' | 'not-operated' | 'operated' | 'tasks' | 'folders' | 'history';
+type CrmActiveView = 'prospects' | 'not-operated' | 'operated' | 'general-surgery' | 'individual-treatment' | 'tasks' | 'folders' | 'history';
 type ActiveModalType = 'whatsapp' | 'whatsapp-templates' | 'email' | 'tasks' | 'history' | 'turn-history' | 'folder' | 'folders-dashboard' | 'settings' | 'schedule-surgery' | 'surgery-details' | 'lost' | 'new-prospect' | 'new-patient' | 'convert-prospect' | 'estadisticas' | null;
 
 interface CrmDashboardProps {
@@ -1410,8 +1410,23 @@ interface CrmDashboardProps {
 const getContactoCalculatedStatus = (contacto: ContactoCRM, inactivityThresholdDays: number = 30): ContactoStatus => {
     if (contacto.lostReason) return ContactoStatus.PERDIDO;
     if (!contacto.isPatient) return ContactoStatus.ACTIVO;
+
+    let thresholdDays = inactivityThresholdDays;
+    if (contacto.tag === ContactoTag.POSBARIATRICO && contacto.surgeryDate) {
+        const stage = getPostOpStage(contacto.surgeryDate);
+        if (stage === PostOpStage.INMEDIATO) {
+            thresholdDays = 10;
+        } else if (stage === PostOpStage.RECIENTE) {
+            thresholdDays = 30;
+        } else if (stage === PostOpStage.MEDIATO) {
+            thresholdDays = 90;
+        } else if (stage === PostOpStage.ALEJADO) {
+            thresholdDays = 365;
+        }
+    }
+
     const now = new Date();
-    const thresholdDate = subDays(now, inactivityThresholdDays);
+    const thresholdDate = subDays(now, thresholdDays);
     if (contacto.nextConsultation?.date && isAfter(new Date(contacto.nextConsultation.date.replace(/-/g, '/')), now)) return ContactoStatus.ACTIVO;
     if (contacto.lastConsultationDate && isAfter(new Date(contacto.lastConsultationDate.replace(/-/g, '/')), thresholdDate)) return ContactoStatus.ACTIVO;
     return ContactoStatus.INACTIVO;
@@ -1606,9 +1621,26 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
         if (!matchesSearch) return false;
         if (!matchesPriority) return false;
         switch (activeView) {
-            case 'not-operated': return c.isPatient && c.tag !== ContactoTag.POSBARIATRICO && matchesStatus && matchesTag && matchesOS;
-            case 'operated': return c.isPatient && c.tag === ContactoTag.POSBARIATRICO && matchesStatus && matchesPostOpStage && matchesOS;
-            default: return true;
+            case 'not-operated':
+                return c.isPatient && 
+                       c.tag !== ContactoTag.POSBARIATRICO && 
+                       c.tag !== ContactoTag.CIRUGIA_GENERAL && 
+                       c.tag !== ContactoTag.TRATAMIENTO_INDIVIDUAL && 
+                       matchesStatus && matchesTag && matchesOS;
+            case 'operated':
+                return c.isPatient && 
+                       c.tag === ContactoTag.POSBARIATRICO && 
+                       matchesStatus && matchesPostOpStage && matchesOS;
+            case 'general-surgery':
+                return c.isPatient && 
+                       c.tag === ContactoTag.CIRUGIA_GENERAL && 
+                       matchesStatus && matchesOS;
+            case 'individual-treatment':
+                return c.isPatient && 
+                       c.tag === ContactoTag.TRATAMIENTO_INDIVIDUAL && 
+                       matchesStatus && matchesOS;
+            default:
+                return true;
         }
     });
 
@@ -1671,15 +1703,7 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
             {/* [FIX 4] Turn history modal */}
             {activeModal === 'turn-history' && <TurnHistoryModal onClose={() => setActiveModal(null)} contacto={selectedContacto} />}
             {activeModal === 'folder' && selectedContacto && <FolderModal patient={selectedContacto} folder={folders.find(f => f.patientId === selectedContacto.id) || null} professionals={professionals} onSave={handleSaveFolders} onClose={() => setActiveModal(null)} />}
-            {activeModal === 'folders-dashboard' && <FoldersDashboardModal onClose={() => setActiveModal(null)} folders={folders} onOpenFolder={(patientId) => {
-                const contacto = contactos.find(c => c.id === patientId);
-                if (contacto) {
-                    setSelectedContacto(contacto);
-                    setActiveModal('folder');
-                } else {
-                    setActiveModal(null);
-                }
-            }} contactos={contactos} />}
+
             {activeModal === 'settings' && <SettingsCrmModal onClose={() => setActiveModal(null)} professionals={professionals} templates={messageTemplates} onSaveProfessionals={handleSaveProfessionals} onSaveTemplates={handleSaveTemplates} />}
             {activeModal === 'schedule-surgery' && <ScheduleSurgeryModal onClose={() => setActiveModal(null)} patient={selectedContacto} onSchedule={() => {}} />}
             {activeModal === 'surgery-details' && <SurgeryDetailsModal onClose={() => setActiveModal(null)} patient={selectedContacto} />}
@@ -1785,14 +1809,16 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
                             <NavButton view="prospects" label="Prospectos" icon={<UsersIcon />} />
                             <NavButton view="not-operated" label="No Operados" icon={<UsersIcon />} />
                             <NavButton view="operated" label="Operados" icon={<UsersIcon />} />
+                            <NavButton view="general-surgery" label="Cirugía General" icon={<UsersIcon />} />
+                            <NavButton view="individual-treatment" label="Tratamiento Individual" icon={<UsersIcon />} />
                             <NavButton view="tasks" label="Tareas" icon={<ClipboardCheckIcon />} />
                             <NavButton view="folders" label="Ver Carpetas" icon={<FolderIcon />} />
                         </div>
                     </div>
 
-                    {['prospects', 'not-operated', 'operated', 'folders', 'tasks'].includes(activeView) && (
+                    {['prospects', 'not-operated', 'operated', 'general-surgery', 'individual-treatment', 'folders', 'tasks'].includes(activeView) && (
                         <div className="flex flex-wrap items-center gap-3 p-2 bg-slate-50/70 rounded-xl border border-slate-100">
-                            {['prospects', 'not-operated', 'operated', 'folders', 'tasks'].includes(activeView) && (
+                            {['prospects', 'not-operated', 'operated', 'general-surgery', 'individual-treatment', 'folders', 'tasks'].includes(activeView) && (
                                 <div className="relative w-full sm:w-64">
                                     <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><SearchIcon /></div>
                                     <input type="text" placeholder={activeView === 'tasks' ? "Buscar por descripción, paciente o asignado..." : "Buscar por nombre, DNI o tel..."} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="block w-full rounded-lg border-slate-300 pl-9 text-sm focus:border-sky-500 focus:ring-sky-500 bg-white" />
@@ -1829,7 +1855,7 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
                             {activeView === 'not-operated' && (
                                 <select value={tagFilter} onChange={e => setTagFilter(e.target.value as any)} className="text-sm bg-white shadow-sm focus:ring-sky-500 focus:border-sky-500 rounded-md border-slate-300">
                                     <option value="todos">Todas las Etiquetas</option>
-                                    {Object.values(ContactoTag).filter(t => t !== ContactoTag.POSBARIATRICO).map(tag => <option key={tag} value={tag}>{tag.replace(/_/g, ' ')}</option>)}
+                                    {Object.values(ContactoTag).filter(t => t !== ContactoTag.POSBARIATRICO && t !== ContactoTag.CIRUGIA_GENERAL && t !== ContactoTag.TRATAMIENTO_INDIVIDUAL).map(tag => <option key={tag} value={tag}>{tag.replace(/_/g, ' ')}</option>)}
                                 </select>
                             )}
 
@@ -1840,7 +1866,7 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
                                 </select>
                             )}
 
-                            {['not-operated', 'operated'].includes(activeView) && (
+                            {['not-operated', 'operated', 'general-surgery', 'individual-treatment'].includes(activeView) && (
                                 <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="text-sm bg-white shadow-sm focus:ring-sky-500 focus:border-sky-500 rounded-md border-slate-300">
                                     <option value="todos">Todos los Estados</option>
                                     <option value={ContactoStatus.ACTIVO}>Activo</option>
@@ -1849,7 +1875,7 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
                                 </select>
                             )}
 
-                            {['not-operated', 'operated'].includes(activeView) && (
+                            {['not-operated', 'operated', 'general-surgery', 'individual-treatment'].includes(activeView) && (
                                 <select value={socialInsuranceFilter} onChange={e => setSocialInsuranceFilter(e.target.value)} className="text-sm bg-white shadow-sm focus:ring-sky-500 focus:border-sky-500 rounded-md border-slate-300">
                                     <option value="">Todas las Obras Sociales</option>
                                     {uniqueObrasSociales.map(os => <option key={os} value={os}>{os}</option>)}
@@ -1899,6 +1925,33 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
                                     tasks={tasks} 
                                 />
                             )}
+                            {activeView === 'general-surgery' && (
+                                <GeneralSurgeryContactoTable 
+                                    contactos={paginatedContactos} 
+                                    onOpenModal={handleOpenModal} 
+                                    onReactivate={handleReactivate} 
+                                    onSelectPatient={onSelectPatient} 
+                                    onUpdateContacto={handleUpdateContacto} 
+                                    contactRowRefs={contactRowRefs} 
+                                    selectedPatientId={selectedPatient?.idPaciente} 
+                                    folders={folders} 
+                                    tasks={tasks} 
+                                />
+                            )}
+                            {activeView === 'individual-treatment' && (
+                                <IndividualTreatmentContactoTable 
+                                    contactos={paginatedContactos} 
+                                    onOpenModal={handleOpenModal} 
+                                    onReactivate={handleReactivate} 
+                                    onSelectPatient={onSelectPatient} 
+                                    onUpdateContacto={handleUpdateContacto} 
+                                    contactRowRefs={contactRowRefs} 
+                                    selectedPatientId={selectedPatient?.idPaciente} 
+                                    folders={folders} 
+                                    tasks={tasks}
+                                    professionals={professionals.todos}
+                                />
+                            )}
                             {activeView === 'tasks' && <TasksView tasks={filteredTasks} onUpdateTask={handleUpdateTask} onSelectPatient={onSelectPatient} contactos={contactos} onOpenModal={handleOpenModal} />}
                             {activeView === 'folders' && (
                                 <FoldersDashboardView 
@@ -1915,7 +1968,7 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
                                 />
                             )}
                         </div>
-                        {['prospects', 'not-operated', 'operated'].includes(activeView) && totalPages > 1 && (
+                        {['prospects', 'not-operated', 'operated', 'general-surgery', 'individual-treatment'].includes(activeView) && totalPages > 1 && (
                             <div className="flex justify-between items-center px-4 py-3 bg-white border-t border-slate-200 sm:px-6 mt-4">
                                 <div className="flex-1 flex justify-between sm:hidden">
                                     <button onClick={() => setCurrentPage(p => Math.max(p - 1, 1))} disabled={currentPage === 1} className="relative inline-flex items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50">Anterior</button>
@@ -2159,8 +2212,67 @@ const OperatedContactoTable = ({ contactos, onOpenModal, onReactivate, onSelectP
     </table>
 );
 
-const ContactoRow = React.forwardRef<HTMLTableRowElement, { contacto: ContactoCRM, onOpenModal: (modal: ActiveModalType, contacto: ContactoCRM) => void, onReactivate: (contacto: ContactoCRM) => void, onSelectPatient: (p: any) => void, onUpdateContacto: (id: string, updates: Partial<ContactoCRM>) => void, isOperatedView?: boolean, isSelected?: boolean, hasFolder: boolean, hasPendingTasks: boolean }>(
-    ({ contacto, onOpenModal, onReactivate, onSelectPatient, onUpdateContacto, isOperatedView, isSelected, hasFolder, hasPendingTasks }, ref) => {
+const GeneralSurgeryContactoTable = ({ contactos, onOpenModal, onReactivate, onSelectPatient, onUpdateContacto, contactRowRefs, selectedPatientId, folders, tasks }: { contactos: ContactoCRM[], onOpenModal: (modal: ActiveModalType, contacto: ContactoCRM) => void, onReactivate: (contacto: ContactoCRM) => void, onSelectPatient: (p: any) => void, onUpdateContacto: (id: string, updates: Partial<ContactoCRM>) => void, contactRowRefs: React.MutableRefObject<Record<string, HTMLTableRowElement | null>>, selectedPatientId?: string | null, folders: Folder[], tasks: Task[] }) => (
+    <table className="min-w-full divide-y divide-slate-200">
+        <thead className="bg-slate-50">
+            <tr>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Contacto</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Estado Quirúrgico</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Prioridad</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Estado</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Obra Social</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Consultas</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Acciones</th>
+            </tr>
+        </thead>
+        <tbody className="bg-white divide-y divide-slate-200">
+            {contactos.length === 0 ? (
+                <tr><td colSpan={7} className="text-center py-8 text-slate-500 text-sm">No hay pacientes de cirugía general que coincidan con los filtros.</td></tr>
+            ) : contactos.map(contacto => (
+                <ContactoRow key={contacto.id} contacto={contacto} onOpenModal={onOpenModal} onReactivate={onReactivate} onSelectPatient={onSelectPatient} onUpdateContacto={onUpdateContacto} isGeneralSurgery={true} ref={el => { contactRowRefs.current[contacto.id] = el; }} isSelected={selectedPatientId === contacto.id} hasFolder={folders.some(f => f.patientId === contacto.id)} hasPendingTasks={tasks.some(t => t.patientId === contacto.id && t.status === TaskStatus.PENDIENTE)} />
+            ))}
+        </tbody>
+    </table>
+);
+
+const IndividualTreatmentContactoTable = ({ contactos, onOpenModal, onReactivate, onSelectPatient, onUpdateContacto, contactRowRefs, selectedPatientId, folders, tasks, professionals }: { contactos: ContactoCRM[], onOpenModal: (modal: ActiveModalType, contacto: ContactoCRM) => void, onReactivate: (contacto: ContactoCRM) => void, onSelectPatient: (p: any) => void, onUpdateContacto: (id: string, updates: Partial<ContactoCRM>) => void, contactRowRefs: React.MutableRefObject<Record<string, HTMLTableRowElement | null>>, selectedPatientId?: string | null, folders: Folder[], tasks: Task[], professionals: { nombre: string; email: string; }[] }) => (
+    <table className="min-w-full divide-y divide-slate-200">
+        <thead className="bg-slate-50">
+            <tr>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Contacto</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Profesional Tratante</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Prioridad</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Estado</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Obra Social</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Consultas</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Acciones</th>
+            </tr>
+        </thead>
+        <tbody className="bg-white divide-y divide-slate-200">
+            {contactos.length === 0 ? (
+                <tr><td colSpan={7} className="text-center py-8 text-slate-500 text-sm">No hay pacientes de tratamiento individual que coincidan con los filtros.</td></tr>
+            ) : contactos.map(contacto => (
+                <ContactoRow key={contacto.id} contacto={contacto} onOpenModal={onOpenModal} onReactivate={onReactivate} onSelectPatient={onSelectPatient} onUpdateContacto={onUpdateContacto} isIndividualTreatment={true} professionals={professionals} ref={el => { contactRowRefs.current[contacto.id] = el; }} isSelected={selectedPatientId === contacto.id} hasFolder={folders.some(f => f.patientId === contacto.id)} hasPendingTasks={tasks.some(t => t.patientId === contacto.id && t.status === TaskStatus.PENDIENTE)} />
+            ))}
+        </tbody>
+    </table>
+);
+
+const ContactoRow = React.forwardRef<HTMLTableRowElement, { 
+    contacto: ContactoCRM, 
+    onOpenModal: (modal: ActiveModalType, contacto: ContactoCRM) => void, 
+    onReactivate: (contacto: ContactoCRM) => void, 
+    onSelectPatient: (p: any) => void, 
+    onUpdateContacto: (id: string, updates: Partial<ContactoCRM>) => void, 
+    isOperatedView?: boolean, 
+    isGeneralSurgery?: boolean,
+    isIndividualTreatment?: boolean,
+    professionals?: { nombre: string; email: string; }[],
+    isSelected?: boolean, 
+    hasFolder: boolean, 
+    hasPendingTasks: boolean 
+}>(
+    ({ contacto, onOpenModal, onReactivate, onSelectPatient, onUpdateContacto, isOperatedView, isGeneralSurgery, isIndividualTreatment, professionals, isSelected, hasFolder, hasPendingTasks }, ref) => {
         const authContext = useContext(AuthContext);
         const userEmail = authContext?.user?.email ?? '';
         const [showPriorityMenu, setShowPriorityMenu] = useState(false);
@@ -2189,7 +2301,22 @@ const ContactoRow = React.forwardRef<HTMLTableRowElement, { contacto: ContactoCR
                         <div className="text-sm text-slate-500">{contacto.socialInsurance}</div>
                     </button>
                 </td>
-                <td className="px-4 py-4 whitespace-nowrap"><TagBadge tag={isOperatedView ? getPostOpStage(contacto.surgeryDate) : contacto.tag!} /></td>
+                <td className="px-4 py-4 whitespace-nowrap">
+                    {isGeneralSurgery ? (
+                        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${contacto.cgOperado ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-800'}`}>
+                            {contacto.cgOperado ? 'Operado' : 'No Operado'}
+                        </span>
+                    ) : isIndividualTreatment ? (
+                        <span className="text-sm font-medium text-slate-700">
+                            {(() => {
+                                const found = professionals?.find(p => p.email === contacto.tiProfesionalEmail);
+                                return found ? found.nombre : (contacto.tiProfesionalEmail || 'Sin asignar');
+                            })()}
+                        </span>
+                    ) : (
+                        <TagBadge tag={isOperatedView ? getPostOpStage(contacto.surgeryDate) : contacto.tag!} />
+                    )}
+                </td>
 
                 {/* Interactive priority selector */}
                 <td className="px-4 py-4 whitespace-nowrap">
