@@ -304,8 +304,7 @@ const EditarPacienteModal = ({ paciente, onClose, onSuccess }: { paciente: Pacie
                                     list="obras-sociales-list"
                                     value={formData.obraSocial || ''} 
                                     onChange={handleChange} 
-                                    disabled={formData.modalidadCobertura === 'Particular'}
-                                    className="mt-1 block w-full rounded-md border-slate-300 disabled:bg-slate-100 disabled:text-slate-400" 
+                                    className="mt-1 block w-full rounded-md border-slate-300" 
                                 />
                                 <datalist id="obras-sociales-list">
                                     {obrasSociales.map(os => (
@@ -321,8 +320,7 @@ const EditarPacienteModal = ({ paciente, onClose, onSuccess }: { paciente: Pacie
                                     id="nroAfiliado" 
                                     value={formData.nroAfiliado || ''} 
                                     onChange={handleChange} 
-                                    disabled={formData.modalidadCobertura === 'Particular'}
-                                    className="mt-1 block w-full rounded-md border-slate-300 disabled:bg-slate-100 disabled:text-slate-400" 
+                                    className="mt-1 block w-full rounded-md border-slate-300" 
                                 />
                             </div>
                         </div>
