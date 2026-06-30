@@ -433,6 +433,22 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                                 >
                                     {prof.activo ? 'Desactivar' : 'Activar'}
                                 </button>
+                                <button
+                                    onClick={async () => {
+                                        if (window.confirm(`¿Está seguro de que desea eliminar permanentemente al profesional ${prof.nombres} ${prof.apellido}? Esta acción no se puede deshacer.`)) {
+                                            try {
+                                                await api.deleteProfesional(prof.email, user.rol);
+                                                // Refresh professionals list
+                                                api.getProfesionalesAdmin().then(setHorariosProfesionales).catch(err => console.error(err));
+                                            } catch (err: any) {
+                                                alert(`No se pudo eliminar al profesional: ${err.message}. Se recomienda desactivar su perfil en su lugar si tiene turnos o evoluciones registradas.`);
+                                            }
+                                        }
+                                    }}
+                                    className="px-3 py-1.5 text-xs font-medium text-red-600 hover:text-white bg-white hover:bg-red-600 border border-red-200 hover:border-red-600 rounded-lg transition-colors"
+                                >
+                                    Eliminar
+                                </button>
                                 {prof.rol === UserRole.MEDICO && (
                                     <button
                                         onClick={() => setExpandedUser(expandedUser === prof.email ? null : prof.email)}

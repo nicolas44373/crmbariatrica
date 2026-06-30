@@ -817,19 +817,19 @@ async function getPacienteCompleto(
 }
 
 async function createPaciente(
-  pacienteData: Omit<PacienteFiliatorio, 'idPaciente' | 'etiquetaPrincipalActiva' | 'cirujanoAsignado' | 'nutricionistaAsignado' | 'psicologoAsignado' | 'fechaCirugia' | 'tipoCirugia'>,
+  pacienteData: Omit<PacienteFiliatorio, 'idPaciente' | 'etiquetaPrincipalActiva' | 'fechaCirugia' | 'tipoCirugia'>,
   userRole: UserRole,
   prospectoId?: string
 ): Promise<PacienteFiliatorio> {
   if (!canAny(userRole)) throw new Error('Permiso denegado para crear pacientes.');
 
   const { data: profs } = await supabase.from('profesionales').select('*').eq('activo', true);
-  const cirujano = (profs ?? []).find((p: any) => {
+  const defaultCirujano = (profs ?? []).find((p: any) => {
     const esp = (p.especialidad ?? '').toLowerCase();
     return esp.includes('cirug') || esp.includes('ciruj') || esp.includes('bariat');
   });
-  const nutricionista = (profs ?? []).find((p: any) => (p.especialidad ?? '').toLowerCase().includes('nutri'));
-  const psicologo = (profs ?? []).find((p: any) => {
+  const defaultNutricionista = (profs ?? []).find((p: any) => (p.especialidad ?? '').toLowerCase().includes('nutri'));
+  const defaultPsicologo = (profs ?? []).find((p: any) => {
     const esp = (p.especialidad ?? '').toLowerCase();
     return esp.includes('psic') || esp.includes('psiq');
   });
@@ -845,9 +845,9 @@ async function createPaciente(
     email: pacienteData.email ?? null,
     direccion: pacienteData.direccion ?? null,
     etiqueta_activa: 'NUEVO_INGRESO',
-    cirujano_asignado_email: cirujano?.email ?? null,
-    nutricionista_asignado_email: nutricionista?.email ?? null,
-    psicologo_asignado_email: psicologo?.email ?? null,
+    cirujano_asignado_email: pacienteData.cirujanoAsignado !== undefined ? (pacienteData.cirujanoAsignado || null) : (defaultCirujano?.email ?? null),
+    nutricionista_asignado_email: pacienteData.nutricionistaAsignado !== undefined ? (pacienteData.nutricionistaAsignado || null) : (defaultNutricionista?.email ?? null),
+    psicologo_asignado_email: pacienteData.psicologoAsignado !== undefined ? (pacienteData.psicologoAsignado || null) : (defaultPsicologo?.email ?? null),
     nro_hc: pacienteData.nroHc ?? null,
     sexo: pacienteData.sexo ?? null,
     ocupacion: pacienteData.ocupacion ?? null,
@@ -891,6 +891,26 @@ async function createPaciente(
   });
 
   return mapPaciente(data);
+}
+
+async function deletePaciente(idPaciente: string, userRole: UserRole): Promise<void> {
+  if (!canAdmin(userRole)) throw new Error('Permiso denegado.');
+
+  await supabase.from('evoluciones').delete().eq('id_paciente', idPaciente);
+  await supabase.from('turnos').delete().eq('id_paciente', idPaciente);
+  await supabase.from('estudios').delete().eq('id_paciente', idPaciente);
+  await supabase.from('informes').delete().eq('id_paciente', idPaciente);
+  await supabase.from('cirugias').delete().eq('id_paciente', idPaciente);
+  await supabase.from('nutricion_info').delete().eq('id_paciente', idPaciente);
+  await supabase.from('psicologia_info').delete().eq('id_paciente', idPaciente);
+  await supabase.from('carpetas_quirurgicas').delete().eq('id_paciente', idPaciente);
+  await supabase.from('historias_clinicas').delete().eq('id_paciente', idPaciente);
+  await supabase.from('crm_contactos').delete().eq('id_contacto', idPaciente);
+
+  const { error } = await supabase.from('pacientes').delete().eq('id_paciente', idPaciente);
+  if (error) {
+    throw new Error(`Error al eliminar el paciente de la base de datos: ${error.message}`);
+  }
 }
 
 async function updatePacienteFiliatorio(
@@ -1905,12 +1925,26 @@ async function getEstadisticas(): Promise<any> {
     turnos,
     crm,
     { data: profs },
+    cirugias,
+    carpetas,
   ] = await Promise.all([
-    fetchAll<any>(supabase.from('pacientes').select('id_paciente, etiqueta_activa, obra_social, created_at')),
-    fetchAll<any>(supabase.from('turnos').select('id_paciente, estado, profesional_email, fecha_turno, especialidad')),
-    fetchAll<any>(supabase.from('crm_contactos').select('id, is_patient, fecha_ingreso')),
-    supabase.from('profesionales').select('email, nombres, apellido'),
+    fetchAll<any>(supabase.from('pacientes').select('id_paciente, etiqueta_activa, obra_social, created_at, fecha_cirugia, cirujano_asignado_email, nutricionista_asignado_email, psicologo_asignado_email, nombres, apellido')),
+    fetchAll<any>(supabase.from('turnos').select('id_paciente, estado, profesional_email, fecha_turno, especialidad, valor_cobrado, metodo_pago, creado_por_email')),
+    fetchAll<any>(supabase.from('crm_contactos').select('id_contacto, is_patient, fecha_ingreso, estado_seguimiento, canal_origen')),
+    supabase.from('profesionales').select('email, nombres, apellido, activo, especialidad'),
+    fetchAll<any>(supabase.from('cirugias').select('id_paciente, fecha_realizada, fecha_programada, tipo_cirugia')),
+    fetchAll<any>(supabase.from('carpetas_quirurgicas').select('id_paciente, estado_tracking, fecha_pedido, fecha_entrega_paciente, fecha_presentacion_os, fecha_autorizacion')),
   ]);
+
+  let historialEtiquetas: any[] = [];
+  try {
+    const { data, error } = await supabase.from('historial_etiquetas').select('id_paciente, etiqueta, fecha_cambio');
+    if (!error && data) {
+      historialEtiquetas = data;
+    }
+  } catch (err) {
+    console.warn("historial_etiquetas table not found, falling back to simulated transitions.", err);
+  }
 
   const profMap: Record<string, string> = {};
   (profs ?? []).forEach((p: any) => { profMap[p.email] = `${p.apellido}, ${p.nombres}`; });
@@ -1961,6 +1995,10 @@ async function getEstadisticas(): Promise<any> {
     rawTurnos: turnos,
     rawCrm: crm,
     rawPacientes: pacientes,
+    rawProfesionales: profs ?? [],
+    rawCirugias: cirugias,
+    rawCarpetas: carpetas,
+    historialEtiquetas,
   };
 }
 
@@ -2149,6 +2187,7 @@ export const api = {
   getPacientes,
   getPacienteCompleto,
   createPaciente,
+  deletePaciente,
   updatePacienteFiliatorio,
   updatePacienteTag,
   definirCirugia,

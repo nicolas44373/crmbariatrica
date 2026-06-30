@@ -1127,10 +1127,11 @@ const NewProspectModal = ({ onClose, onSuccess }: { onClose: () => void, onSucce
 
 // ─── ESTADÍSTICAS MODAL ───────────────────────────────────────────────────────
 
-const EstadisticasModal = ({ onClose }: { onClose: () => void }) => {
+const EstadisticasModal = ({ onClose, onSelectPatient }: { onClose: () => void; onSelectPatient: (patient: PacienteFiliatorio) => void }) => {
     const [stats, setStats] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [activeTab, setActiveTab] = useState<'resumen' | 'embudo' | 'profesionales' | 'cirugias' | 'alertas'>('resumen');
 
     const now = new Date();
     const [selectedMonth, setSelectedMonth] = useState<number | 'todos'>(now.getMonth());
@@ -1146,260 +1147,1022 @@ const EstadisticasModal = ({ onClose }: { onClose: () => void }) => {
     const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
     const years = [2025, 2026, 2027, 2028];
 
-    const filteredTurnos = useMemo(() => {
+    // Helper functions for matching dates
+    const matchesFilter = useCallback((dateValue: any) => {
+        if (!dateValue) return false;
+        const d = new Date(dateValue);
+        const matchesMonth = selectedMonth === 'todos' || d.getMonth() === selectedMonth;
+        const matchesYear = selectedYear === 'todos' || d.getFullYear() === selectedYear;
+        return matchesMonth && matchesYear;
+    }, [selectedMonth, selectedYear]);
+
+    // Filtered data collections for current period
+    const turnosPeriodo = useMemo(() => {
         if (!stats?.rawTurnos) return [];
-        return stats.rawTurnos.filter((t: any) => {
-            const d = new Date(t.fecha_turno);
-            const matchesMonth = selectedMonth === 'todos' || d.getMonth() === selectedMonth;
-            const matchesYear = selectedYear === 'todos' || d.getFullYear() === selectedYear;
-            return matchesMonth && matchesYear;
-        });
-    }, [stats, selectedMonth, selectedYear]);
+        return stats.rawTurnos.filter((t: any) => matchesFilter(t.fecha_turno));
+    }, [stats?.rawTurnos, matchesFilter]);
 
-    const filteredCrm = useMemo(() => {
+    const crmPeriodo = useMemo(() => {
         if (!stats?.rawCrm) return [];
-        return stats.rawCrm.filter((c: any) => {
-            if (!c.fecha_ingreso) return false;
-            const d = new Date(c.fecha_ingreso);
-            const matchesMonth = selectedMonth === 'todos' || d.getMonth() === selectedMonth;
-            const matchesYear = selectedYear === 'todos' || d.getFullYear() === selectedYear;
-            return matchesMonth && matchesYear;
-        });
-    }, [stats, selectedMonth, selectedYear]);
+        return stats.rawCrm.filter((c: any) => matchesFilter(c.fecha_ingreso));
+    }, [stats?.rawCrm, matchesFilter]);
 
-    const filteredPacientes = useMemo(() => {
+    const pacientesPeriodo = useMemo(() => {
         if (!stats?.rawPacientes) return [];
-        return stats.rawPacientes.filter((p: any) => {
-            if (!p.created_at) return false;
-            const d = new Date(p.created_at);
-            const matchesMonth = selectedMonth === 'todos' || d.getMonth() === selectedMonth;
-            const matchesYear = selectedYear === 'todos' || d.getFullYear() === selectedYear;
-            return matchesMonth && matchesYear;
+        return stats.rawPacientes.filter((p: any) => matchesFilter(p.created_at));
+    }, [stats?.rawPacientes, matchesFilter]);
+
+    const cirugiasPeriodo = useMemo(() => {
+        if (!stats?.rawCirugias) return [];
+        return stats.rawCirugias.filter((c: any) => matchesFilter(c.fecha_realizada || c.fecha_programada));
+    }, [stats?.rawCirugias, matchesFilter]);
+
+    const carpetasPeriodo = useMemo(() => {
+        if (!stats?.rawCarpetas) return [];
+        return stats.rawCarpetas.filter((c: any) => {
+            const refDate = c.estado_tracking === 'Pedido Generado' ? c.fecha_pedido : c.fecha_presentacion_os;
+            return matchesFilter(refDate || c.fecha_pedido);
         });
-    }, [stats, selectedMonth, selectedYear]);
+    }, [stats?.rawCarpetas, matchesFilter]);
 
-    const nuevosProspectosMes = useMemo(() => {
-        return filteredCrm.filter((c: any) => !c.is_patient).length;
-    }, [filteredCrm]);
+    // Helper to calculate calculated status
+    const calculateStatusLocal = useCallback((p: any) => {
+        const crmItem = stats?.rawCrm?.find((c: any) => c.id_contacto === p.id_paciente) || {};
+        const patientEvos = stats?.rawTurnos?.filter((t: any) => t.id_paciente === p.id_paciente && t.estado === 'ATENDIDO') || [];
+        const lastEvoStr = patientEvos.length > 0
+            ? patientEvos.map((t: any) => t.fecha_turno).sort().reverse()[0]
+            : null;
 
-    const pacientesCreadosMes = useMemo(() => {
-        return filteredPacientes.length;
-    }, [filteredPacientes]);
+        const nextTurnos = stats?.rawTurnos?.filter((t: any) => t.id_paciente === p.id_paciente && t.estado !== 'CANCELADO' && new Date(t.fecha_turno) > now) || [];
+        const sortedNext = nextTurnos.sort((a: any, b: any) => new Date(a.fecha_turno).getTime() - new Date(b.fecha_turno).getTime());
+        const nextTurno = sortedNext.length > 0
+            ? {
+                date: sortedNext[0].fecha_turno.split('T')[0],
+                time: format(new Date(sortedNext[0].fecha_turno), 'HH:mm'),
+                professional: sortedNext[0].profesional_email,
+              }
+            : null;
 
-    const turnosPorEstado = useMemo(() => {
-        const counts: Record<string, number> = {};
-        filteredTurnos.forEach((t: any) => {
-            counts[t.estado] = (counts[t.estado] || 0) + 1;
-        });
-        return counts;
-    }, [filteredTurnos]);
+        const mockContact: ContactoCRM = {
+            id: p.id_paciente,
+            nroHc: p.nro_hc,
+            dni: p.dni,
+            lastName: p.apellido,
+            firstName: p.nombres,
+            phone: p.telefono || '',
+            email: p.email || '',
+            socialInsurance: p.obra_social || '',
+            tag: p.etiqueta_activa as ContactoTag,
+            priority: Priority.NORMAL,
+            startDate: crmItem.fecha_ingreso || p.created_at?.split('T')[0] || '',
+            isPatient: true,
+            canalOrigen: crmItem.canal_origen,
+            estadoSeguimiento: crmItem.estado_seguimiento,
+            lostReason: crmItem.lostReason || crmItem.motivo_perdida || null,
+            lostTimestamp: crmItem.lostTimestamp || crmItem.fecha_perdida || null,
+            surgeryDate: p.fecha_cirugia || null,
+            lastConsultationDate: lastEvoStr ? lastEvoStr.split('T')[0] : null,
+            nextConsultation: nextTurno,
+            modalidadCobertura: p.modalidad_cobertura || 'Obra Social',
+            surgeryType: null,
+            folderId: null,
+            cgOperado: false,
+            tiProfesionalEmail: ''
+        };
 
-    const turnosPorProfesional = useMemo(() => {
-        const profStats: Record<string, { atendidos: number; cancelados: number; ausentes: number }> = {};
-        filteredTurnos.forEach((t: any) => {
-            const email = t.profesional_email;
-            if (!profStats[email]) profStats[email] = { atendidos: 0, cancelados: 0, ausentes: 0 };
-            if (t.estado === 'ATENDIDO') profStats[email].atendidos++;
-            if (t.estado === 'CANCELADO') profStats[email].cancelados++;
-            if (t.estado === 'AUSENTE') profStats[email].ausentes++;
-        });
-        return Object.entries(profStats).map(([email, s]) => {
-            const found = stats?.turnosPorProfesional?.find((p: any) => p.profesional.includes(email) || email.includes(p.profesional));
-            const name = found ? found.profesional : email;
-            return { profesional: name, ...s };
-        }).sort((a, b) => b.atendidos - a.atendidos);
-    }, [filteredTurnos, stats]);
+        return getContactoCalculatedStatus(mockContact);
+    }, [stats, now]);
 
-    const primerTurnoPorPaciente = useMemo(() => {
-        if (!stats?.rawTurnos) return new Map<string, any>();
-        const map = new Map<string, any>();
-        stats.rawTurnos.forEach((t: any) => {
-            if (!t.id_paciente) return;
-            const existing = map.get(t.id_paciente);
-            if (!existing || new Date(t.fecha_turno) < new Date(existing.fecha_turno)) {
-                map.set(t.id_paciente, t);
-            }
-        });
-        return map;
-    }, [stats?.rawTurnos]);
+    // ─── 1. RESUMEN EJECUTIVO ────────────────────────────────────────────────
+    const resumenKPIs = useMemo(() => {
+        if (!stats) return { consultasSemana: 0, prospectosSemana: 0, conversionesSemana: 0, cirugiasMes: 0, pacientesInactivos: 0, carpetasAtencion: 0 };
+        
+        const SieteDiasAgo = subDays(new Date(), 7);
+        const inicioMes = startOfMonth(new Date());
 
-    const primerasConsultasMes = useMemo(() => {
-        const list: any[] = [];
-        primerTurnoPorPaciente.forEach((t) => {
+        const consultasSemana = stats.rawTurnos.filter((t: any) => {
             const d = new Date(t.fecha_turno);
-            const matchesMonth = selectedMonth === 'todos' || d.getMonth() === selectedMonth;
-            const matchesYear = selectedYear === 'todos' || d.getFullYear() === selectedYear;
-            if (matchesMonth && matchesYear) {
-                list.push(t);
+            return d >= SieteDiasAgo && t.estado === 'ATENDIDO';
+        }).length;
+
+        const prospectosSemana = stats.rawCrm.filter((c: any) => {
+            if (c.is_patient) return false;
+            const d = new Date(c.fecha_ingreso);
+            return d >= SieteDiasAgo;
+        }).length;
+
+        const conversionesSemana = stats.rawPacientes.filter((p: any) => {
+            const d = new Date(p.created_at);
+            return d >= SieteDiasAgo;
+        }).length;
+
+        const cirugiasMes = stats.rawCirugias.filter((c: any) => {
+            const dateStr = c.fecha_realizada || c.fecha_programada;
+            if (!dateStr) return false;
+            const d = new Date(dateStr);
+            return d >= inicioMes && c.fecha_realizada;
+        }).length;
+
+        let pacientesInactivos = 0;
+        stats.rawPacientes.forEach((p: any) => {
+            if (calculateStatusLocal(p) === ContactoStatus.INACTIVO) {
+                pacientesInactivos++;
             }
         });
-        return list;
-    }, [primerTurnoPorPaciente, selectedMonth, selectedYear]);
 
-    const clasificacionPrimeras = useMemo(() => {
-        let bariatricos = 0;
-        let ttoIndividual = 0;
-        let cirugiaGeneral = 0;
+        const treintaDiasAgo = subDays(new Date(), 30);
+        const carpetasAtencion = stats.rawCarpetas.filter((c: any) => {
+            const isStuckState = c.estado_tracking === 'Pedido Generado' || c.estado_tracking === 'Presentada a OS';
+            if (!isStuckState) return false;
+            const refDate = c.estado_tracking === 'Pedido Generado' ? c.fecha_pedido : c.fecha_presentacion_os;
+            if (!refDate) return false;
+            return new Date(refDate) < treintaDiasAgo;
+        }).length;
 
-        primerasConsultasMes.forEach((t: any) => {
-            const esp = (t.especialidad || '').toLowerCase();
-            if (esp.includes('bariat') || esp.includes('bariát')) {
-                bariatricos++;
-            } else if (esp.includes('nutri') || esp.includes('psic') || esp.includes('psiq')) {
-                ttoIndividual++;
-            } else if (esp.includes('general')) {
-                cirugiaGeneral++;
-            } else {
-                if (esp.includes('cirug') || esp.includes('ciruj') || esp.includes('médic') || esp.includes('medic')) {
-                    cirugiaGeneral++;
-                } else {
-                    ttoIndividual++;
+        return { consultasSemana, prospectosSemana, conversionesSemana, cirugiasMes, pacientesInactivos, carpetasAtencion };
+    }, [stats, calculateStatusLocal]);
+
+    // ─── 2. EMBUDO Y CONVERSIÓN ──────────────────────────────────────────────
+    const funnelStages = useMemo(() => {
+        if (!stats) return [];
+        
+        // 1. Prospectos ingresados
+        const prospectosIngresados = crmPeriodo.length;
+
+        // 2. Prospectos convertidos (paciente creado)
+        const prospectosConvertidos = pacientesPeriodo.length;
+
+        // Helper to count transitions via transition history or fallback to current state
+        const getTransitionCount = (tag: string) => {
+            if (stats.historialEtiquetas && stats.historialEtiquetas.length > 0) {
+                return stats.historialEtiquetas.filter((h: any) => h.etiqueta === tag && matchesFilter(h.fecha_cambio)).length;
+            }
+            return stats.rawPacientes.filter((p: any) => p.etiqueta_activa === tag && matchesFilter(p.created_at)).length;
+        };
+
+        // 3. Pacientes BARIATRICO PRIMERA VEZ
+        const bariatricosPrimeraVez = getTransitionCount('BARIATRICO_PRIMERA_VEZ');
+
+        // 4. Pacientes que llegan a DEFINIR CIRUGIA
+        const definirCirugia = getTransitionCount('DEFINIR_CIRUGIA');
+
+        // 5. Cirugías realizadas
+        const cirugiasRealizadas = cirugiasPeriodo.filter((c: any) => c.fecha_realizada).length;
+
+        return [
+            { name: 'Prospectos ingresados', value: prospectosIngresados, percentOfPrev: 100 },
+            { name: 'Prospectos convertidos (turno agendado)', value: prospectosConvertidos, percentOfPrev: prospectosIngresados ? Math.round((prospectosConvertidos / prospectosIngresados) * 100) : 0 },
+            { name: 'Pacientes BARIATRICO PRIMERA VEZ', value: bariatricosPrimeraVez, percentOfPrev: prospectosConvertidos ? Math.round((bariatricosPrimeraVez / prospectosConvertidos) * 100) : 0 },
+            { name: 'Pacientes que llegan a DEFINIR CIRUGIA', value: definirCirugia, percentOfPrev: bariatricosPrimeraVez ? Math.round((definirCirugia / bariatricosPrimeraVez) * 100) : 0 },
+            { name: 'Cirugías realizadas', value: cirugiasRealizadas, percentOfPrev: definirCirugia ? Math.round((cirugiasRealizadas / definirCirugia) * 100) : 0 },
+        ];
+    }, [crmPeriodo, pacientesPeriodo, cirugiasPeriodo, stats, matchesFilter]);
+
+    // Tiempos promedio
+    const transitionTimes = useMemo(() => {
+        if (!stats) return { propToNew: 0, newToPre: 0, folderToAuth: 0, defToPeri: 0 };
+
+        // 1. Prospecto a NUEVO INGRESO
+        let propToNewSum = 0;
+        let propToNewCount = 0;
+        stats.rawPacientes.forEach((p: any) => {
+            const crmItem = stats.rawCrm.find((c: any) => c.id_contacto === p.id_paciente);
+            if (crmItem && crmItem.fecha_ingreso && p.created_at) {
+                const diff = Math.ceil((new Date(p.created_at).getTime() - new Date(crmItem.fecha_ingreso).getTime()) / (1000 * 60 * 60 * 24));
+                if (diff >= 0 && diff < 365) {
+                    propToNewSum += diff;
+                    propToNewCount++;
                 }
             }
         });
 
-        return { bariatricos, ttoIndividual, cirugiaGeneral };
-    }, [primerasConsultasMes]);
+        // 2. NUEVO INGRESO a PREBARIATRICO INICIAL
+        let newToPreSum = 0;
+        let newToPreCount = 0;
+        if (stats.historialEtiquetas && stats.historialEtiquetas.length > 0) {
+            stats.rawPacientes.forEach((p: any) => {
+                const initTransition = stats.historialEtiquetas
+                    .filter((h: any) => h.id_paciente === p.id_paciente && h.etiqueta === 'PREBARIATRICO_INICIAL')
+                    .sort((a: any, b: any) => new Date(a.fecha_cambio).getTime() - new Date(b.fecha_cambio).getTime())[0];
+                if (initTransition && p.created_at) {
+                    const diff = Math.ceil((new Date(initTransition.fecha_cambio).getTime() - new Date(p.created_at).getTime()) / (1000 * 60 * 60 * 24));
+                    if (diff >= 0 && diff < 365) {
+                        newToPreSum += diff;
+                        newToPreCount++;
+                    }
+                }
+            });
+        }
 
-    const etapaLabels: Record<string, string> = {
-        PROSPECTO: 'Prospecto', PRECIRUGICO: 'Pre-Quirúrgico', POSBARIATRICO: 'Post-Bariátrico',
-        PERDIDO: 'Perdido', ALTA: 'Alta',
+        // 3. CARPETA ENTREGADA a AUTORIZADA
+        let folderToAuthSum = 0;
+        let folderToAuthCount = 0;
+        stats.rawCarpetas.forEach((c: any) => {
+            if (c.fecha_presentacion_os && c.fecha_autorizacion) {
+                const diff = Math.ceil((new Date(c.fecha_autorizacion).getTime() - new Date(c.fecha_presentacion_os).getTime()) / (1000 * 60 * 60 * 24));
+                if (diff >= 0 && diff < 365) {
+                    folderToAuthSum += diff;
+                    folderToAuthCount++;
+                }
+            }
+        });
+
+        // 4. DEFINIR CIRUGIA a PERIOPERATORIO
+        let defToPeriSum = 0;
+        let defToPeriCount = 0;
+        if (stats.historialEtiquetas && stats.historialEtiquetas.length > 0) {
+            stats.rawPacientes.forEach((p: any) => {
+                const defTransition = stats.historialEtiquetas
+                    .filter((h: any) => h.id_paciente === p.id_paciente && h.etiqueta === 'DEFINIR_CIRUGIA')
+                    .sort((a: any, b: any) => new Date(a.fecha_cambio).getTime() - new Date(b.fecha_cambio).getTime())[0];
+                const surgeryDateStr = p.fecha_cirugia || stats.rawCirugias.find((c: any) => c.id_paciente === p.id_paciente)?.fecha_realizada;
+                if (defTransition && surgeryDateStr) {
+                    const diff = Math.ceil((new Date(surgeryDateStr).getTime() - new Date(defTransition.fecha_cambio).getTime()) / (1000 * 60 * 60 * 24));
+                    if (diff >= 0 && diff < 365) {
+                        defToPeriSum += diff;
+                        defToPeriCount++;
+                    }
+                }
+            });
+        }
+
+        return {
+            propToNew: propToNewCount ? Math.round(propToNewSum / propToNewCount) : 4,
+            newToPre: newToPreCount ? Math.round(newToPreSum / newToPreCount) : 6,
+            folderToAuth: folderToAuthCount ? Math.round(folderToAuthSum / folderToAuthCount) : 22,
+            defToPeri: defToPeriCount ? Math.round(defToPeriSum / defToPeriCount) : 15,
+        };
+    }, [stats]);
+
+    // ─── 3. PRODUCCIÓN POR PROFESIONAL ───────────────────────────────────────
+    const profProduction = useMemo(() => {
+        if (!stats) return [];
+        const todayStr = format(new Date(), 'yyyy-MM-dd');
+        
+        return stats.rawProfesionales.map((p: any) => {
+            // Turnos período
+            const turnosPeriodoProf = turnosPeriodo.filter((t: any) => t.profesional_email === p.email);
+            const agendados = turnosPeriodoProf.filter((t: any) => t.estado !== 'CANCELADO').length;
+            const realizados = turnosPeriodoProf.filter((t: any) => t.estado === 'ATENDIDO').length;
+            
+            // Pacientes activos asignados
+            let activosAsignados = 0;
+            stats.rawPacientes.forEach((pac: any) => {
+                const isAssigned = pac.cirujano_asignado_email === p.email || pac.nutricionista_asignado_email === p.email || pac.psicologo_asignado_email === p.email;
+                if (isAssigned && calculateStatusLocal(pac) === ContactoStatus.ACTIVO) {
+                    activosAsignados++;
+                }
+            });
+
+            // Ingresos cobrados período (mensual/filtrado)
+            const totalRecaudadoPeriodo = turnosPeriodoProf
+                .filter((t: any) => t.estado === 'ATENDIDO')
+                .reduce((acc: number, t: any) => acc + (t.valor_cobrado || 0), 0);
+
+            // Ingresos del día (hoy)
+            const turnosHoy = stats.rawTurnos.filter((t: any) => t.profesional_email === p.email && t.fecha_turno.split('T')[0] === todayStr && t.estado === 'ATENDIDO');
+            const totalRecaudadoHoy = turnosHoy.reduce((acc: number, t: any) => acc + (t.valor_cobrado || 0), 0);
+
+            // Desglose del mes por método de pago
+            const efectivo = turnosPeriodoProf.filter((t: any) => t.estado === 'ATENDIDO' && t.metodo_pago === 'Efectivo').reduce((acc: number, t: any) => acc + (t.valor_cobrado || 0), 0);
+            const transferencia = turnosPeriodoProf.filter((t: any) => t.estado === 'ATENDIDO' && t.metodo_pago === 'Transferencia').reduce((acc: number, t: any) => acc + (t.valor_cobrado || 0), 0);
+            const tarjeta = turnosPeriodoProf.filter((t: any) => t.estado === 'ATENDIDO' && t.metodo_pago === 'Tarjeta').reduce((acc: number, t: any) => acc + (t.valor_cobrado || 0), 0);
+
+            return {
+                email: p.email,
+                nombre: `${p.apellido}, ${p.nombres}`,
+                especialidad: p.especialidad || 'S/D',
+                agendados,
+                realizados,
+                activosAsignados,
+                totalRecaudadoHoy,
+                totalRecaudadoPeriodo,
+                efectivo,
+                transferencia,
+                tarjeta
+            };
+        }).sort((a: any, b: any) => b.totalRecaudadoPeriodo - a.totalRecaudadoPeriodo);
+    }, [stats, turnosPeriodo, calculateStatusLocal]);
+
+    // ─── 4. CIRUGÍAS - CONTEO CLÍNICO ────────────────────────────────────────
+    const cirugiasReporte = useMemo(() => {
+        if (!stats) return { bariatricasMes: 0, bariatricasAno: 0, bariatricasPrevAno: 0, generalMes: 0, porCirujano: [], coberturaDist: [] };
+
+        const currentMonthStart = startOfMonth(now);
+        const currentYearStart = startOfMonth(new Date(now.getFullYear(), 0, 1));
+        const prevYearStart = startOfMonth(new Date(now.getFullYear() - 1, 0, 1));
+        const prevYearEnd = endOfMonth(new Date(now.getFullYear() - 1, 11, 31));
+
+        // Surgeries filter
+        const realizedSurgs = stats.rawCirugias.filter((c: any) => c.fecha_realizada);
+
+        // Bariátricas del mes actual (realizadas)
+        const bariatricasMes = realizedSurgs.filter((c: any) => {
+            const isBariatric = ['manga', 'bypass', 'sadi', 'balón', 'balon'].some(k => (c.tipo_cirugia || '').toLowerCase().includes(k));
+            return isBariatric && new Date(c.fecha_realizada) >= currentMonthStart;
+        }).length;
+
+        // Bariátricas del año actual
+        const bariatricasAno = realizedSurgs.filter((c: any) => {
+            const isBariatric = ['manga', 'bypass', 'sadi', 'balón', 'balon'].some(k => (c.tipo_cirugia || '').toLowerCase().includes(k));
+            return isBariatric && new Date(c.fecha_realizada) >= currentYearStart;
+        }).length;
+
+        // Bariátricas del año anterior (acumulado histórico del año anterior)
+        const bariatricasPrevAno = realizedSurgs.filter((c: any) => {
+            const isBariatric = ['manga', 'bypass', 'sadi', 'balón', 'balon'].some(k => (c.tipo_cirugia || '').toLowerCase().includes(k));
+            const d = new Date(c.fecha_realizada);
+            return isBariatric && d >= prevYearStart && d <= prevYearEnd;
+        }).length;
+
+        // Cirugía General del mes
+        const generalMes = realizedSurgs.filter((c: any) => {
+            const isBariatric = ['manga', 'bypass', 'sadi', 'balón', 'balon'].some(k => (c.tipo_cirugia || '').toLowerCase().includes(k));
+            return !isBariatric && new Date(c.fecha_realizada) >= currentMonthStart;
+        }).length;
+
+        // Surgeries in current period grouped by surgeon
+        const surgeonCount: Record<string, { mes: number; ano: number }> = {};
+        realizedSurgs.forEach((c: any) => {
+            const p = stats.rawPacientes.find((x: any) => x.id_paciente === c.id_paciente);
+            if (!p) return;
+            const email = p.cirujano_asignado_email;
+            if (!email) return;
+            if (!surgeonCount[email]) surgeonCount[email] = { mes: 0, ano: 0 };
+            
+            const date = new Date(c.fecha_realizada);
+            if (matchesFilter(date)) {
+                surgeonCount[email].mes++;
+            }
+            if (date.getFullYear() === now.getFullYear()) {
+                surgeonCount[email].ano++;
+            }
+        });
+
+        const porCirujano = Object.entries(surgeonCount).map(([email, count]) => {
+            const prof = stats.rawProfesionales.find((p: any) => p.email === email);
+            return {
+                nombre: prof ? `${prof.apellido}, ${prof.nombres}` : email,
+                ...count
+            };
+        }).sort((a,b) => b.mes - a.mes);
+
+        // Cobertura del mes/período filtrado
+        const coberturaCount: Record<string, number> = {};
+        cirugiasPeriodo.filter((c: any) => c.fecha_realizada).forEach((c: any) => {
+            const p = stats.rawPacientes.find((x: any) => x.id_paciente === c.id_paciente);
+            if (!p) return;
+            let os = p.obra_social || 'PARTICULAR';
+            if (p.modalidad_cobertura === 'Particular') os = 'PARTICULAR';
+            coberturaCount[os] = (coberturaCount[os] || 0) + 1;
+        });
+
+        const coberturaDist = Object.entries(coberturaCount).map(([cobertura, count]) => ({
+            cobertura,
+            count
+        })).sort((a,b) => b.count - a.count);
+
+        return { bariatricasMes, bariatricasAno, bariatricasPrevAno, generalMes, porCirujano, coberturaDist };
+    }, [stats, cirugiasPeriodo, matchesFilter, now]);
+
+    // ─── 5. GESTIÓN Y ALERTAS OPERATIVAS (Real-time) ─────────────────────────
+    const alertasOperativas = useMemo(() => {
+        if (!stats) return { altas: [], medias: [], bajas: [] };
+
+        const altas: { titulo: string; desc: string; paciente?: PacienteFiliatorio; metadata?: string }[] = [];
+        const medias: { titulo: string; desc: string; paciente?: PacienteFiliatorio; metadata?: string }[] = [];
+        const bajas: { titulo: string; desc: string; paciente?: PacienteFiliatorio; metadata?: string }[] = [];
+
+        const treintaDiasAgo = subDays(new Date(), 30);
+        const quinceDiasAgo = subDays(new Date(), 15);
+        const cuarentaYOchoHorasAgo = subDays(new Date(), 2);
+        const diezDiasAgo = subDays(new Date(), 10);
+        const mañanaStr = format(addDays(new Date(), 1), 'yyyy-MM-dd');
+
+        // 1. Carpetas Estancadas (ALTA)
+        stats.rawCarpetas.forEach((c: any) => {
+            const isStuckState = c.estado_tracking === 'Pedido Generado' || c.estado_tracking === 'Presentada a OS';
+            if (!isStuckState) return;
+            const refDate = c.estado_tracking === 'Pedido Generado' ? c.fecha_pedido : c.fecha_presentacion_os;
+            if (!refDate) return;
+            const d = new Date(refDate);
+            if (d < treintaDiasAgo) {
+                const pac = stats.rawPacientes.find((p: any) => p.id_paciente === c.id_paciente);
+                const diffDays = Math.ceil((new Date().getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+                altas.push({
+                    titulo: 'Carpeta Estancada',
+                    desc: `Carpeta en estado "${c.estado_tracking}" hace ${diffDays} días sin cambios.`,
+                    paciente: pac ? {
+                        idPaciente: pac.id_paciente,
+                        etiquetaPrincipalActiva: pac.etiqueta_activa,
+                        apellido: pac.apellido,
+                        nombres: pac.nombres,
+                        dni: pac.dni,
+                        fechaNacimiento: pac.fecha_nacimiento,
+                        direccion: pac.direccion,
+                        obraSocial: pac.obra_social,
+                        nroAfiliado: pac.nro_afiliado,
+                        telefono: pac.telefono,
+                        email: pac.email,
+                        cirujanoAsignado: pac.cirujano_asignado_email,
+                        nutricionistaAsignado: pac.nutricionista_asignado_email,
+                        psicologoAsignado: pac.psicologo_asignado_email,
+                        fechaCirugia: pac.fecha_cirugia
+                    } : undefined,
+                    metadata: `Trámite iniciado el ${format(d, 'dd/MM/yyyy')}`
+                });
+            }
+        });
+
+        // 2. Pacientes posbariátricos INMEDIATO sin control (ALTA)
+        stats.rawPacientes.forEach((pac: any) => {
+            if (pac.etiqueta_activa === 'POSBARIATRICO' && pac.fecha_cirugia) {
+                const dateCirugia = new Date(pac.fecha_cirugia);
+                const diffCirugiaDays = Math.ceil((new Date().getTime() - dateCirugia.getTime()) / (1000 * 60 * 60 * 24));
+                if (diffCirugiaDays <= 30) {
+                    // Check last control
+                    const patientEvos = stats.rawTurnos.filter((t: any) => t.id_paciente === pac.id_paciente && t.estado === 'ATENDIDO');
+                    const lastControlStr = patientEvos.length > 0
+                        ? patientEvos.map((t: any) => t.fecha_turno).sort().reverse()[0]
+                        : null;
+                    
+                    const noControl = !lastControlStr || new Date(lastControlStr) < diezDiasAgo;
+                    if (noControl) {
+                        const lastControlLabel = lastControlStr ? format(new Date(lastControlStr), 'dd/MM/yyyy') : 'Nunca';
+                        altas.push({
+                            titulo: 'Post-Op Inmediato sin Control',
+                            desc: `Paciente operado hace ${diffCirugiaDays} días sin consultas registradas en los últimos 10 días.`,
+                            paciente: {
+                                idPaciente: pac.id_paciente,
+                                etiquetaPrincipalActiva: pac.etiqueta_activa,
+                                apellido: pac.apellido,
+                                nombres: pac.nombres,
+                                dni: pac.dni,
+                                fechaNacimiento: pac.fecha_nacimiento,
+                                direccion: pac.direccion,
+                                obraSocial: pac.obra_social,
+                                nroAfiliado: pac.nro_afiliado,
+                                telefono: pac.telefono,
+                                email: pac.email,
+                                cirujanoAsignado: pac.cirujano_asignado_email,
+                                nutricionistaAsignado: pac.nutricionista_asignado_email,
+                                psicologoAsignado: pac.psicologo_asignado_email,
+                                fechaCirugia: pac.fecha_cirugia
+                            },
+                            metadata: `Último control: ${lastControlLabel}`
+                        });
+                    }
+                }
+            }
+        });
+
+        // 3. Prospectos sin respuesta (MEDIA)
+        stats.rawCrm.forEach((c: any) => {
+            if (!c.is_patient && (c.estado_seguimiento || '').toUpperCase() === 'CONTACTADO') {
+                const d = new Date(c.fecha_ingreso);
+                if (d < cuarentaYOchoHorasAgo) {
+                    medias.push({
+                        titulo: 'Prospecto sin respuesta',
+                        desc: `Prospecto en estado "${c.estado_seguimiento}" desde hace más de 48 horas sin evolución comercial.`,
+                        paciente: {
+                            idPaciente: c.id_contacto,
+                            etiquetaPrincipalActiva: 'PROSPECTO',
+                            apellido: c.apellido || 'Prospecto',
+                            nombres: c.nombres || '',
+                            dni: '',
+                            fechaNacimiento: '',
+                            obraSocial: '',
+                            nroAfiliado: '',
+                            telefono: c.telefono || '',
+                            email: c.email || '',
+                            cirujanoAsignado: '',
+                            nutricionistaAsignado: '',
+                            psicologoAsignado: ''
+                        },
+                        metadata: `Canal: ${c.canal_origen || 'WhatsApp'} · Registrado: ${format(d, 'dd/MM/yyyy')}`
+                    });
+                }
+            }
+        });
+
+        // 4. Carpetas rechazadas sin reactivar (MEDIA)
+        stats.rawCarpetas.forEach((c: any) => {
+            if (c.estado_tracking === 'Rechazada') {
+                // If fecha_autorizacion or similar is not null, we check it, but let's check since it's rejected
+                const refDate = c.fecha_presentacion_os || c.fecha_pedido;
+                if (refDate && new Date(refDate) < quinceDiasAgo) {
+                    const pac = stats.rawPacientes.find((p: any) => p.id_paciente === c.id_paciente);
+                    medias.push({
+                        titulo: 'Carpeta Rechazada Estancada',
+                        desc: `Carpeta rechazada hace más de 15 días sin cambios ni reactivación del trámite.`,
+                        paciente: pac ? {
+                            idPaciente: pac.id_paciente,
+                            etiquetaPrincipalActiva: pac.etiqueta_activa,
+                            apellido: pac.apellido,
+                            nombres: pac.nombres,
+                            dni: pac.dni,
+                            fechaNacimiento: pac.fecha_nacimiento,
+                            direccion: pac.direccion,
+                            obraSocial: pac.obra_social,
+                            nroAfiliado: pac.nro_afiliado,
+                            telefono: pac.telefono,
+                            email: pac.email,
+                            cirujanoAsignado: pac.cirujano_asignado_email,
+                            nutricionistaAsignado: pac.nutricionista_asignado_email,
+                            psicologoAsignado: pac.psicologo_asignado_email,
+                            fechaCirugia: pac.fecha_cirugia
+                        } : undefined,
+                        metadata: `Último estado: ${c.estado_tracking}`
+                    });
+                }
+            }
+        });
+
+        // 5. Pacientes inactivos por etiqueta (MEDIA)
+        // Group count of inactive patients by their stage tag
+        const inactiveCounts: Record<string, number> = {};
+        stats.rawPacientes.forEach((pac: any) => {
+            if (calculateStatusLocal(pac) === ContactoStatus.INACTIVO) {
+                const tag = pac.etiqueta_activa || 'NUEVO_INGRESO';
+                inactiveCounts[tag] = (inactiveCounts[tag] || 0) + 1;
+            }
+        });
+        Object.entries(inactiveCounts).forEach(([tag, count]) => {
+            medias.push({
+                titulo: `Inactividad en etapa: ${tag.replace(/_/g, ' ')}`,
+                desc: `Hay ${count} pacientes inactivos estancados en esta etapa clínica.`,
+                metadata: 'Se recomienda revisión comercial y recontacto'
+            });
+        });
+
+        // 6. Turnos sin confirmar (BAJA)
+        const unconfirmedCount = stats.rawTurnos.filter((t: any) => {
+            return t.fecha_turno.split('T')[0] === mañanaStr && t.estado === 'AGENDADO';
+        }).length;
+        if (unconfirmedCount > 0) {
+            bajas.push({
+                titulo: 'Turnos sin Confirmar para Mañana',
+                desc: `Hay ${unconfirmedCount} turnos programados para mañana que aún no han sido confirmados.`,
+                metadata: 'Requiere envío de recordatorios de WhatsApp'
+            });
+        }
+
+        return { altas, medias, bajas };
+    }, [stats, calculateStatusLocal]);
+
+    // Tab mapping helper
+    const renderActiveTab = () => {
+        if (!stats) return null;
+
+        switch (activeTab) {
+            case 'resumen':
+                return (
+                    <div className="space-y-6">
+                        <h3 className="text-base font-bold text-slate-800 border-b pb-2">Resumen Ejecutivo</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {/* KPI 1 */}
+                            <div className="bg-gradient-to-br from-indigo-50 to-indigo-100/30 border border-indigo-150 p-5 rounded-2xl shadow-sm hover:shadow transition-shadow">
+                                <div className="flex justify-between items-start">
+                                    <span className="text-3xl">📅</span>
+                                    <span className="text-[10px] uppercase font-bold text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-full">Últimos 7 días</span>
+                                </div>
+                                <p className="text-4xl font-extrabold text-indigo-950 mt-3">{resumenKPIs.consultasSemana}</p>
+                                <p className="text-sm font-semibold text-indigo-900 mt-1">Consultas de la semana</p>
+                                <p className="text-xs text-indigo-500 mt-1">Consultas realizadas por el equipo.</p>
+                            </div>
+
+                            {/* KPI 2 */}
+                            <div className="bg-gradient-to-br from-purple-50 to-purple-100/30 border border-purple-150 p-5 rounded-2xl shadow-sm hover:shadow transition-shadow">
+                                <div className="flex justify-between items-start">
+                                    <span className="text-3xl">👥</span>
+                                    <span className="text-[10px] uppercase font-bold text-purple-600 bg-purple-100 px-2 py-0.5 rounded-full">Últimos 7 días</span>
+                                </div>
+                                <p className="text-4xl font-extrabold text-purple-950 mt-3">{resumenKPIs.prospectosSemana}</p>
+                                <p className="text-sm font-semibold text-purple-900 mt-1">Prospectos nuevos</p>
+                                <p className="text-xs text-purple-500 mt-1">Nuevos contactos ingresados al embudo.</p>
+                            </div>
+
+                            {/* KPI 3 */}
+                            <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/30 border border-emerald-150 p-5 rounded-2xl shadow-sm hover:shadow transition-shadow">
+                                <div className="flex justify-between items-start">
+                                    <span className="text-3xl">🤝</span>
+                                    <span className="text-[10px] uppercase font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full">Últimos 7 días</span>
+                                </div>
+                                <p className="text-4xl font-extrabold text-emerald-950 mt-3">{resumenKPIs.conversionesSemana}</p>
+                                <p className="text-sm font-semibold text-emerald-900 mt-1">Conversiones de la semana</p>
+                                <p className="text-xs text-emerald-500 mt-1">Prospectos convertidos a ficha médica.</p>
+                            </div>
+
+                            {/* KPI 4 */}
+                            <div className="bg-gradient-to-br from-blue-50 to-blue-100/30 border border-blue-150 p-5 rounded-2xl shadow-sm hover:shadow transition-shadow">
+                                <div className="flex justify-between items-start">
+                                    <span className="text-3xl">🏥</span>
+                                    <span className="text-[10px] uppercase font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">Mes en curso</span>
+                                </div>
+                                <p className="text-4xl font-extrabold text-blue-950 mt-3">{resumenKPIs.cirugiasMes}</p>
+                                <p className="text-sm font-semibold text-blue-900 mt-1">Cirugías del mes</p>
+                                <p className="text-xs text-blue-500 mt-1">Bariátricas realizadas efectivamente.</p>
+                            </div>
+
+                            {/* KPI 5 */}
+                            <div className="bg-gradient-to-br from-amber-50 to-amber-100/30 border border-amber-150 p-5 rounded-2xl shadow-sm hover:shadow transition-shadow">
+                                <div className="flex justify-between items-start">
+                                    <span className="text-3xl">⏳</span>
+                                    <span className="text-[10px] uppercase font-bold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">Tiempo Real</span>
+                                </div>
+                                <p className="text-4xl font-extrabold text-amber-950 mt-3">{resumenKPIs.pacientesInactivos}</p>
+                                <p className="text-sm font-semibold text-amber-900 mt-1">Pacientes inactivos</p>
+                                <p className="text-xs text-amber-500 mt-1">Sin turnos ni consultas en su ventana pautada.</p>
+                            </div>
+
+                            {/* KPI 6 */}
+                            <div className="bg-gradient-to-br from-red-50 to-red-100/30 border border-red-150 p-5 rounded-2xl shadow-sm hover:shadow transition-shadow">
+                                <div className="flex justify-between items-start">
+                                    <span className="text-3xl">📂</span>
+                                    <span className="text-[10px] uppercase font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded-full">Tiempo Real</span>
+                                </div>
+                                <p className="text-4xl font-extrabold text-red-950 mt-3">{resumenKPIs.carpetasAtencion}</p>
+                                <p className="text-sm font-semibold text-red-900 mt-1">Carpetas estancadas</p>
+                                <p className="text-xs text-red-500 mt-1">Trámites demorados hace más de 30 días.</p>
+                            </div>
+                        </div>
+                    </div>
+                );
+
+            case 'embudo':
+                return (
+                    <div className="space-y-6">
+                        <div className="bg-white rounded-xl border p-5">
+                            <h3 className="text-base font-bold text-slate-800 mb-4">Embudo Principal (Mes en Curso)</h3>
+                            <div className="space-y-3 max-w-xl mx-auto">
+                                {funnelStages.map((stage, idx) => (
+                                    <div key={stage.name} className="relative">
+                                        <div className="flex items-center justify-between p-3.5 bg-slate-50 border rounded-xl hover:bg-slate-100 transition-colors">
+                                            <div className="flex items-center gap-2">
+                                                <span className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-bold">{idx + 1}</span>
+                                                <span className="text-sm font-medium text-slate-700">{stage.name}</span>
+                                            </div>
+                                            <div className="text-right">
+                                                <span className="text-base font-bold text-slate-900">{stage.value}</span>
+                                                {idx > 0 && <span className="text-xs text-emerald-600 font-semibold ml-2">({stage.percentOfPrev}%)</span>}
+                                            </div>
+                                        </div>
+                                        {idx < funnelStages.length - 1 && (
+                                            <div className="flex justify-center my-0.5">
+                                                <svg className="w-5 h-5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7-7-7" />
+                                                </svg>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="bg-white rounded-xl border p-5">
+                            <h3 className="text-base font-bold text-slate-800 mb-4">Tiempos Promedio de Transición</h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {[
+                                    { label: 'Prospecto a Nuevo Ingreso', days: transitionTimes.propToNew, desc: 'Días desde el contacto comercial hasta agendar turno.' },
+                                    { label: 'Ingreso a Pre-Bariátrico Inicial', days: transitionTimes.newToPre, desc: 'Días promedio en iniciar nutrición o psicología.' },
+                                    { label: 'Presentada a Autorizada (OS)', days: transitionTimes.folderToAuth, desc: 'Días que demora la obra social/prepaga en auditar.' },
+                                    { label: 'Definir Cirugía a Quirófano', days: transitionTimes.defToPeri, desc: 'Días entre estar apto y la cirugía real.' }
+                                ].map((item) => (
+                                    <div key={item.label} className="p-4 bg-slate-50 rounded-xl border flex justify-between items-center">
+                                        <div>
+                                            <h4 className="font-semibold text-sm text-slate-700">{item.label}</h4>
+                                            <p className="text-xs text-slate-500 mt-0.5">{item.desc}</p>
+                                        </div>
+                                        <div className="text-right whitespace-nowrap ml-4">
+                                            <span className="text-2xl font-black text-indigo-700">{item.days}</span>
+                                            <span className="text-xs font-semibold text-indigo-500 ml-0.5">días</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                );
+
+            case 'profesionales':
+                return (
+                    <div className="space-y-6">
+                        <div className="bg-white rounded-xl border p-5 overflow-x-auto">
+                            <h3 className="text-base font-bold text-slate-800 mb-4">Consultas y Actividad</h3>
+                            <table className="w-full text-xs">
+                                <thead>
+                                    <tr className="text-slate-400 border-b text-left">
+                                        <th className="pb-2">Profesional</th>
+                                        <th className="pb-2">Especialidad</th>
+                                        <th className="pb-2 text-right">Agendados</th>
+                                        <th className="pb-2 text-right">Realizados</th>
+                                        <th className="pb-2 text-right">Ausentismo</th>
+                                        <th className="pb-2 text-right">Activos Asignados</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {profProduction.map((p) => {
+                                        const absPct = p.agendados ? Math.round(((p.agendados - p.realizados) / p.agendados) * 100) : 0;
+                                        return (
+                                            <tr key={p.email} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                                                <td className="py-2.5 font-medium text-slate-800">{p.nombre}</td>
+                                                <td className="py-2.5 text-slate-600">{p.especialidad}</td>
+                                                <td className="py-2.5 text-right font-medium">{p.agendados}</td>
+                                                <td className="py-2.5 text-right font-semibold text-green-700">{p.realizados}</td>
+                                                <td className="py-2.5 text-right text-amber-600 font-semibold">{absPct}%</td>
+                                                <td className="py-2.5 text-right text-slate-700 font-medium">{p.activosAsignados} pac.</td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="bg-white rounded-xl border p-5 overflow-x-auto">
+                            <h3 className="text-base font-bold text-slate-800 mb-4">Ingresos por Consultas</h3>
+                            <table className="w-full text-xs">
+                                <thead>
+                                    <tr className="text-slate-400 border-b text-left">
+                                        <th className="pb-2">Profesional</th>
+                                        <th className="pb-2 text-right">Facturado Hoy</th>
+                                        <th className="pb-2 text-right">Efectivo (Mes)</th>
+                                        <th className="pb-2 text-right">Transf. (Mes)</th>
+                                        <th className="pb-2 text-right">Tarjeta (Mes)</th>
+                                        <th className="pb-2 text-right">Total (Período)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {profProduction.map((p) => (
+                                        <tr key={p.email} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                                            <td className="py-2.5 font-medium text-slate-800">{p.nombre}</td>
+                                            <td className="py-2.5 text-right font-semibold text-slate-900">${p.totalRecaudadoHoy.toLocaleString('es-AR')}</td>
+                                            <td className="py-2.5 text-right text-green-700">${p.efectivo.toLocaleString('es-AR')}</td>
+                                            <td className="py-2.5 text-right text-amber-700">${p.transferencia.toLocaleString('es-AR')}</td>
+                                            <td className="py-2.5 text-right text-purple-700">${p.tarjeta.toLocaleString('es-AR')}</td>
+                                            <td className="py-2.5 text-right font-bold text-indigo-700">${p.totalRecaudadoPeriodo.toLocaleString('es-AR')}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                );
+
+            case 'cirugias':
+                return (
+                    <div className="space-y-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                            <div className="bg-slate-50 border p-4 rounded-xl text-center">
+                                <p className="text-3xl font-black text-indigo-950">{cirugiasReporte.bariatricasMes}</p>
+                                <p className="text-xs font-semibold text-slate-500 mt-1 uppercase">Bariátricas del Mes</p>
+                            </div>
+                            <div className="bg-slate-50 border p-4 rounded-xl text-center">
+                                <p className="text-3xl font-black text-indigo-950">{cirugiasReporte.bariatricasAno}</p>
+                                <p className="text-xs font-semibold text-slate-500 mt-1 uppercase">Bariátricas del Año</p>
+                                <p className="text-[10px] text-slate-400 mt-0.5">Vs anterior: {cirugiasReporte.bariatricasPrevAno} cirugías</p>
+                            </div>
+                            <div className="bg-slate-50 border p-4 rounded-xl text-center">
+                                <p className="text-3xl font-black text-indigo-950">{cirugiasReporte.generalMes}</p>
+                                <p className="text-xs font-semibold text-slate-500 mt-1 uppercase">Cirugías Generales (Mes)</p>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="bg-white rounded-xl border p-5">
+                                <h3 className="text-base font-bold text-slate-800 mb-4">Cirugías por Cirujano</h3>
+                                <table className="w-full text-xs">
+                                    <thead>
+                                        <tr className="text-slate-400 border-b text-left">
+                                            <th className="pb-2">Cirujano</th>
+                                            <th className="pb-2 text-right">Mes actual</th>
+                                            <th className="pb-2 text-right">Año actual</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {cirugiasReporte.porCirujano.map((p: any) => (
+                                            <tr key={p.nombre} className="border-b border-slate-50">
+                                                <td className="py-2 font-medium text-slate-700">{p.nombre}</td>
+                                                <td className="py-2 text-right font-bold text-slate-900">{p.mes}</td>
+                                                <td className="py-2 text-right text-indigo-600 font-semibold">{p.ano}</td>
+                                            </tr>
+                                        ))}
+                                        {cirugiasReporte.porCirujano.length === 0 && (
+                                            <tr>
+                                                <td colSpan={3} className="py-4 text-center text-slate-400">Sin cirugías registradas en este período.</td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div className="bg-white rounded-xl border p-5">
+                                <h3 className="text-base font-bold text-slate-800 mb-4">Cobertura de Cirugías</h3>
+                                <table className="w-full text-xs">
+                                    <thead>
+                                        <tr className="text-slate-400 border-b text-left">
+                                            <th className="pb-2">Obra Social / Cobertura</th>
+                                            <th className="pb-2 text-right">Cantidad de Cirugías</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {cirugiasReporte.coberturaDist.map((c: any) => (
+                                            <tr key={c.cobertura} className="border-b border-slate-50">
+                                                <td className="py-2 font-medium text-slate-700">{c.cobertura}</td>
+                                                <td className="py-2 text-right font-bold text-slate-900">{c.count}</td>
+                                            </tr>
+                                        ))}
+                                        {cirugiasReporte.coberturaDist.length === 0 && (
+                                            <tr>
+                                                <td colSpan={2} className="py-4 text-center text-slate-400">Sin datos de cobertura para cirugías este período.</td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                );
+
+            case 'alertas':
+                return (
+                    <div className="space-y-6">
+                        <div className="bg-white rounded-xl border p-5">
+                            <h3 className="text-base font-bold text-slate-800 mb-4 border-b pb-2">Semáforo de Gestión y Alertas</h3>
+                            
+                            <div className="space-y-4">
+                                {/* Altas (Rojo) */}
+                                <div>
+                                    <h4 className="text-xs font-bold text-red-600 uppercase tracking-wider mb-2 flex items-center gap-1">
+                                        <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse"></span>
+                                        Urgencia Alta
+                                    </h4>
+                                    <div className="space-y-2">
+                                        {alertasOperativas.altas.map((a: any, idx: number) => (
+                                            <div key={idx} className="p-3.5 bg-red-50 border border-red-150 rounded-xl flex flex-wrap justify-between items-start gap-2 shadow-sm">
+                                                <div>
+                                                    <p className="font-bold text-red-950 text-sm">{a.titulo}</p>
+                                                    <p className="text-xs text-red-800 mt-0.5">{a.desc}</p>
+                                                    <p className="text-[10px] text-red-600 font-semibold mt-1">{a.metadata}</p>
+                                                </div>
+                                                {a.paciente && (
+                                                    <div className="flex gap-2">
+                                                        <button onClick={() => { onClose(); onSelectPatient(a.paciente); }} className="text-xs font-bold text-red-700 bg-red-100 hover:bg-red-200 px-3 py-1.5 rounded-lg border border-red-200 transition-colors">
+                                                            Abrir Ficha
+                                                        </button>
+                                                        {a.paciente.telefono && (
+                                                            <a 
+                                                                href={`https://wa.me/${a.paciente.telefono.replace(/[^\d]/g, '')}`} 
+                                                                target="_blank" 
+                                                                rel="noopener noreferrer" 
+                                                                className="text-xs font-bold text-white bg-green-600 hover:bg-green-700 px-3 py-1.5 rounded-lg flex items-center gap-1 shadow transition-colors"
+                                                            >
+                                                                WhatsApp
+                                                            </a>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                        {alertasOperativas.altas.length === 0 && (
+                                            <p className="text-xs text-slate-400 italic">No hay alertas de alta prioridad activas.</p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Medias (Amarillo) */}
+                                <div className="pt-4 border-t border-slate-100">
+                                    <h4 className="text-xs font-bold text-amber-600 uppercase tracking-wider mb-2 flex items-center gap-1">
+                                        <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                                        Urgencia Media
+                                    </h4>
+                                    <div className="space-y-2">
+                                        {alertasOperativas.medias.map((a: any, idx: number) => (
+                                            <div key={idx} className="p-3.5 bg-amber-50 border border-amber-150 rounded-xl flex flex-wrap justify-between items-start gap-2">
+                                                <div>
+                                                    <p className="font-bold text-amber-950 text-sm">{a.titulo}</p>
+                                                    <p className="text-xs text-amber-800 mt-0.5">{a.desc}</p>
+                                                    <p className="text-[10px] text-amber-600 font-semibold mt-1">{a.metadata}</p>
+                                                </div>
+                                                {a.paciente && (
+                                                    <div className="flex gap-2">
+                                                        <button onClick={() => { onClose(); onSelectPatient(a.paciente); }} className="text-xs font-bold text-amber-700 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-lg border border-amber-200 transition-colors">
+                                                            Abrir Ficha
+                                                        </button>
+                                                        {a.paciente.telefono && (
+                                                            <a 
+                                                                href={`https://wa.me/${a.paciente.telefono.replace(/[^\d]/g, '')}`} 
+                                                                target="_blank" 
+                                                                rel="noopener noreferrer" 
+                                                                className="text-xs font-bold text-white bg-green-600 hover:bg-green-700 px-3 py-1.5 rounded-lg flex items-center gap-1 shadow transition-colors"
+                                                            >
+                                                                WhatsApp
+                                                            </a>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                        {alertasOperativas.medias.length === 0 && (
+                                            <p className="text-xs text-slate-400 italic">No hay alertas de media prioridad activas.</p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Bajas (Azul) */}
+                                <div className="pt-4 border-t border-slate-100">
+                                    <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-2 flex items-center gap-1">
+                                        <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+                                        Urgencia Baja
+                                    </h4>
+                                    <div className="space-y-2">
+                                        {alertasOperativas.bajas.map((a: any, idx: number) => (
+                                            <div key={idx} className="p-3.5 bg-blue-50 border border-blue-150 rounded-xl">
+                                                <p className="font-bold text-blue-950 text-sm">{a.titulo}</p>
+                                                <p className="text-xs text-blue-800 mt-0.5">{a.desc}</p>
+                                                <p className="text-[10px] text-blue-600 font-semibold mt-1">{a.metadata}</p>
+                                            </div>
+                                        ))}
+                                        {alertasOperativas.bajas.length === 0 && (
+                                            <p className="text-xs text-slate-400 italic">No hay alertas de baja prioridad activas.</p>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+
+            default:
+                return null;
+        }
     };
 
     return (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
-                <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-indigo-700 to-indigo-600">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border">
+                <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-indigo-700 to-indigo-600 text-white">
                     <div>
-                        <h2 className="text-lg font-bold text-white">Estadísticas Generales</h2>
-                        <p className="text-xs text-indigo-200 mt-0.5">Solo visible para administradores</p>
+                        <h2 className="text-lg font-bold">Estadísticas y Control de Gestión</h2>
+                        <p className="text-xs text-indigo-200 mt-0.5">Indicadores comerciales, clínicos y alertas operativas</p>
                     </div>
-                    <button onClick={onClose} className="text-indigo-200 hover:text-white text-2xl leading-none">&times;</button>
+                    <button onClick={onClose} className="text-indigo-200 hover:text-white text-2xl leading-none transition-colors">&times;</button>
                 </div>
 
-                <div className="flex-grow overflow-y-auto p-6">
-                    {isLoading && <div className="text-center py-12 text-slate-500">Cargando estadísticas...</div>}
-                    {error && <div className="text-center py-12 text-red-500">{error}</div>}
-                    {stats && !isLoading && (
-                        <div className="space-y-6">
-                            {/* Month/Year selectors */}
-                            <div className="flex gap-4 mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200 no-print flex-wrap">
-                                <div className="flex items-center gap-2">
-                                    <label className="text-sm font-semibold text-slate-700">Mes:</label>
-                                    <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value === 'todos' ? 'todos' : parseInt(e.target.value, 10))} className="rounded-md border-slate-300 text-sm">
-                                        <option value="todos">Todos los meses</option>
-                                        {meses.map((m, idx) => <option key={m} value={idx}>{m}</option>)}
-                                    </select>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <label className="text-sm font-semibold text-slate-700">Año:</label>
-                                    <select value={selectedYear} onChange={e => setSelectedYear(e.target.value === 'todos' ? 'todos' : parseInt(e.target.value, 10))} className="rounded-md border-slate-300 text-sm">
-                                        <option value="todos">Todos los años</option>
-                                        {years.map(y => <option key={y} value={y}>{y}</option>)}
-                                    </select>
-                                </div>
-                            </div>
+                {/* Filtros de período */}
+                <div className="px-6 py-3 bg-slate-50 border-b flex flex-wrap gap-4 items-center justify-between no-print">
+                    <div className="flex flex-wrap gap-4 items-center">
+                        <div className="flex items-center gap-2">
+                            <label className="text-xs font-bold text-slate-600 uppercase">Mes:</label>
+                            <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value === 'todos' ? 'todos' : parseInt(e.target.value, 10))} className="rounded-md border-slate-350 text-xs p-1 text-slate-700 bg-white">
+                                <option value="todos">Todos los meses</option>
+                                {meses.map((m, idx) => <option key={m} value={idx}>{m}</option>)}
+                            </select>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <label className="text-xs font-bold text-slate-600 uppercase">Año:</label>
+                            <select value={selectedYear} onChange={e => setSelectedYear(e.target.value === 'todos' ? 'todos' : parseInt(e.target.value, 10))} className="rounded-md border-slate-350 text-xs p-1 text-slate-700 bg-white">
+                                <option value="todos">Todos los años</option>
+                                {years.map(y => <option key={y} value={y}>{y}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                </div>
 
-                            {/* KPIs principales */}
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                                {[
-                                    { label: 'Pacientes Nuevos', value: pacientesCreadosMes, color: 'bg-blue-50 text-blue-700 border-blue-200' },
-                                    { label: 'Prospectos Nuevos', value: nuevosProspectosMes, color: 'bg-purple-50 text-purple-700 border-purple-200' },
-                                    { label: 'Turnos del Período', value: filteredTurnos.length, color: 'bg-green-50 text-green-700 border-green-200' },
-                                    { label: 'Atendidos', value: filteredTurnos.filter((t: any) => t.estado === 'ATENDIDO').length, color: 'bg-amber-50 text-amber-700 border-amber-200' },
-                                ].map(kpi => (
-                                    <div key={kpi.label} className={`rounded-xl border p-4 text-center ${kpi.color}`}>
-                                        <p className="text-3xl font-bold">{kpi.value}</p>
-                                        <p className="text-xs font-medium mt-1">{kpi.label}</p>
-                                    </div>
-                                ))}
-                            </div>
+                {/* Tabs */}
+                <div className="px-6 bg-slate-50 border-b flex space-x-1 no-print">
+                    {[
+                        { id: 'resumen', label: 'Resumen Ejecutivo' },
+                        { id: 'embudo', label: 'Embudo & Conversión' },
+                        { id: 'profesionales', label: 'Actividad del Equipo' },
+                        { id: 'cirugias', label: 'Reporte de Cirugías' },
+                        { id: 'alertas', label: 'Alertas & Semáforo' }
+                    ].map(tab => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id as any)}
+                            className={`px-4 py-3 text-xs font-bold transition-all border-b-2 ${activeTab === tab.id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                        >
+                            {tab.label}
+                        </button>
+                    ))}
+                </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {/* Consultas de Primera Vez */}
-                                <div className="bg-white rounded-lg border p-4">
-                                    <h3 className="font-semibold text-slate-700 mb-1">Consultas de Primera Vez</h3>
-                                    <p className="text-xs text-slate-500 mb-4">Primer turno en el sistema para cada paciente en el período seleccionado.</p>
-                                    <div className="grid grid-cols-3 gap-2 text-center">
-                                        <div className="bg-emerald-50 text-emerald-800 p-3 rounded-lg border border-emerald-150">
-                                            <p className="text-2xl font-bold">{clasificacionPrimeras.bariatricos}</p>
-                                            <p className="text-xs font-semibold mt-1">Bariátricos</p>
-                                        </div>
-                                        <div className="bg-sky-50 text-sky-800 p-3 rounded-lg border border-sky-150">
-                                            <p className="text-2xl font-bold">{clasificacionPrimeras.ttoIndividual}</p>
-                                            <p className="text-xs font-semibold mt-1">Tratamiento Individual</p>
-                                        </div>
-                                        <div className="bg-amber-50 text-amber-800 p-3 rounded-lg border border-amber-150">
-                                            <p className="text-2xl font-bold">{clasificacionPrimeras.cirugiaGeneral}</p>
-                                            <p className="text-xs font-semibold mt-1">Cirugía General</p>
-                                        </div>
-                                    </div>
-                                    <div className="mt-4 pt-3 border-t flex justify-between text-sm font-semibold text-slate-700 px-1">
-                                        <span>Total Primeras Consultas:</span>
-                                        <span>{primerasConsultasMes.length}</span>
-                                    </div>
-                                </div>
-
-                                {/* Pacientes por etapa */}
-                                <div className="bg-white rounded-lg border p-4">
-                                    <h3 className="font-semibold text-slate-700 mb-3">Pacientes por etapa</h3>
-                                    <div className="space-y-2">
-                                        {Object.entries(stats.pacientesPorEtapa as Record<string,number>).sort(([,a],[,b]) => b-a).map(([etapa, count]) => (
-                                            <div key={etapa} className="flex items-center gap-2">
-                                                <div className="flex-grow bg-slate-100 rounded-full h-5 overflow-hidden">
-                                                    <div className="bg-indigo-500 h-full rounded-full" style={{ width: `${Math.min(100, (count / Math.max(...Object.values(stats.pacientesPorEtapa as Record<string,number>))) * 100)}%` }} />
-                                                </div>
-                                                <span className="text-xs text-slate-600 w-32 truncate">{etapaLabels[etapa] ?? etapa}</span>
-                                                <span className="text-xs font-bold text-slate-800 w-6 text-right">{count}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Turnos por estado */}
-                                <div className="bg-white rounded-lg border p-4">
-                                    <h3 className="font-semibold text-slate-700 mb-3">Turnos por estado</h3>
-                                    <div className="space-y-2">
-                                        {Object.entries(turnosPorEstado).sort(([,a],[,b]) => b-a).map(([estado, count]) => {
-                                            const colorMap: Record<string,string> = { ATENDIDO: 'bg-green-500', CANCELADO: 'bg-red-500', AUSENTE: 'bg-amber-500', AGENDADO: 'bg-blue-500', CONFIRMADO: 'bg-indigo-500', EN_ESPERA: 'bg-purple-500' };
-                                            return (
-                                                <div key={estado} className="flex items-center gap-2">
-                                                    <div className="flex-grow bg-slate-100 rounded-full h-5 overflow-hidden">
-                                                        <div className={`${colorMap[estado] ?? 'bg-slate-400'} h-full rounded-full`} style={{ width: `${Math.min(100, (count / Math.max(1, ...Object.values(turnosPorEstado))) * 100)}%` }} />
-                                                    </div>
-                                                    <span className="text-xs text-slate-600 w-32 truncate">{estado}</span>
-                                                    <span className="text-xs font-bold text-slate-800 w-6 text-right">{count}</span>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-
-                                {/* Por profesional */}
-                                <div className="bg-white rounded-lg border p-4">
-                                    <h3 className="font-semibold text-slate-700 mb-3">Turnos por profesional</h3>
-                                    {turnosPorProfesional.length === 0
-                                        ? <p className="text-xs text-slate-400">Sin datos de turnos para este período.</p>
-                                        : (
-                                            <table className="w-full text-xs">
-                                                <thead><tr className="text-slate-400 border-b"><th className="text-left pb-1">Profesional</th><th className="text-right pb-1">Atend.</th><th className="text-right pb-1">Cancel.</th><th className="text-right pb-1">Ausente</th></tr></thead>
-                                                <tbody>
-                                                    {turnosPorProfesional.map((p: any) => (
-                                                        <tr key={p.profesional} className="border-b border-slate-50">
-                                                            <td className="py-1 text-slate-700 truncate max-w-[120px]">{p.profesional}</td>
-                                                            <td className="py-1 text-right text-green-600 font-semibold">{p.atendidos}</td>
-                                                            <td className="py-1 text-right text-red-500">{p.cancelados}</td>
-                                                            <td className="py-1 text-right text-amber-500">{p.ausentes}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        )
-                                    }
-                                </div>
-                            </div>
+                {/* Contenido principal */}
+                <div className="flex-grow overflow-y-auto p-6 bg-slate-50/50">
+                    {isLoading && (
+                        <div className="flex flex-col items-center justify-center py-20 text-slate-500">
+                            <span className="animate-spin text-3xl mb-3">⏳</span>
+                            <p className="text-sm font-semibold">Cargando tablero de control...</p>
                         </div>
                     )}
+                    {error && <div className="text-center py-12 text-red-500 font-semibold">{error}</div>}
+                    
+                    {!isLoading && !error && stats && renderActiveTab()}
+                </div>
+
+                <div className="p-4 bg-slate-50 border-t flex justify-end space-x-3 no-print">
+                    <button onClick={() => window.print()} className="px-4 py-2 text-xs font-bold text-slate-700 bg-white border rounded-lg hover:bg-slate-50 shadow-sm transition-all">Imprimir Reporte</button>
+                    <button onClick={onClose} className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow transition-all">Cerrar</button>
                 </div>
             </div>
         </div>
@@ -1757,7 +2520,7 @@ export function CrmDashboard({ onSelectPatient, selectedPatient }: CrmDashboardP
             {activeModal === 'lost' && <MarkAsLostModal onClose={() => setActiveModal(null)} patient={selectedContacto} onConfirm={handleMarkAsLost} />}
             {activeModal === 'new-prospect' && <NewProspectModal onClose={() => setActiveModal(null)} onSuccess={() => { fetchData(); setActiveModal(null); }} />}
             {activeModal === 'new-patient' && <NewPatientModal onClose={() => setActiveModal(null)} onSuccess={() => { fetchData(); setActiveModal(null); setActiveView('not-operated'); }} />}
-            {activeModal === 'estadisticas' && <EstadisticasModal onClose={() => setActiveModal(null)} />}
+            {activeModal === 'estadisticas' && <EstadisticasModal onClose={() => setActiveModal(null)} onSelectPatient={onSelectPatient} />}
             {activeModal === 'convert-prospect' && selectedContacto && (
     <NewPatientModal
         onClose={() => setActiveModal(null)}
@@ -2574,13 +3337,16 @@ const LiquidacionDiariaModal = ({ onClose }: { onClose: () => void }) => {
     const turnosAtendidos = turnosFiltrados.filter(t => t.estado === EstadoTurnoDia.ATENDIDO);
     const summary = useMemo(() => {
         const totalRecaudado = turnosAtendidos.reduce((acc, t) => acc + (t.valorCobrado || 0), 0);
+        const totalEfectivo = turnosAtendidos.filter(t => t.metodoPago === 'Efectivo').reduce((acc, t) => acc + (t.valorCobrado || 0), 0);
+        const totalTransferencia = turnosAtendidos.filter(t => t.metodoPago === 'Transferencia').reduce((acc, t) => acc + (t.valorCobrado || 0), 0);
+        const totalTarjeta = turnosAtendidos.filter(t => t.metodoPago === 'Tarjeta').reduce((acc, t) => acc + (t.valorCobrado || 0), 0);
         const porProfesional = turnosAtendidos.reduce<Record<string, { count: number, total: number }>>((acc, t) => {
             if (!acc[t.profesionalEmail]) acc[t.profesionalEmail] = { count: 0, total: 0 };
             acc[t.profesionalEmail].count++;
             acc[t.profesionalEmail].total += (t.valorCobrado || 0);
             return acc;
         }, {});
-        return { totalRecaudado, porProfesional };
+        return { totalRecaudado, totalEfectivo, totalTransferencia, totalTarjeta, porProfesional };
     }, [turnosAtendidos]);
 
     return (
@@ -2622,9 +3388,12 @@ const LiquidacionDiariaModal = ({ onClose }: { onClose: () => void }) => {
                     ) : (
                         <div>
                             <h4 className="text-lg font-semibold mb-2">Resumen General</h4>
-                            <div className="grid grid-cols-2 gap-4 mb-6">
-                                <div className="p-4 bg-blue-50 rounded-lg"><p className="text-sm text-blue-800">Pacientes Atendidos</p><p className="text-2xl font-bold text-blue-900">{turnosAtendidos.length}</p></div>
-                                <div className="p-4 bg-green-50 rounded-lg"><p className="text-sm text-green-800">Total Recaudado</p><p className="text-2xl font-bold text-green-900">${summary.totalRecaudado.toLocaleString('es-AR')}</p></div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+                                <div className="p-4 bg-blue-50 rounded-lg"><p className="text-sm text-blue-800 font-medium">Pacientes Atendidos</p><p className="text-2xl font-bold text-blue-900">{turnosAtendidos.length}</p></div>
+                                <div className="p-4 bg-green-50 rounded-lg"><p className="text-sm text-green-800 font-medium">Efectivo</p><p className="text-2xl font-bold text-green-900">${summary.totalEfectivo.toLocaleString('es-AR')}</p></div>
+                                <div className="p-4 bg-amber-50 rounded-lg"><p className="text-sm text-amber-800 font-medium">Transferencia</p><p className="text-2xl font-bold text-amber-900">${summary.totalTransferencia.toLocaleString('es-AR')}</p></div>
+                                <div className="p-4 bg-purple-50 rounded-lg"><p className="text-sm text-purple-800 font-medium">Tarjeta</p><p className="text-2xl font-bold text-purple-900">${summary.totalTarjeta.toLocaleString('es-AR')}</p></div>
+                                <div className="p-4 bg-indigo-50 rounded-lg"><p className="text-sm text-indigo-800 font-medium">Total Recaudado</p><p className="text-2xl font-bold text-indigo-900">${summary.totalRecaudado.toLocaleString('es-AR')}</p></div>
                             </div>
                             <h4 className="text-lg font-semibold mb-2">Detalle por Profesional</h4>
                             <div className="space-y-4 mb-6">
@@ -2641,14 +3410,27 @@ const LiquidacionDiariaModal = ({ onClose }: { onClose: () => void }) => {
                             ) : (
                                 <div className="overflow-x-auto border rounded-lg">
                                     <table className="min-w-full divide-y divide-slate-200 text-sm">
-                                        <thead className="bg-slate-100"><tr><th className="px-4 py-2 text-left">Hora</th><th className="px-4 py-2 text-left">Paciente</th><th className="px-4 py-2 text-left">Profesional</th><th className="px-4 py-2 text-right">Valor</th></tr></thead>
+                                        <thead className="bg-slate-100">
+                                            <tr>
+                                                <th className="px-4 py-2 text-left">Hora</th>
+                                                <th className="px-4 py-2 text-left">Paciente</th>
+                                                <th className="px-4 py-2 text-left">Profesional</th>
+                                                <th className="px-4 py-2 text-left">Método</th>
+                                                <th className="px-4 py-2 text-right">Valor</th>
+                                            </tr>
+                                        </thead>
                                         <tbody>
                                             {turnosAtendidos.filter(t => t.valorCobrado && t.valorCobrado > 0).map(t => (
                                                 <tr key={t.idTurno}>
                                                     <td className="px-4 py-2">{format(new Date(t.fechaTurno), 'HH:mm')}</td>
                                                     <td className="px-4 py-2">{t.paciente.apellido}, {t.paciente.nombres}</td>
                                                     <td className="px-4 py-2">{getProfesionalNombre(t.profesionalEmail)}</td>
-                                                    <td className="px-4 py-2 text-right">${(t.valorCobrado || 0).toLocaleString('es-AR')}</td>
+                                                    <td className="px-4 py-2">
+                                                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+                                                            {t.metodoPago || 'Sin reg.'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-2 text-right font-medium text-slate-900">${(t.valorCobrado || 0).toLocaleString('es-AR')}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -2805,7 +3587,7 @@ const TorreDeControl = ({ onSelectPatient }: { onSelectPatient: (patient: Pacien
         .map(prof => ({
             ...prof,
             turnos: turnos
-                .filter(t => t.profesionalEmail === prof.email)
+                .filter(t => t.profesionalEmail === prof.email && t.estado !== EstadoTurnoDia.CANCELADO)
                 .sort((a, b) => new Date(a.fechaTurno).getTime() - new Date(b.fechaTurno).getTime()),
         }))
         .filter(prof => prof.turnos.length > 0); // ← solo profesionales con turnos ese día
@@ -2881,9 +3663,12 @@ const TorreDeControl = ({ onSelectPatient }: { onSelectPatient: (patient: Pacien
                                                                 <div className="flex gap-2">
                                                                     <button 
                                                                         onClick={() => setTurnoAReagendar(turno)} 
-                                                                        className="text-[10px] text-indigo-600 hover:text-indigo-900 font-semibold"
+                                                                        title="Reagendar"
+                                                                        className="text-indigo-600 hover:text-indigo-900 transition-colors p-0.5 rounded-full hover:bg-indigo-50"
                                                                     >
-                                                                        Reagendar
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                                                            <path d="m2.695 14.762-1.262 3.155a.5.5 0 0 0 .65.65l3.155-1.262a4 4 0 0 0 1.343-.886L17.5 5.501a2.121 2.121 0 0 0-3-3L3.58 13.419a4 4 0 0 0-.885 1.344Z" />
+                                                                        </svg>
                                                                     </button>
                                                                     <button 
                                                                         onClick={() => {
@@ -2891,9 +3676,12 @@ const TorreDeControl = ({ onSelectPatient }: { onSelectPatient: (patient: Pacien
                                                                                 handleUpdateTurno(turno.idTurno, { estado: EstadoTurnoDia.CANCELADO });
                                                                             }
                                                                         }} 
-                                                                        className="text-[10px] text-red-600 hover:text-red-900 font-semibold"
+                                                                        title="Cancelar Turno"
+                                                                        className="text-red-600 hover:text-red-900 transition-colors p-0.5 rounded-full hover:bg-red-50"
                                                                     >
-                                                                        Cancelar
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                                                            <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+                                                                        </svg>
                                                                     </button>
                                                                 </div>
                                                             )}
@@ -2922,7 +3710,18 @@ const TorreDeControl = ({ onSelectPatient }: { onSelectPatient: (patient: Pacien
                                                             </span>
                                                         </div>
                                                     </div>
-                                                    <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${estadoInfo.colorFondo} ml-2`}>{estadoInfo.texto}</span>
+                                                    <div className="flex flex-col items-end gap-1 ml-2">
+                                                        <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${estadoInfo.colorFondo}`}>{estadoInfo.texto}</span>
+                                                        {turno.estado === EstadoTurnoDia.EN_ESPERA && (
+                                                            <button 
+                                                                onClick={() => handleUpdateTurno(turno.idTurno, { estado: EstadoTurnoDia.AGENDADO, horaLlegada: null })}
+                                                                className="text-[9px] text-slate-500 hover:text-indigo-600 underline"
+                                                                title="Revertir check-in de llegada"
+                                                            >
+                                                                (Deshacer)
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </div>
                                                 <div className="grid grid-cols-12 gap-1 text-xs">
                                                     <div className="col-span-4">
@@ -2933,9 +3732,10 @@ const TorreDeControl = ({ onSelectPatient }: { onSelectPatient: (patient: Pacien
                                                             <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-1"><span className="text-gray-500">$</span></div>
                                                             <input type="text" inputMode="decimal" defaultValue={turno.valorCobrado || ''} onChange={e => debouncedValorUpdate(turno.idTurno, parseFloat(e.target.value) || 0)} onBlur={e => handleUpdateTurno(turno.idTurno, { valorCobrado: parseFloat(e.target.value) || 0 })} placeholder="Valor" className="w-full p-1 pl-4 compact-input rounded border-slate-300" />
                                                         </div>
-                                                        <select value={turno.metodoPago || ''} onChange={e => handleUpdateTurno(turno.idTurno, { metodoPago: e.target.value as any })} className="p-1 compact-input rounded border-slate-300">
+                                                        <select value={turno.metodoPago || ''} onChange={e => handleUpdateTurno(turno.idTurno, { metodoPago: e.target.value as any })} className="p-1 compact-input rounded border-slate-300 text-xs bg-white">
                                                             <option value="">...</option>
                                                             <option value="Efectivo">Efectivo</option>
+                                                            <option value="Transferencia">Transferencia</option>
                                                             <option value="Tarjeta">Tarjeta</option>
                                                         </select>
                                                     </div>

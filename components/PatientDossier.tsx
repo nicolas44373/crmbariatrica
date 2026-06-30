@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext, useCallback, useMemo, useRef } 
 import { PacienteCompleto, EtiquetaFlujo, UserRole, CirugiaTipo, Profesional, Turno, ConfiguracionGeneral, DiaSemana, TurnoConPaciente, EstadoTurnoDia, PacienteFiliatorio, HistoriaClinicaEstatica, TipoEstudio, EvolucionClinica, EstudioRealizado, ResultadoLaboratorio, PlantillaLaboratorioParametro, CirugiaInfo, TipoCirugiaBariatrica, NutricionInfo, PsicologiaInfo, InformeClinico, Task, Priority, PostOpStage } from '../types';
 import { api } from '../services/mockApi';
 import { AuthContext } from '../App';
-import { ETIQUETAS_FLUJO, PROFESIONALES, DIAS_SEMANA_MAP, ESTADO_TURNO_MAP, COMORBILIDADES_PREDEFINIDAS, TIPOS_ESTUDIO, TIPOS_CIRUGIA_BARIATRICA } from '../constants';
+import { ETIQUETAS_FLUJO, PROFESIONALES, DIAS_SEMANA_MAP, ESTADO_TURNO_MAP, COMORBILIDADES_PREDEFINIDAS, COMORBILIDADES_CATEGORIZADAS, TIPOS_ESTUDIO, TIPOS_CIRUGIA_BARIATRICA } from '../constants';
 import { GoogleGenAI } from "@google/genai";
 import { 
     format, 
@@ -189,7 +189,7 @@ const DefinirCirugiaModal = ({ onConfirm, onCancel }: { onConfirm: (tipo: Cirugi
     );
 };
    // EditarPacienteModal Component
-const EditarPacienteModal = ({ paciente, onClose, onSuccess }: { paciente: PacienteFiliatorio, onClose: () => void, onSuccess: () => void }) => {
+const EditarPacienteModal = ({ paciente, onClose, onSuccess, onDelete }: { paciente: PacienteFiliatorio, onClose: () => void, onSuccess: () => void, onDelete?: () => void }) => {
     const authContext = useContext(AuthContext);
     const [formData, setFormData] = useState(paciente);
     const [isSaving, setIsSaving] = useState(false);
@@ -431,11 +431,36 @@ const EditarPacienteModal = ({ paciente, onClose, onSuccess }: { paciente: Pacie
                         </div>
                         {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
                     </div>
-                    <div className="p-4 bg-slate-50 border-t flex justify-end space-x-3">
-                        <button type="button" onClick={onClose} disabled={isSaving} className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200">Cancelar</button>
-                        <button type="submit" disabled={isSaving} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:bg-indigo-300">
-                            {isSaving ? 'Guardando...' : 'Guardar Cambios'}
-                        </button>
+                    <div className="p-4 bg-slate-50 border-t flex justify-between items-center">
+                        <div>
+                            {(user.rol === UserRole.ADMINISTRATIVO || user.rol === UserRole.MEDICO) && onDelete && (
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        if (window.confirm(`¿Está seguro de que desea eliminar permanentemente al paciente ${paciente.apellido}, ${paciente.nombres}? Esta acción no se puede deshacer y borrará todo su historial clínico, turnos, informes y registros.`)) {
+                                            try {
+                                                setIsSaving(true);
+                                                await api.deletePaciente(paciente.idPaciente, user.rol);
+                                                onDelete();
+                                            } catch (err: any) {
+                                                setError(err.message || 'Error al eliminar el paciente.');
+                                                setIsSaving(false);
+                                            }
+                                        }
+                                    }}
+                                    disabled={isSaving}
+                                    className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-red-300 transition-colors"
+                                >
+                                    {isSaving ? 'Eliminando...' : 'Eliminar Paciente'}
+                                </button>
+                            )}
+                        </div>
+                        <div className="flex space-x-3">
+                            <button type="button" onClick={onClose} disabled={isSaving} className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200">Cancelar</button>
+                            <button type="submit" disabled={isSaving} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:bg-indigo-300">
+                                {isSaving ? 'Guardando...' : 'Guardar Cambios'}
+                            </button>
+                        </div>
                     </div>
                 </form>
             </div>
@@ -461,7 +486,7 @@ const FichaModal = ({ paciente, equipoAsignado, allProfesionales, onClose, onEdi
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl m-4 flex flex-col max-h-[90vh]">
                 <div className="p-4 border-b flex justify-between items-center bg-slate-50">
-                    <h2 className="text-xl font-bold text-slate-800">Ficha del Paciente</h2>
+                    <h2 className="text-xl font-bold text-slate-800">Ficha del Paciente: {filiatorio.apellido}, {filiatorio.nombres}</h2>
                     <button onClick={onClose} className="text-slate-500 hover:text-slate-700 text-2xl font-bold">&times;</button>
                 </div>
                 <div className="p-6 overflow-y-auto space-y-6">
@@ -514,7 +539,7 @@ const FichaModal = ({ paciente, equipoAsignado, allProfesionales, onClose, onEdi
                     ) : (
                         <div>
                             <h3 className="text-lg font-semibold text-slate-700 border-b pb-2 mb-2 mt-4">Equipo Asignado</h3>
-                            <p className="text-xs text-slate-500 mb-3 -mt-2">Profesionales de cabecera asignados al paciente.</p>
+                            <p className="text-xs text-slate-500 mb-3 -mt-2">Profesionales de cabecera asignados al paciente. (Se modifican haciendo clic en 'Editar Ficha' arriba)</p>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 <div><strong className="text-slate-600">Cirujano:</strong> {equipoAsignado.cirujano}</div>
                                 <div><strong className="text-slate-600">Nutricionista:</strong> {equipoAsignado.nutricionista}</div>
@@ -830,7 +855,10 @@ const EvolucionItem = ({ evolucion, allProfesionales, user, onEdit }: {
             </div>
             <div className="mt-3 space-y-2">
                 <p className="text-sm text-slate-700 whitespace-pre-wrap">{evolucion.evolucionClinica}</p>
-                {evolucion.notaConfidencial && evolucion.notaConfidencial.trim() && (
+                {evolucion.notaConfidencial && 
+                 evolucion.notaConfidencial.trim() !== '' && 
+                 evolucion.notaConfidencial !== 'null' && 
+                 evolucion.notaConfidencial !== 'undefined' && (
                     <div className="p-2 bg-yellow-50 border-l-4 border-yellow-400 text-sm text-yellow-800">
                         <p className="font-semibold">Nota Confidencial:</p>
                         <p>{evolucion.notaConfidencial}</p>
@@ -1030,9 +1058,42 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
                 )}
 
                 <div className="p-6 flex-grow overflow-y-auto" ref={printRef}>
+                    <style>
+                        {`
+                        @media print {
+                            body * {
+                                visibility: hidden !important;
+                            }
+                            .print-section, .print-section * {
+                                visibility: visible !important;
+                            }
+                            .print-section {
+                                position: absolute !important;
+                                left: 0 !important;
+                                top: 0 !important;
+                                width: 100% !important;
+                                margin-top: 6cm !important; /* Top margin for pre-printed letterhead logo */
+                                padding: 0 2cm !important;
+                                font-size: 11pt !important;
+                                line-height: 1.6 !important;
+                                font-family: 'Outfit', sans-serif !important;
+                            }
+                            .no-print {
+                                display: none !important;
+                            }
+                            .print-only {
+                                display: block !important;
+                            }
+                            @page {
+                                margin-top: 0;
+                                margin-bottom: 0;
+                            }
+                        }
+                        `}
+                    </style>
                     <div className="print-section">
-                        <h3 className="text-lg font-bold text-center">{informe.tipoInforme || 'Informe Clínico'}</h3>
-                        <div className="flex justify-between text-sm mt-4 mb-6 border-y py-2">
+                        <h3 className="text-lg font-bold text-center text-slate-800">{informe.tipoInforme || 'Informe Clínico'}</h3>
+                        <div className="flex justify-between text-sm mt-4 mb-6 border-y py-2 text-slate-600">
                             <span><span className="font-semibold">Paciente:</span> {paciente.filiatorio.nombres} {paciente.filiatorio.apellido}</span>
                             <span><span className="font-semibold">Fecha:</span> {format(new Date(), 'dd/MM/yyyy')}</span>
                         </div>
@@ -1040,9 +1101,12 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
                             value={informe.contenido || ''}
                             onChange={(e) => setInforme(p => ({...p, contenido: e.target.value}))}
                             placeholder="Escriba el informe aquí, elija una plantilla arriba, o genere con IA..."
-                            className="w-full h-96 p-3 border rounded-md font-mono text-sm leading-relaxed"
+                            className="w-full h-96 p-3 border rounded-md font-mono text-sm leading-relaxed no-print"
                             disabled={isGenerating}
                         />
+                        <div className="print-only hidden whitespace-pre-wrap text-sm leading-relaxed font-sans text-slate-800" style={{ minHeight: '10cm' }}>
+                            {informe.contenido}
+                        </div>
                     </div>
                 </div>
                 <div className="p-4 bg-slate-50 border-t flex flex-wrap justify-between items-center gap-3 no-print">
@@ -1431,6 +1495,12 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
         : null;
     const etiquetaInfo = ETIQUETAS_FLUJO.find(e => e.nombreEtiquetaUnico === filiatorio.etiquetaPrincipalActiva) || { color: 'bg-gray-200 text-gray-800' };
 
+    const tallaMetros = (historiaClinica.talla || 0) / 100;
+    const pesoObjetivo = tallaMetros > 0 ? parseFloat((25 * Math.pow(tallaMetros, 2)).toFixed(1)) : null;
+    const pesoPostOp = (historiaClinica.pesoInicial && pesoObjetivo) 
+        ? parseFloat((historiaClinica.pesoInicial - (historiaClinica.pesoInicial - pesoObjetivo) * 0.8).toFixed(1))
+        : null;
+
     const getPostOpStageLabel = (surgeryDate?: string | null): string => {
         if (!surgeryDate) return 'Sin fecha';
         // Replace dashes with slashes so JS parses as local time (not UTC midnight)
@@ -1476,11 +1546,13 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
             <div className="pt-4">
                 {activeResumenSubTab === 'general' && (
                     <div className="space-y-4">
-                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-center">
+                         <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 text-center">
                             <div className="bg-slate-50 p-3 rounded-lg"><span className="text-xs text-slate-500">Peso Inicial</span><p className="font-bold text-lg">{historiaClinica.pesoInicial} kg</p></div>
                             <div className="bg-slate-50 p-3 rounded-lg"><span className="text-xs text-slate-500">Talla</span><p className="font-bold text-lg">{historiaClinica.talla} cm</p></div>
                             <div className="bg-slate-50 p-3 rounded-lg"><span className="text-xs text-slate-500">IMC Inicial</span><p className="font-bold text-lg">{historiaClinica.imcInicial}</p></div>
                             <div className="bg-slate-50 p-3 rounded-lg"><span className="text-xs text-slate-500">Último Peso</span><p className="font-bold text-lg text-indigo-600">{paciente.evoluciones?.[0]?.pesoActual || '-'} kg</p></div>
+                            <div className="bg-slate-50 p-3 rounded-lg"><span className="text-xs text-slate-500">Peso Objetivo (IMC 25)</span><p className="font-bold text-lg text-emerald-600">{pesoObjetivo !== null ? `${pesoObjetivo} kg` : '-'}</p></div>
+                            <div className="bg-slate-50 p-3 rounded-lg" title="Peso post operatorio estimado (Pérdida del 80% del exceso de peso)"><span className="text-xs text-slate-500">Post-Op Est. (80% Excess)</span><p className="font-bold text-lg text-purple-600">{pesoPostOp !== null ? `${pesoPostOp} kg` : '-'}</p></div>
                         </div>
                         
                         {(paciente.cirugia?.fechaRealizada || paciente.cirugia?.fechaProgramada) && (
@@ -1787,7 +1859,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                 />
             )}
             {modal === 'definirCirugia' && <DefinirCirugiaModal onConfirm={handleDefinirCirugia} onCancel={() => setModal(null)} />}
-            {modal === 'editarFicha' && <EditarPacienteModal paciente={filiatorio} onClose={() => setModal(null)} onSuccess={() => { setModal(null); fetchData(); }} />}
+            {modal === 'editarFicha' && <EditarPacienteModal paciente={filiatorio} onClose={() => setModal(null)} onSuccess={() => { setModal(null); fetchData(); }} onDelete={() => { setModal(null); onBack(); }} />}
             {modal === 'verFicha' && <FichaModal paciente={paciente} equipoAsignado={equipoAsignado} allProfesionales={allProfesionales} onClose={() => setModal(null)} onEdit={() => { setModal(null); setTimeout(() => setModal('editarFicha'), 100); }} canEdit={canEdit} />}
             {modal === 'createTask' && <CreateTaskModal open={modal==='createTask'} onClose={() => setModal(null)} allProfesionales={allProfesionales} onConfirm={handleConfirmTask} />}
             {(modal === 'newInforme' || modal === 'editInforme') && currentInforme && (
@@ -1853,24 +1925,31 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                             </div>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium">Comorbilidades</label>
-                             <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                {COMORBILIDADES_PREDEFINIDAS.map(c => (
-                                    <label key={c} className="flex items-center text-sm">
-                                        <input
-                                            type="checkbox"
-                                            checked={resumenData.comorbilidades?.includes(c) ?? false}
-                                            onChange={e => {
-                                                const currentComorbilidades = resumenData.comorbilidades || [];
-                                                const newComorbilidades = e.target.checked
-                                                    ? [...currentComorbilidades, c]
-                                                    : currentComorbilidades.filter(item => item !== c);
-                                                setResumenData(p => ({...p, comorbilidades: newComorbilidades}));
-                                            }}
-                                            className="rounded"
-                                        />
-                                        <span className="ml-2">{c}</span>
-                                    </label>
+                            <label className="block text-sm font-semibold text-slate-700 mb-2">Comorbilidades</label>
+                            <div className="space-y-4">
+                                {COMORBILIDADES_CATEGORIZADAS.map(cat => (
+                                    <div key={cat.categoria} className="border border-slate-100 rounded-lg p-3 bg-slate-50/50">
+                                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">{cat.categoria}</h4>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                                            {cat.items.map(c => (
+                                                <label key={c} className="flex items-center text-sm font-normal text-slate-700 select-none cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={resumenData.comorbilidades?.includes(c) ?? false}
+                                                        onChange={e => {
+                                                            const currentComorbilidades = resumenData.comorbilidades || [];
+                                                            const newComorbilidades = e.target.checked
+                                                                ? [...currentComorbilidades, c]
+                                                                : currentComorbilidades.filter(item => item !== c);
+                                                            setResumenData(p => ({...p, comorbilidades: newComorbilidades}));
+                                                        }}
+                                                        className="rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 mr-2"
+                                                    />
+                                                    {c}
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
                                 ))}
                             </div>
                         </div>
@@ -2234,6 +2313,26 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                                 Pedidos / Recetas
                             </button>
                             
+                            {/* Standalone WhatsApp Action */}
+                            <a 
+                                href={`https://wa.me/${(() => {
+                                    const clean = filiatorio.telefono.replace(/\D/g, '');
+                                    return clean.startsWith('54') ? clean : ('549' + clean);
+                                })()}?text=${encodeURIComponent(
+                                    paciente.carpeta 
+                                        ? `Hola ${filiatorio.nombres}, te escribimos para informarte que el estado de tu carpeta quirúrgica es: ${paciente.carpeta.trackingState}.`
+                                        : `Hola ${filiatorio.nombres}, te escribimos de Plenus para saludarte y coordinar tus próximas consultas.`
+                                )}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1 bg-[#25D366] hover:bg-[#20ba5a] text-white px-2.5 py-1.5 rounded-md font-semibold text-xs transition-colors"
+                            >
+                                <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.42 9.864-9.864.002-2.637-1.03-5.115-2.905-6.99-1.876-1.875-4.353-2.904-6.992-2.905C6.009 1.846 1.58 6.27 1.576 11.71c-.001 1.712.464 3.385 1.348 4.908l-.99 3.616 3.713-.974z"/>
+                                </svg>
+                                WhatsApp
+                            </a>
+
                             {/* Surgical Folder State Action */}
                             {filiatorio.modalidadCobertura !== 'Particular' && 
                              filiatorio.etiquetaPrincipalActiva !== 'CIRUGIA_GENERAL' && 
@@ -2247,25 +2346,11 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                                         >
                                             Ver/Editar
                                         </button>
-                                        <a 
-                                            href={`https://wa.me/${(() => {
-                                                const clean = filiatorio.telefono.replace(/\D/g, '');
-                                                return clean.startsWith('54') ? clean : ('549' + clean);
-                                            })()}?text=${encodeURIComponent(`Hola ${filiatorio.nombres}, te escribimos para informarte que el estado de tu carpeta quirúrgica es: ${paciente.carpeta.trackingState}.`)}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="flex items-center gap-1 bg-[#25D366] hover:bg-[#20ba5a] text-white px-2 py-0.5 rounded-full font-bold ml-1 text-[10px] uppercase transition-colors"
-                                        >
-                                            <svg className="w-3 h-3 fill-current" viewBox="0 0 24 24">
-                                                <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.42 9.864-9.864.002-2.637-1.03-5.115-2.905-6.99-1.876-1.875-4.353-2.904-6.992-2.905C6.009 1.846 1.58 6.27 1.576 11.71c-.001 1.712.464 3.385 1.348 4.908l-.99 3.616 3.713-.974z"/>
-                                            </svg>
-                                            WhatsApp
-                                        </a>
                                     </div>
                                 ) : (
                                     <button 
                                         onClick={() => setModal('folder')} 
-                                        className="flex items-center gap-1 hover:text-indigo-700 hover:underline bg-indigo-50 border border-indigo-200 px-2.5 py-1.5 rounded-lg text-xs font-semibold"
+                                        className="flex items-center gap-1 hover:text-indigo-700 hover:underline bg-indigo-50 border border-indigo-200 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-indigo-800"
                                     >
                                         📁 Crear Carpeta Quirúrgica
                                     </button>

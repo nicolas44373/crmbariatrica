@@ -124,7 +124,7 @@ export default function AdminAgendaView({ onSelectPatient }: AdminAgendaViewProp
 
     const turnosDelDia = (day: Date) => {
         return turnos
-            .filter(turno => isSameDay(new Date(turno.fechaTurno), day))
+            .filter(turno => isSameDay(new Date(turno.fechaTurno), day) && turno.estado !== EstadoTurnoDia.CANCELADO)
             .sort((a,b) => new Date(a.fechaTurno).getTime() - new Date(b.fechaTurno).getTime());
     }
     
@@ -186,21 +186,27 @@ export default function AdminAgendaView({ onSelectPatient }: AdminAgendaViewProp
                                                 <div className="flex justify-between items-center">
                                                     <p className="font-bold text-sm text-slate-800">{format(new Date(turno.fechaTurno), 'HH:mm')}</p>
                                                     {turno.estado !== EstadoTurnoDia.CANCELADO && (
-                                                        <div className="flex gap-2">
-                                                            <button 
-                                                                onClick={() => setTurnoAReagendar(turno)} 
-                                                                className="text-[10px] text-indigo-600 hover:text-indigo-900 font-semibold"
-                                                            >
-                                                                Reagendar
-                                                            </button>
-                                                            <button 
-                                                                onClick={() => handleCancelarTurno(turno.idTurno)} 
-                                                                className="text-[10px] text-red-600 hover:text-red-900 font-semibold"
-                                                            >
-                                                                Cancelar
-                                                            </button>
-                                                        </div>
-                                                    )}
+                                                         <div className="flex gap-2">
+                                                             <button 
+                                                                 onClick={() => setTurnoAReagendar(turno)} 
+                                                                 title="Reagendar"
+                                                                 className="text-indigo-600 hover:text-indigo-900 transition-colors p-0.5 rounded-full hover:bg-indigo-50"
+                                                             >
+                                                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                                                     <path d="m2.695 14.762-1.262 3.155a.5.5 0 0 0 .65.65l3.155-1.262a4 4 0 0 0 1.343-.886L17.5 5.501a2.121 2.121 0 0 0-3-3L3.58 13.419a4 4 0 0 0-.885 1.344Z" />
+                                                                 </svg>
+                                                             </button>
+                                                             <button 
+                                                                 onClick={() => handleCancelarTurno(turno.idTurno)} 
+                                                                 title="Cancelar Turno"
+                                                                 className="text-red-600 hover:text-red-900 transition-colors p-0.5 rounded-full hover:bg-red-50"
+                                                             >
+                                                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                                                     <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+                                                                 </svg>
+                                                             </button>
+                                                         </div>
+                                                     )}
                                                     <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${estadoInfo.colorFondo}`}>
                                                         {estadoInfo.texto}
                                                     </span>

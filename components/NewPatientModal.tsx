@@ -12,7 +12,7 @@ interface NewPatientModalProps {
     prospectoId?: string;
 }
 
-type NewPatientData = Omit<PacienteFiliatorio, 'idPaciente' | 'etiquetaPrincipalActiva' | 'cirujanoAsignado' | 'nutricionistaAsignado' | 'psicologoAsignado' | 'fechaCirugia' | 'tipoCirugia'>;
+type NewPatientData = Omit<PacienteFiliatorio, 'idPaciente' | 'etiquetaPrincipalActiva' | 'fechaCirugia' | 'tipoCirugia'>;
 
 const ChevronLeftIconSmall = () => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>);
 const ChevronRightIconSmall = () => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>);
@@ -34,10 +34,18 @@ export default function NewPatientModal({ onClose, onSuccess, initialData = {}, 
         nroAfiliado: '',
         telefono: '',
         email: '',
+        cirujanoAsignado: '',
+        nutricionistaAsignado: '',
+        psicologoAsignado: '',
+        modalidadCobertura: 'Obra Social',
+        cgOperado: false,
+        tiProfesionalEmail: '',
+        fotoPerfil: '',
         ...initialData
     });
     const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [obrasSociales, setObrasSociales] = useState<string[]>([]);
 
     const user = authContext!.user!;
     const isConversion = !!prospectoId;
@@ -60,21 +68,31 @@ export default function NewPatientModal({ onClose, onSuccess, initialData = {}, 
 
 
     useEffect(() => {
-        if (step === 2) {
-            Promise.all([
-                api.getProfesionales(),
-                api.getConfiguracionGeneral(user.rol)
-            ]).then(([profs, conf]) => {
-                setProfesionales(profs);
-                setConfig(conf);
-                if (profs.length > 0) {
-                    setProfesionalEmail(profs[0].email);
-                }
-            }).catch(() => setError("No se pudo cargar la configuración de la agenda."));
-        }
-    }, [step, user.rol]);
+        // Load configurations and active professionals on mount
+        Promise.all([
+            api.getProfesionalesAdmin().then(data => data.filter(p => p.activo)),
+            api.getConfiguracionGeneral(user.rol),
+            api.getContactosCRM()
+        ]).then(([profs, conf, crmData]) => {
+            setProfesionales(profs);
+            setConfig(conf);
+            if (profs.length > 0) {
+                setProfesionalEmail(profs[0].email);
+            }
+            // Populate and clean unique health insurances list
+            const uniqueOS = Array.from(new Set(
+                crmData
+                    .filter((c: any) => c.isPatient && c.socialInsurance && c.socialInsurance !== 'N/A' && c.socialInsurance !== 'PARTICULAR' && c.socialInsurance.trim() !== '')
+                    .map((c: any) => c.socialInsurance.trim())
+            )).sort() as string[];
+            setObrasSociales(uniqueOS);
+        }).catch(err => {
+            console.error(err);
+            setError("No se pudo cargar la configuración del sistema.");
+        });
+    }, [user.rol]);
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
     };
@@ -197,29 +215,85 @@ export default function NewPatientModal({ onClose, onSuccess, initialData = {}, 
     }, [currentMonth]);
 
 
+    const cirujanos = profesionales.filter(p => p.especialidad?.toLowerCase().includes('ciruj') || p.especialidad?.toLowerCase().includes('bariat'));
+    const nutricionistas = profesionales.filter(p => p.especialidad?.toLowerCase().includes('nutri'));
+    const psicologos = profesionales.filter(p => p.especialidad?.toLowerCase().includes('psic') || p.especialidad?.toLowerCase().includes('psiq'));
+
     const renderStep1 = () => (
         <form onSubmit={handleSubmitStep1}>
             <div className="p-6 border-b">
                 <h2 className="text-xl font-bold text-slate-800">{title}</h2>
                 <p className="text-sm text-slate-500">{isConversion ? "Complete los datos para crear el registro clínico." : "Complete los datos filiatorios."}</p>
             </div>
-            <div className="p-6 flex-grow overflow-y-auto space-y-4">
-                {/* Form fields */}
+            <div className="p-6 flex-grow overflow-y-auto space-y-4 max-h-[60vh]">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                      <div>
                         <label htmlFor="apellido" className="block text-sm font-medium text-slate-700">Apellido</label>
-                        <input type="text" name="apellido" id="apellido" value={formData.apellido} onChange={handleChange} className="mt-1 block w-full rounded-md border-slate-300"/>
+                        <input type="text" name="apellido" id="apellido" value={formData.apellido} onChange={handleChange} required className="mt-1 block w-full rounded-md border-slate-300"/>
                     </div>
                     <div>
                         <label htmlFor="nombres" className="block text-sm font-medium text-slate-700">Nombres</label>
-                        <input type="text" name="nombres" id="nombres" value={formData.nombres} onChange={handleChange} className="mt-1 block w-full rounded-md border-slate-300" />
+                        <input type="text" name="nombres" id="nombres" value={formData.nombres} onChange={handleChange} required className="mt-1 block w-full rounded-md border-slate-300" />
+                    </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                     <div>
+                        <label htmlFor="dni" className="block text-sm font-medium text-slate-700">DNI</label>
+                        <input type="text" name="dni" id="dni" value={formData.dni} onChange={handleChange} required className="mt-1 block w-full rounded-md border-slate-300" />
+                    </div>
+                    <div>
+                        <label htmlFor="fechaNacimiento" className="block text-sm font-medium text-slate-700">Fecha de Nacimiento</label>
+                        <input type="date" name="fechaNacimiento" id="fechaNacimiento" value={formData.fechaNacimiento} onChange={handleChange} className="mt-1 block w-full rounded-md border-slate-300" />
                     </div>
                 </div>
                  <div>
-                    <label htmlFor="dni" className="block text-sm font-medium text-slate-700">DNI</label>
-                    <input type="text" name="dni" id="dni" value={formData.dni} onChange={handleChange} className="mt-1 block w-full rounded-md border-slate-300" />
+                    <label htmlFor="direccion" className="block text-sm font-medium text-slate-700">Dirección</label>
+                    <input type="text" name="direccion" id="direccion" value={formData.direccion || ''} onChange={handleChange} className="mt-1 block w-full rounded-md border-slate-300" />
                 </div>
-                {/* ... other fields ... */}
+                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label htmlFor="modalidadCobertura" className="block text-sm font-medium text-slate-700">Modalidad de Cobertura</label>
+                        <select
+                            name="modalidadCobertura"
+                            id="modalidadCobertura"
+                            value={formData.modalidadCobertura || 'Obra Social'}
+                            onChange={handleChange}
+                            className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                        >
+                            <option value="Obra Social">Obra Social</option>
+                            <option value="Prepaga">Prepaga</option>
+                            <option value="Particular">Particular</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label htmlFor="obraSocial" className="block text-sm font-medium text-slate-700">Obra Social / Prepaga</label>
+                        <input 
+                            type="text" 
+                            name="obraSocial" 
+                            id="obraSocial" 
+                            list="new-obras-sociales-list"
+                            value={formData.obraSocial || ''} 
+                            onChange={handleChange} 
+                            className="mt-1 block w-full rounded-md border-slate-300" 
+                        />
+                        <datalist id="new-obras-sociales-list">
+                            {obrasSociales.map(os => (
+                                <option key={os} value={os} />
+                            ))}
+                        </datalist>
+                    </div>
+                    <div>
+                        <label htmlFor="nroAfiliado" className="block text-sm font-medium text-slate-700">Nro de Afiliado</label>
+                        <input 
+                            type="text" 
+                            name="nroAfiliado" 
+                            id="nroAfiliado" 
+                            value={formData.nroAfiliado || ''} 
+                            onChange={handleChange} 
+                            className="mt-1 block w-full rounded-md border-slate-300" 
+                        />
+                    </div>
+                </div>
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label htmlFor="telefono" className="block text-sm font-medium text-slate-700">Teléfono</label>
@@ -230,6 +304,64 @@ export default function NewPatientModal({ onClose, onSuccess, initialData = {}, 
                         <input type="email" name="email" id="email" value={formData.email} onChange={handleChange} className="mt-1 block w-full rounded-md border-slate-300" />
                     </div>
                 </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label htmlFor="cirujanoAsignado" className="block text-sm font-medium text-slate-700">Cirujano Asignado</label>
+                        <select
+                            name="cirujanoAsignado"
+                            id="cirujanoAsignado"
+                            value={formData.cirujanoAsignado || ''}
+                            onChange={handleChange}
+                            className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white"
+                        >
+                            <option value="">No asignado</option>
+                            {cirujanos.map(p => (
+                                <option key={p.email} value={p.email}>{p.apellido}, {p.nombres}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label htmlFor="nutricionistaAsignado" className="block text-sm font-medium text-slate-700">Nutricionista Asignado</label>
+                        <select
+                            name="nutricionistaAsignado"
+                            id="nutricionistaAsignado"
+                            value={formData.nutricionistaAsignado || ''}
+                            onChange={handleChange}
+                            className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white"
+                        >
+                            <option value="">No asignado</option>
+                            {nutricionistas.map(p => (
+                                <option key={p.email} value={p.email}>{p.apellido}, {p.nombres}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label htmlFor="psicologoAsignado" className="block text-sm font-medium text-slate-700">Psicólogo Asignado</label>
+                        <select
+                            name="psicologoAsignado"
+                            id="psicologoAsignado"
+                            value={formData.psicologoAsignado || ''}
+                            onChange={handleChange}
+                            className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white"
+                        >
+                            <option value="">No asignado</option>
+                            {psicologos.map(p => (
+                                <option key={p.email} value={p.email}>{p.apellido}, {p.nombres}</option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+
+                <div className="flex items-end gap-4">
+                    <div className="flex-grow">
+                        <label htmlFor="fotoPerfil" className="block text-sm font-medium text-slate-700">Foto de Perfil (URL)</label>
+                        <input type="url" name="fotoPerfil" id="fotoPerfil" value={formData.fotoPerfil || ''} onChange={handleChange} placeholder="https://..." className="mt-1 block w-full rounded-md border-slate-300" />
+                    </div>
+                    {formData.fotoPerfil && (
+                        <img src={formData.fotoPerfil} alt="preview" className="w-12 h-12 rounded-full object-cover border border-slate-200 flex-shrink-0" />
+                    )}
+                </div>
+
                 {error && <p className="text-sm text-red-600">{error}</p>}
             </div>
             <div className="p-4 bg-slate-50 border-t flex justify-end space-x-3">

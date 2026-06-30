@@ -178,7 +178,7 @@ export interface Turno {
     horaAtencion?: string; // ISO string
     esVideoconsulta?: boolean;
     esSobreturno?: boolean;
-    metodoPago?: 'Efectivo' | 'Tarjeta';
+    metodoPago?: 'Efectivo' | 'Transferencia' | 'Tarjeta';
     tipoCobro?: 'Consulta Particular' | 'Copago Obra Social';
 }
 

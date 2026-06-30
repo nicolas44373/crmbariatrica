@@ -5,6 +5,7 @@ import { AuthContext } from '../App';
 import { ESTADO_TURNO_MAP, ETIQUETAS_FLUJO } from '../constants';
 import { format, isToday, isBefore, startOfDay } from 'date-fns';
 import { es } from 'date-fns/locale';
+import AgendarTurnoModal from './Agendarturnomodal';
 
 interface VistaDiariaProfesionalProps {
   onSelectPatient: (patient: PacienteFiliatorio) => void;
@@ -58,10 +59,18 @@ const PlusCircleIcon = () => (
 export default function VistaDiariaProfesional({ onSelectPatient, date }: VistaDiariaProfesionalProps) {
     const authContext = useContext(AuthContext);
     const [turnos, setTurnos] = useState<TurnoDiario[]>([]);
+    const [allProfesionales, setAllProfesionales] = useState<Profesional[]>([]);
+    const [turnoAReagendar, setTurnoAReagendar] = useState<TurnoDiario | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     const user = authContext!.user!;
+
+    useEffect(() => {
+        api.getProfesionalesAdmin()
+            .then(data => setAllProfesionales(data.filter(p => p.activo)))
+            .catch(err => console.error("Error loading professionals:", err));
+    }, []);
 
     const fetchData = useCallback(() => {
         setIsLoading(true);
@@ -69,7 +78,7 @@ export default function VistaDiariaProfesional({ onSelectPatient, date }: VistaD
         const isPastDay = isBefore(startOfDay(date), startOfDay(new Date()));
         api.getTurnosDiariosTodosProfesionales(date)
             .then(async allTurnos => {
-                let myTurnos = allTurnos.filter(t => t.profesionalEmail === user.email);
+                let myTurnos = allTurnos.filter(t => t.profesionalEmail === user.email && t.estado !== EstadoTurnoDia.CANCELADO);
 
                 // Auto-mark AUSENTE for past days with unresolved appointments
                 if (isPastDay) {
@@ -89,7 +98,7 @@ export default function VistaDiariaProfesional({ onSelectPatient, date }: VistaD
                         );
                         // Reload after auto-marking
                         const refreshed = await api.getTurnosDiariosTodosProfesionales(date);
-                        myTurnos = refreshed.filter(t => t.profesionalEmail === user.email);
+                        myTurnos = refreshed.filter(t => t.profesionalEmail === user.email && t.estado !== EstadoTurnoDia.CANCELADO);
                     }
                 }
                 setTurnos(myTurnos);
@@ -140,8 +149,32 @@ export default function VistaDiariaProfesional({ onSelectPatient, date }: VistaD
         return (
             <div key={turno.idTurno} className={`p-4 rounded-lg shadow-sm bg-white border-l-4 ${estadoInfo.color} grid grid-cols-12 gap-x-4 gap-y-2 items-center`}>
                 {/* 1. Hora Turno */}
-                <div className="col-span-12 sm:col-span-1 text-center sm:text-left">
+                <div className="col-span-12 sm:col-span-1 text-center sm:text-left flex flex-row sm:flex-col justify-between items-center sm:items-start gap-1">
                     <p className="font-bold text-lg text-slate-800">{format(new Date(turno.fechaTurno), 'HH:mm')}</p>
+                    <div className="flex gap-2">
+                        <button 
+                            onClick={() => setTurnoAReagendar(turno)} 
+                            title="Reagendar"
+                            className="text-indigo-600 hover:text-indigo-900 transition-colors p-0.5 rounded-full hover:bg-indigo-50"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                <path d="m2.695 14.762-1.262 3.155a.5.5 0 0 0 .65.65l3.155-1.262a4 4 0 0 0 1.343-.886L17.5 5.501a2.121 2.121 0 0 0-3-3L3.58 13.419a4 4 0 0 0-.885 1.344Z" />
+                            </svg>
+                        </button>
+                        <button 
+                            onClick={async () => {
+                                if (window.confirm("¿Está seguro de que desea cancelar este turno?")) {
+                                    await handleUpdate(turno.idTurno, { estado: EstadoTurnoDia.CANCELADO });
+                                }
+                            }} 
+                            title="Cancelar Turno"
+                            className="text-red-600 hover:text-red-900 transition-colors p-0.5 rounded-full hover:bg-red-50"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+                            </svg>
+                        </button>
+                    </div>
                 </div>
                 
                 {/* 2. Paciente */}
@@ -174,12 +207,21 @@ export default function VistaDiariaProfesional({ onSelectPatient, date }: VistaD
                         <span className="font-semibold text-slate-500">Atendido:</span> {turno.horaAtencion ? format(new Date(turno.horaAtencion), 'HH:mm') : ' -'}
                     </p>
                 </div>
-
+ 
                 {/* 4. Estado */}
-                <div className="col-span-12 sm:col-span-1">
+                <div className="col-span-12 sm:col-span-1 flex flex-col items-center sm:items-start gap-1">
                     <span className={`px-2 py-1 text-xs font-semibold rounded-full ${estadoInfo.colorFondo} whitespace-nowrap`}>{estadoInfo.texto}</span>
+                    {turno.estado === EstadoTurnoDia.EN_ESPERA && (
+                        <button 
+                            onClick={() => handleUpdate(turno.idTurno, { estado: EstadoTurnoDia.AGENDADO, horaLlegada: null })}
+                            className="text-[9px] text-slate-500 hover:text-indigo-600 underline"
+                            title="Revertir check-in de llegada"
+                        >
+                            (Deshacer)
+                        </button>
+                    )}
                 </div>
-
+ 
                 {/* 5. Nota */}
                 <div className="col-span-12 sm:col-span-2">
                      <label htmlFor={`nota-${turno.idTurno}`} className="sr-only">Nota Interna</label>
@@ -195,11 +237,11 @@ export default function VistaDiariaProfesional({ onSelectPatient, date }: VistaD
                 </div>
                 
                 {/* 6. Cobro */}
-                <div className="col-span-12 sm:col-span-1">
+                <div className="col-span-12 sm:col-span-1 space-y-1">
                      <label htmlFor={`valor-${turno.idTurno}`} className="sr-only">Valor Cobrado</label>
                      <div className="relative">
-                        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                           <span className="text-gray-500 sm:text-sm">$</span>
+                        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2">
+                           <span className="text-gray-500 text-xs">$</span>
                         </div>
                         <input
                             type="text"
@@ -208,10 +250,20 @@ export default function VistaDiariaProfesional({ onSelectPatient, date }: VistaD
                             defaultValue={turno.valorCobrado || ''}
                             onChange={(e) => debouncedValorUpdate(turno.idTurno, parseFloat(e.target.value) || 0)}
                             onBlur={(e) => handleUpdate(turno.idTurno, { valorCobrado: parseFloat(e.target.value) || 0 })}
-                            placeholder="0"
-                            className="block w-full text-sm p-2 pl-7 compact-input rounded-md border-slate-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                            placeholder="Valor"
+                            className="block w-full text-xs p-1 pl-5 compact-input rounded border-slate-300 shadow-sm"
                          />
                      </div>
+                     <select
+                         value={turno.metodoPago || ''}
+                         onChange={(e) => handleUpdate(turno.idTurno, { metodoPago: e.target.value as any })}
+                         className="block w-full text-[10px] p-1 compact-input rounded border-slate-300 bg-white"
+                     >
+                         <option value="">...</option>
+                         <option value="Efectivo">Efectivo</option>
+                         <option value="Transferencia">Transferencia</option>
+                         <option value="Tarjeta">Tarjeta</option>
+                     </select>
                 </div>
 
                 {/* 7. Acciones */}
@@ -264,6 +316,22 @@ export default function VistaDiariaProfesional({ onSelectPatient, date }: VistaD
                         <span className="text-green-700 text-base sm:text-lg">${summary.totalRecaudado.toLocaleString('es-AR')}</span>
                     </div>
                 </div>
+            )}
+            {turnoAReagendar && (
+                <AgendarTurnoModal
+                    onClose={() => setTurnoAReagendar(null)}
+                    onSuccess={async () => {
+                        setTurnoAReagendar(null);
+                        // Delete/cancel old appointment after rescheduling succeeds
+                        if (turnoAReagendar.idTurno) {
+                            await api.updateDetallesTurno(turnoAReagendar.idTurno, { estado: EstadoTurnoDia.CANCELADO }, user);
+                        }
+                        fetchData();
+                    }}
+                    pacientePreseleccionado={turnoAReagendar.paciente}
+                    profesionalPreseleccionado={allProfesionales.find(p => p.email === turnoAReagendar.profesionalEmail)}
+                    creadoPorEmail={user.email}
+                />
             )}
         </div>
     );

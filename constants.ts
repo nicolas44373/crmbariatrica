@@ -106,6 +106,42 @@ export const COMORBILIDADES_PREDEFINIDAS: string[] = [
     "Síndrome de Ovario Poliquístico",
 ];
 
+export const COMORBILIDADES_CATEGORIZADAS = [
+  {
+    categoria: "Metabólicas",
+    items: ["Insulinorresistencia", "Diabetes Tipo 2", "Dislipidemia", "Hígado Graso no Alcohólico", "Hiperuricemia / Gota"]
+  },
+  {
+    categoria: "Cardiovasculares",
+    items: ["Hipertensión Arterial", "Cardiopatía", "Insuficiencia Cardíaca", "Antecedente de Tromboembolismo / TVP", "Arritmias"]
+  },
+  {
+    categoria: "Respiratorias",
+    items: ["SAHOS", "Asma / EPOC", "Síndrome de Hipoventilación por Obesidad"]
+  },
+  {
+    categoria: "Digestivas",
+    items: ["Reflujo Gastroesofágico", "Litiasis Vesicular", "Cirrosis / Hepatopatía Crónica", "Hernia Hiatal"]
+  },
+  {
+    categoria: "Renales y Urológicas",
+    items: ["Insuficiencia Renal Crónica", "Litiasis Renal"]
+  },
+  {
+    categoria: "Osteoarticulares",
+    items: ["Artrosis", "Dolor Lumbar Crónico"]
+  },
+  {
+    categoria: "Endocrino-reproductivas",
+    items: ["Síndrome de Ovario Poliquístico", "Infertilidad", "Hipotiroidismo"]
+  },
+  {
+    categoria: "Oncológicas y otras",
+    items: ["Antecedente Oncológico", "Linfedema / Insuficiencia Venosa"]
+  }
+];
+
+
 export const TIPOS_ESTUDIO = [
     { value: TipoEstudio.LABORATORIO,  label: 'Laboratorio' },
     { value: TipoEstudio.ENDOSCOPIA,   label: 'Endoscopia' },
