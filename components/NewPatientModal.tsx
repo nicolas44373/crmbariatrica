@@ -106,11 +106,25 @@ export default function NewPatientModal({ onClose, onSuccess, initialData = {}, 
             return;
         }
 
+        const cleanedData = {
+            ...formData,
+            cirujanoAsignado: formData.cirujanoAsignado || undefined,
+            nutricionistaAsignado: formData.nutricionistaAsignado || undefined,
+            psicologoAsignado: formData.psicologoAsignado || undefined,
+            tiProfesionalEmail: formData.tiProfesionalEmail || undefined,
+            obraSocial: formData.obraSocial || undefined,
+            nroAfiliado: formData.nroAfiliado || undefined,
+            email: formData.email || undefined,
+            telefono: formData.telefono || undefined,
+            direccion: formData.direccion || undefined,
+            fotoPerfil: formData.fotoPerfil || undefined,
+        };
+
         setIsSaving(true);
         setError(null);
 
         try {
-            const newPatient = await api.createPaciente(formData, user.rol, prospectoId);
+            const newPatient = await api.createPaciente(cleanedData as any, user.rol, prospectoId);
             setNewlyCreatedPatient(newPatient);
             if (isConversion) {
                 setStep(2); // Go to scheduling
