@@ -1150,6 +1150,19 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
     );
 };
 
+const getFileNameFromUrl = (url: string) => {
+    if (!url) return '';
+    if (url.startsWith('http')) {
+        const parts = url.split('/');
+        const lastPart = parts[parts.length - 1];
+        const underscoreIndex = lastPart.indexOf('_');
+        if (underscoreIndex !== -1 && !isNaN(Number(lastPart.substring(0, underscoreIndex)))) {
+            return lastPart.substring(underscoreIndex + 1);
+        }
+        return lastPart;
+    }
+    return url;
+};
 
 export default function PatientDossier({ patientId, onBack }: PatientDossierProps) {
     const authContext = useContext(AuthContext);
@@ -1172,6 +1185,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
     const [resumenData, setResumenData] = useState<Partial<HistoriaClinicaEstatica>>({});
     const [evolucionData, setEvolucionData] = useState<Partial<EvolucionClinica>>({});
     const [estudioData, setEstudioData] = useState<Partial<EstudioRealizado>>({});
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [cirugiaData, setCirugiaData] = useState<Partial<CirugiaInfo>>({});
     const [nutricionData, setNutricionData] = useState<Partial<NutricionInfo>>({});
     const [psicologiaData, setPsicologiaData] = useState<Partial<PsicologiaInfo>>({});
@@ -1361,11 +1375,22 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
         if (!paciente) return;
         setIsSaving(true);
         try {
+            let uploadedUrl = estudioData.nombreArchivo || '';
+            if (selectedFile) {
+                try {
+                    uploadedUrl = await (api as any).uploadEstudioFile(paciente.filiatorio.idPaciente, selectedFile);
+                } catch (err: any) {
+                    alert('Error al subir el archivo. Asegúrese de que el storage de Supabase tenga un bucket público llamado "estudios": ' + (err.message || err));
+                    setIsSaving(false);
+                    return;
+                }
+            }
+
             const newEstudio: Omit<EstudioRealizado, 'idEstudio'> = {
                 idPaciente: paciente.filiatorio.idPaciente,
                 fecha: estudioData.fecha || format(new Date(), 'yyyy-MM-dd'),
                 tipo: estudioData.tipo || TipoEstudio.OTROS,
-                nombreArchivo: estudioData.nombreArchivo,
+                nombreArchivo: uploadedUrl,
                 descripcion: estudioData.descripcion,
                 resultados: estudioData.tipo === TipoEstudio.LABORATORIO 
                     ? estudioData.resultados?.filter(r => r.valor && r.valor.trim() !== '') 
@@ -1373,6 +1398,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                 resultadoBiopsia: estudioData.tipo === TipoEstudio.ENDOSCOPIA ? estudioData.resultadoBiopsia : undefined,
             };
             await api.createEstudio(newEstudio, user);
+            setSelectedFile(null);
             fetchData();
             setModal(null);
         } catch (error) { console.error("Error creating study:", error); } 
@@ -1711,7 +1737,16 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                             {visibleEstudios.map(estudio => (
                                 <div key={estudio.idEstudio} className="bg-slate-50 p-3 rounded-md border">
                                     <p className="font-semibold text-sm">{format(new Date(estudio.fecha.replace(/-/g, '/')), 'dd/MM/yyyy')} - {estudio.descripcion || estudio.tipo}</p>
-                                    {estudio.nombreArchivo && <a href="#" className="text-xs text-indigo-600 hover:underline">{estudio.nombreArchivo}</a>}
+                                    {estudio.nombreArchivo && (
+                                        <a 
+                                            href={estudio.nombreArchivo} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer" 
+                                            className="text-xs text-indigo-600 hover:underline inline-flex items-center gap-1 font-semibold"
+                                        >
+                                            📄 {getFileNameFromUrl(estudio.nombreArchivo)}
+                                        </a>
+                                    )}
                                     {estudio.resultados && (
                                         <div className="mt-2 text-xs grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1">
                                             {estudio.resultados.map(r => <div key={r.parametro}><strong>{r.parametro}:</strong> {r.valor} {r.unidad}</div>)}
@@ -1730,7 +1765,16 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                                         {hiddenEstudios.map(estudio => (
                                             <div key={estudio.idEstudio} className="bg-slate-50 p-3 rounded-md border">
                                                 <p className="font-semibold text-sm">{format(new Date(estudio.fecha.replace(/-/g, '/')), 'dd/MM/yyyy')} - {estudio.descripcion || estudio.tipo}</p>
-                                                {estudio.nombreArchivo && <a href="#" className="text-xs text-indigo-600 hover:underline">{estudio.nombreArchivo}</a>}
+                                                {estudio.nombreArchivo && (
+                                                    <a 
+                                                        href={estudio.nombreArchivo} 
+                                                        target="_blank" 
+                                                        rel="noopener noreferrer" 
+                                                        className="text-xs text-indigo-600 hover:underline inline-flex items-center gap-1 font-semibold"
+                                                    >
+                                                        📄 {getFileNameFromUrl(estudio.nombreArchivo)}
+                                                    </a>
+                                                )}
                                                 {estudio.resultados && (
                                                     <div className="mt-2 text-xs grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1">
                                                         {estudio.resultados.map(r => <div key={r.parametro}><strong>{r.parametro}:</strong> {r.valor} {r.unidad}</div>)}
@@ -2059,7 +2103,10 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
         accept=".pdf,image/*"
         onChange={e => {
             const file = e.target.files?.[0];
-            if (file) setEstudioData(p => ({ ...p, nombreArchivo: file.name }));
+            if (file) {
+                setEstudioData(p => ({ ...p, nombreArchivo: file.name }));
+                setSelectedFile(file);
+            }
         }}
         className="mt-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
     />

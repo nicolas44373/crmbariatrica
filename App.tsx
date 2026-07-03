@@ -65,7 +65,10 @@ export default function App() {
     setActiveApp(returnToApp);
     setReturnToApp('clinical');
   };
-  const handleNavigate = (app: ActiveApp) => setActiveApp(app);
+  const handleNavigate = (app: ActiveApp) => {
+    setActiveApp(app);
+    setSelectedPatient(null);
+  };
 
   // Pantalla de carga inicial
   if (isLoading) {
@@ -86,15 +89,15 @@ export default function App() {
       <div className="min-h-screen bg-slate-100">
         <Header activeApp={activeApp} onNavigate={handleNavigate} />
         <main className="p-4 sm:p-6 lg:p-8">
-          {activeApp === 'clinical' ? (
-            selectedPatient ? (
-              <PatientDossier patientId={selectedPatient.idPaciente} onBack={handleBackToDashboard} />
-            ) : (
-              <Dashboard onSelectPatient={handleSelectPatient} onNavigateToCrm={() => handleNavigate('crm')} />
-            )
-          ) : (
-            <CrmDashboard onSelectPatient={handleSelectPatient} selectedPatient={selectedPatient} />
+          {selectedPatient && (
+            <PatientDossier patientId={selectedPatient.idPaciente} onBack={handleBackToDashboard} />
           )}
+          <div style={{ display: (!selectedPatient && activeApp === 'clinical') ? 'block' : 'none' }}>
+            <Dashboard onSelectPatient={handleSelectPatient} onNavigateToCrm={() => handleNavigate('crm')} />
+          </div>
+          <div style={{ display: (!selectedPatient && activeApp === 'crm') ? 'block' : 'none' }}>
+            <CrmDashboard onSelectPatient={handleSelectPatient} selectedPatient={selectedPatient} />
+          </div>
         </main>
       </div>
     </AuthContext.Provider>

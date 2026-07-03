@@ -894,7 +894,7 @@ async function createPaciente(
 }
 
 async function deletePaciente(idPaciente: string, userRole: UserRole): Promise<void> {
-  if (!canAdmin(userRole)) throw new Error('Permiso denegado.');
+  if (!canAny(userRole)) throw new Error('Permiso denegado.');
 
   await supabase.from('evoluciones').delete().eq('id_paciente', idPaciente);
   await supabase.from('turnos').delete().eq('id_paciente', idPaciente);
@@ -2161,6 +2161,24 @@ async function exportBackup(): Promise<object> {
   };
 }
 
+async function uploadEstudioFile(idPaciente: string, file: File): Promise<string> {
+  const fileExt = file.name.split('.').pop();
+  const fileName = `${Date.now()}_${file.name}`;
+  const filePath = `${idPaciente}/${fileName}`;
+
+  const { data, error } = await supabase.storage
+    .from('estudios')
+    .upload(filePath, file);
+
+  if (error) throw error;
+
+  const { data: { publicUrl } } = supabase.storage
+    .from('estudios')
+    .getPublicUrl(filePath);
+
+  return publicUrl;
+}
+
 // ─── EXPORT ───────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -2240,4 +2258,6 @@ export const api = {
   getEstadisticas,
   // Backup
   exportBackup,
+  // Storage
+  uploadEstudioFile,
 };
