@@ -26,6 +26,8 @@ interface ItemPedido {
 interface ItemReceta {
     id: string;
     medicamento: string;
+    droga: string;
+    presentacion: string;
     dosis: string;
     frecuencia: string;
     duracion: string;
@@ -160,20 +162,100 @@ const PLANTILLAS_PEDIDO: PlantillaPedido[] = [
 
 const PRINT_STYLES = `
 @media print {
-    body * { visibility: hidden !important; }
-    #print-area, #print-area * { visibility: visible !important; }
+    @page {
+        size: A5 portrait;
+        margin: 8mm 10mm;
+    }
+    
+    body * {
+        visibility: hidden !important;
+    }
+    
+    #print-area, #print-area * {
+        visibility: visible !important;
+    }
+    
+    html, body {
+        height: auto !important;
+        overflow: visible !important;
+    }
+    
+    #root, #root > div {
+        height: auto !important;
+        overflow: visible !important;
+        display: block !important;
+    }
+    
+    .fixed.inset-0 {
+        position: absolute !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 100% !important;
+        height: auto !important;
+        overflow: visible !important;
+        display: block !important;
+        background: none !important;
+    }
+    
+    .fixed.inset-0 > div {
+        max-height: none !important;
+        height: auto !important;
+        overflow: visible !important;
+        display: block !important;
+        box-shadow: none !important;
+        border: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+    }
+    
+    .flex-grow.overflow-y-auto {
+        overflow: visible !important;
+        max-height: none !important;
+        height: auto !important;
+        display: block !important;
+    }
+    
     #print-area {
-        position: fixed !important;
-        left: 0; top: 0;
-        width: 105mm;
-        padding: 1.2cm 1.5cm;
+        position: absolute !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
         font-family: Arial, sans-serif;
         font-size: 10pt;
         color: #000;
+        background: white !important;
+        display: block !important;
     }
-    .no-print { display: none !important; }
+    
+    .no-print {
+        display: none !important;
+    }
+    
+    .page-break {
+        page-break-before: always !important;
+        break-before: page !important;
+    }
+}
+
+@media screen {
+    .print-only {
+        display: none !important;
+    }
 }
 `;
+
+const formatDateFoot = (date: Date) => {
+    const d = date.getDate();
+    const m = date.getMonth() + 1;
+    const y = date.getFullYear().toString().substring(2);
+    return `${d}/${m}/${y}`;
+};
 
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────────────────────────
 
@@ -270,15 +352,22 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
         setSelectedPlantilla(id);
         const p = PLANTILLAS_PEDIDO.find(p => p.id === id);
         setDiagnostico(p?.diagnosticoDefecto || '');
-        setItems(
-            (p?.estudios || []).map((e, i) => ({
-                id: `item-${i}-${Date.now()}`,
-                descripcion: e.descripcion,
-                diagnostico: e.diagnostico,
-                urgente: false,
-                indicaciones: '',
-            }))
-        );
+        const estudios = p?.estudios || [];
+        if (estudios.length > 0) {
+            setItems(
+                estudios.map((e, i) => ({
+                    id: `item-${i}-${Date.now()}`,
+                    descripcion: e.descripcion,
+                    diagnostico: e.diagnostico,
+                    urgente: false,
+                    indicaciones: '',
+                }))
+            );
+        } else {
+            setItems([
+                { id: `item-${Date.now()}`, descripcion: '', diagnostico: '', urgente: false, indicaciones: '' }
+            ]);
+        }
     };
 
     const addItem = () => {
@@ -296,7 +385,12 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
         setItems(prev => prev.map(i => (i.id === id ? { ...i, [field]: value } : i)));
     };
 
-    const handlePrint = () => window.print();
+    const handlePrint = () => {
+        const oldTitle = document.title;
+        document.title = '';
+        window.print();
+        document.title = oldTitle;
+    };
 
     const handleWhatsApp = () => {
         const { filiatorio } = paciente;
@@ -456,7 +550,7 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
                     style={{ maxWidth: '105mm' }}
                 >
                     {/* Logo Plenus */}
-                    <div className="border-b pb-3 mb-2">
+                    <div className="border-b pb-3 mb-2 no-print">
                         <div className="flex justify-between items-start">
                             <div>
                                 <p className="font-bold text-base text-slate-900 uppercase tracking-wide">Plenus</p>
@@ -514,6 +608,9 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
                             </div>
                         </div>
                     )}
+                    <div className="print-only text-right text-xs text-slate-400 mt-4">
+                        Fecha: {formatDateFoot(new Date())}
+                    </div>
                 </div>
             </div>
         </div>
@@ -545,11 +642,12 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
     user,
 }) => {
     const [items, setItems] = useState<ItemReceta[]>([
-        { id: '1', medicamento: '', dosis: '', frecuencia: '', duracion: '', indicaciones: '' },
+        { id: '1', medicamento: '', droga: '', presentacion: '', dosis: '', frecuencia: '', duracion: '', indicaciones: '' },
     ]);
     const [diagnostico, setDiagnostico] = useState('');
     const [indicacionesGenerales, setIndicacionesGenerales] = useState('');
     const [showSignature, setShowSignature] = useState(true);
+    const [imprimirIndicaciones, setImprimirIndicaciones] = useState(true);
     const [firmaMatricula, setFirmaMatricula] = useState('M.P. ');
     const [showMRxInfo, setShowMRxInfo] = useState(false);
     const [vademecum, setVademecum] = useState<VademecumItem[]>(() => loadVademecum(user.email));
@@ -558,7 +656,7 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
     const addItem = () => {
         setItems(prev => [
             ...prev,
-            { id: `${Date.now()}`, medicamento: '', dosis: '', frecuencia: '', duracion: '', indicaciones: '' },
+            { id: `${Date.now()}`, medicamento: '', droga: '', presentacion: '', dosis: '', frecuencia: '', duracion: '', indicaciones: '' },
         ]);
     };
 
@@ -590,7 +688,7 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
         if (emptyItem) {
             setItems(prev => prev.map(i => i.id === emptyItem.id ? { ...i, medicamento: vItem.medicamento, dosis: vItem.dosis, frecuencia: vItem.frecuencia, duracion: vItem.duracion } : i));
         } else {
-            setItems(prev => [...prev, { id: `${Date.now()}`, medicamento: vItem.medicamento, dosis: vItem.dosis, frecuencia: vItem.frecuencia, duracion: vItem.duracion, indicaciones: '' }]);
+            setItems(prev => [...prev, { id: `${Date.now()}`, medicamento: vItem.medicamento, droga: '', presentacion: '', dosis: vItem.dosis, frecuencia: vItem.frecuencia, duracion: vItem.duracion, indicaciones: '' }]);
         }
         setShowVademecum(false);
     };
@@ -601,13 +699,28 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
         saveVademecum(updated, user.email);
     };
 
+    const handlePrint = () => {
+        const oldTitle = document.title;
+        document.title = '';
+        window.print();
+        document.title = oldTitle;
+    };
+
     const handleWhatsApp = () => {
         const { filiatorio } = paciente;
         const itemsText = items
             .filter(i => i.medicamento.trim())
-            .map((item, idx) => `${idx + 1}. ${item.medicamento}${item.dosis ? ` — ${item.dosis}` : ''}${item.frecuencia ? `, ${item.frecuencia}` : ''}${item.duracion ? ` por ${item.duracion}` : ''}${item.indicaciones ? `\n   _${item.indicaciones}_` : ''}`)
+            .map((item, idx) => {
+                let txt = `${idx + 1}. *${item.medicamento}*`;
+                if (item.droga) txt += ` (${item.droga})`;
+                if (item.dosis) txt += ` — ${item.dosis}`;
+                if (item.presentacion) txt += ` [Pres: ${item.presentacion}]`;
+                if (item.frecuencia) txt += `\n   Tomar: ${item.frecuencia}${item.duracion ? ` por ${item.duracion}` : ''}`;
+                if (item.indicaciones) txt += `\n   _Indicación: ${item.indicaciones}_`;
+                return txt;
+            })
             .join('\n');
-        const text = `*RECETA MÉDICA*\n\nPaciente: ${filiatorio.apellido}, ${filiatorio.nombres}\nDNI: ${filiatorio.dni}\n${diagnostico ? `Diagnóstico: ${diagnostico}\n` : ''}\n${itemsText}${indicacionesGenerales ? `\n\nIndicaciones: ${indicacionesGenerales}` : ''}\n\n_Dr/a. ${user.apellido}, ${user.nombres}${showSignature ? ` — ${firmaMatricula}` : ''}_`;
+        const text = `🏥 *PLENUS - RECETA E INDICACIONES*\n\n*Paciente:* ${filiatorio.apellido}, ${filiatorio.nombres}\n*DNI:* ${filiatorio.dni}\n${diagnostico ? `*Diagnóstico:* ${diagnostico}\n` : ''}\n*Tratamiento Prescripto:*\n${itemsText}${indicacionesGenerales ? `\n\n*Indicaciones Generales:*\n${indicacionesGenerales}` : ''}\n\n✍️ _Dr/a. ${user.apellido}, ${user.nombres}${showSignature ? ` — ${firmaMatricula}` : ''}_`;
         const clean = filiatorio.telefono?.replace(/\D/g, '') || '';
         const waPhone = clean ? (clean.startsWith('54') ? clean : ('549' + clean)) : '';
         window.open(`https://wa.me/${waPhone}?text=${encodeURIComponent(text)}`, '_blank');
@@ -726,13 +839,38 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
                                         )}
                                     </div>
                                 </div>
-                                <input
-                                    type="text"
-                                    value={item.medicamento}
-                                    onChange={e => updateItem(item.id, 'medicamento', e.target.value)}
-                                    className="w-full rounded border-slate-300 text-sm font-medium"
-                                    placeholder="Medicamento (nombre genérico o comercial)..."
-                                />
+                                <div className="grid grid-cols-3 gap-2">
+                                    <div className="col-span-1">
+                                        <label className="text-xs font-semibold text-slate-500">Nombre Comercial</label>
+                                        <input
+                                            type="text"
+                                            value={item.medicamento}
+                                            onChange={e => updateItem(item.id, 'medicamento', e.target.value)}
+                                            className="w-full rounded border-slate-300 text-sm font-medium"
+                                            placeholder="Ej: Ibupirac..."
+                                        />
+                                    </div>
+                                    <div className="col-span-1">
+                                        <label className="text-xs font-semibold text-slate-500">Droga / Genérico</label>
+                                        <input
+                                            type="text"
+                                            value={item.droga || ''}
+                                            onChange={e => updateItem(item.id, 'droga', e.target.value)}
+                                            className="w-full rounded border-slate-300 text-sm"
+                                            placeholder="Ej: Ibuprofeno..."
+                                        />
+                                    </div>
+                                    <div className="col-span-1">
+                                        <label className="text-xs font-semibold text-slate-500">Presentación</label>
+                                        <input
+                                            type="text"
+                                            value={item.presentacion || ''}
+                                            onChange={e => updateItem(item.id, 'presentacion', e.target.value)}
+                                            className="w-full rounded border-slate-300 text-sm"
+                                            placeholder="Ej: 30 comprimidos..."
+                                        />
+                                    </div>
+                                </div>
                                 <div className="grid grid-cols-3 gap-2">
                                     <div>
                                         <label className="text-xs text-slate-500">Dosis</label>
@@ -788,25 +926,38 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
                     />
                 </div>
 
-                <div className="flex items-center justify-between pt-2 border-t">
-                    <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                        <input
-                            type="checkbox"
-                            checked={showSignature}
-                            onChange={e => setShowSignature(e.target.checked)}
-                            className="rounded border-slate-300 text-indigo-600"
-                        />
-                        Incluir firma y matrícula
-                    </label>
-                    {showSignature && (
-                        <input
-                            type="text"
-                            value={firmaMatricula}
-                            onChange={e => setFirmaMatricula(e.target.value)}
-                            className="rounded border-slate-300 text-sm w-36"
-                            placeholder="M.P. 12345"
-                        />
-                    )}
+                <div className="flex flex-col gap-2 pt-2 border-t">
+                    <div className="flex items-center justify-between">
+                        <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={showSignature}
+                                onChange={e => setShowSignature(e.target.checked)}
+                                className="rounded border-slate-300 text-indigo-600"
+                            />
+                            Incluir firma y matrícula
+                        </label>
+                        {showSignature && (
+                            <input
+                                type="text"
+                                value={firmaMatricula}
+                                onChange={e => setFirmaMatricula(e.target.value)}
+                                className="rounded border-slate-300 text-sm w-36"
+                                placeholder="M.P. 12345"
+                            />
+                        )}
+                    </div>
+                    <div className="flex items-center justify-between">
+                        <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={imprimirIndicaciones}
+                                onChange={e => setImprimirIndicaciones(e.target.checked)}
+                                className="rounded border-slate-300 text-indigo-600"
+                            />
+                            Imprimir indicaciones en hoja aparte (A5)
+                        </label>
+                    </div>
                 </div>
             </div>
 
@@ -816,7 +967,7 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
                     <h4 className="text-sm font-semibold text-slate-600">Vista previa (½ A4)</h4>
                     <div className="flex gap-2">
                         <button
-                            onClick={() => window.print()}
+                            onClick={handlePrint}
                             className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700"
                         >
                             🖨️ Imprimir / PDF
@@ -835,57 +986,125 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
                     className="bg-white border rounded-lg p-6 text-sm space-y-4 shadow-sm flex-grow"
                     style={{ maxWidth: '105mm' }}
                 >
-                    <div className="border-b pb-3">
-                        <div className="flex justify-between items-start">
-                            <div>
-                                <p className="font-bold text-base text-slate-900 uppercase tracking-wide">Plenus</p>
-                                <p className="font-bold text-xs text-slate-700 mt-0.5">RECETA MÉDICA</p>
-                                <p className="text-slate-500 text-xs mt-0.5">{user.especialidad || 'Medicina'}</p>
+                    {/* PARTE 1: LA RECETA */}
+                    <div className="space-y-4">
+                        <div className="border-b pb-3 no-print">
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <p className="font-bold text-base text-slate-900 uppercase tracking-wide">Plenus</p>
+                                    <p className="font-bold text-xs text-slate-700 mt-0.5">RECETA MÉDICA</p>
+                                    <p className="text-slate-500 text-xs mt-0.5">{user.especialidad || 'Medicina'}</p>
+                                </div>
+                                <p className="text-xs text-slate-500 text-right">{today}</p>
                             </div>
-                            <p className="text-xs text-slate-500 text-right">{today}</p>
                         </div>
-                    </div>
 
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs bg-slate-50 rounded p-3 border">
-                        <div><span className="text-slate-500">Paciente:</span> <strong>{filiatorio.apellido}, {filiatorio.nombres}</strong></div>
-                        <div><span className="text-slate-500">DNI:</span> {filiatorio.dni}</div>
-                        <div><span className="text-slate-500">Obra Social:</span> {filiatorio.obraSocial || '-'}</div>
-                        <div><span className="text-slate-500">Nro Afiliado:</span> {filiatorio.nroAfiliado || '-'}</div>
-                    </div>
-
-                    {diagnostico && (
-                        <div className="text-xs">
-                            <span className="text-slate-500 font-medium">Diagnóstico: </span>
-                            <span className="text-slate-800">{diagnostico}</span>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs bg-slate-50 rounded p-3 border">
+                            <div><span className="text-slate-500">Paciente:</span> <strong>{filiatorio.apellido}, {filiatorio.nombres}</strong></div>
+                            <div><span className="text-slate-500">DNI:</span> {filiatorio.dni}</div>
+                            <div><span className="text-slate-500">Obra Social:</span> {filiatorio.obraSocial || '-'}</div>
+                            <div><span className="text-slate-500">Nro Afiliado:</span> {filiatorio.nroAfiliado || '-'}</div>
                         </div>
-                    )}
 
-                    <div className="space-y-3">
-                        {items.filter(i => i.medicamento.trim()).map((item, idx) => (
-                            <div key={item.id} className="border-l-2 border-indigo-300 pl-3 text-xs space-y-0.5">
-                                <p className="font-bold text-slate-900">
-                                    {idx + 1}. {item.medicamento}
-                                    {item.dosis && <span className="font-normal text-slate-600"> — {item.dosis}</span>}
-                                </p>
-                                {item.frecuencia && <p className="text-slate-600">Tomar: {item.frecuencia}{item.duracion ? ` durante ${item.duracion}` : ''}</p>}
-                                {item.indicaciones && <p className="text-slate-500 italic">{item.indicaciones}</p>}
+                        {diagnostico && (
+                            <div className="text-xs">
+                                <span className="text-slate-500 font-medium">Diagnóstico: </span>
+                                <span className="text-slate-800">{diagnostico}</span>
                             </div>
-                        ))}
+                        )}
+
+                        <div className="space-y-3">
+                            {items.filter(i => i.medicamento.trim()).map((item, idx) => (
+                                <div key={item.id} className="border-l-2 border-indigo-300 pl-3 text-xs space-y-0.5">
+                                    <p className="font-bold text-slate-900">
+                                        {idx + 1}. {item.medicamento}
+                                        {item.dosis && <span className="font-normal text-slate-600"> — {item.dosis}</span>}
+                                    </p>
+                                    {(item.droga || item.presentacion) && (
+                                        <p className="text-slate-600 italic">
+                                            {item.droga && <span>Droga: {item.droga}</span>}
+                                            {item.droga && item.presentacion && <span> · </span>}
+                                            {item.presentacion && <span>Pres: {item.presentacion}</span>}
+                                        </p>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+
+                        {showSignature && (
+                            <div className="mt-8 pt-4 border-t text-right text-xs text-slate-700">
+                                <div className="inline-block border-t border-slate-400 pt-2 min-w-[180px]">
+                                    <p className="font-semibold">Dr/a. {user.apellido}, {user.nombres}</p>
+                                    <p className="text-slate-500">{firmaMatricula}</p>
+                                    <p className="text-slate-500">{user.especialidad}</p>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="print-only text-right text-xs text-slate-400 mt-4">
+                            Fecha: {formatDateFoot(new Date())}
+                        </div>
                     </div>
 
-                    {indicacionesGenerales && (
-                        <div className="p-2 bg-slate-50 rounded border text-xs text-slate-700">
-                            <p className="font-semibold text-slate-500 mb-0.5">Indicaciones:</p>
-                            <p>{indicacionesGenerales}</p>
-                        </div>
-                    )}
+                    {/* PARTE 2: LAS INDICACIONES (EN HOJA APARTE) */}
+                    {imprimirIndicaciones && (
+                        <div className="page-break pt-6 space-y-4 border-t border-dashed mt-8">
+                            <div className="border-b pb-3 no-print">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <p className="font-bold text-base text-slate-900 uppercase tracking-wide">Plenus</p>
+                                        <p className="font-bold text-xs text-slate-700 mt-0.5">INDICACIONES MÉDICAS</p>
+                                        <p className="text-slate-500 text-xs mt-0.5">{user.especialidad || 'Medicina'}</p>
+                                    </div>
+                                    <p className="text-xs text-slate-500 text-right">{today}</p>
+                                </div>
+                            </div>
 
-                    {showSignature && (
-                        <div className="mt-8 pt-4 border-t text-right text-xs text-slate-700">
-                            <div className="inline-block border-t border-slate-400 pt-2 min-w-[180px]">
-                                <p className="font-semibold">Dr/a. {user.apellido}, {user.nombres}</p>
-                                <p className="text-slate-500">{firmaMatricula}</p>
-                                <p className="text-slate-500">{user.especialidad}</p>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs bg-slate-50 rounded p-3 border">
+                                <div><span className="text-slate-500">Paciente:</span> <strong>{filiatorio.apellido}, {filiatorio.nombres}</strong></div>
+                                <div><span className="text-slate-500">DNI:</span> {filiatorio.dni}</div>
+                            </div>
+
+                            <div className="space-y-4">
+                                <p className="font-semibold text-slate-800 text-xs uppercase tracking-wide">Plan de toma:</p>
+                                {items.filter(i => i.medicamento.trim()).map((item, idx) => (
+                                    <div key={item.id} className="border-l-2 border-green-300 pl-3 text-xs space-y-1">
+                                        <p className="font-bold text-slate-900">
+                                            {idx + 1}. {item.medicamento} {item.droga ? `(${item.droga})` : ''}
+                                        </p>
+                                        {(item.frecuencia || item.duracion) && (
+                                            <p className="text-slate-700">
+                                                Tomar: {item.frecuencia} {item.duracion ? `durante ${item.duracion}` : ''}
+                                            </p>
+                                        )}
+                                        {item.indicaciones && (
+                                            <p className="text-slate-600 bg-slate-50 p-1.5 rounded border border-slate-100 italic">
+                                                Instrucciones: {item.indicaciones}
+                                            </p>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+
+                            {indicacionesGenerales && (
+                                <div className="p-2.5 bg-slate-50 rounded border text-xs text-slate-700 space-y-1">
+                                    <p className="font-semibold text-slate-500 uppercase tracking-wide text-[10px]">Indicaciones Generales:</p>
+                                    <p className="whitespace-pre-wrap">{indicacionesGenerales}</p>
+                                </div>
+                            )}
+
+                            {showSignature && (
+                                <div className="mt-8 pt-4 border-t text-right text-xs text-slate-700">
+                                    <div className="inline-block border-t border-slate-400 pt-2 min-w-[180px]">
+                                        <p className="font-semibold">Dr/a. {user.apellido}, {user.nombres}</p>
+                                        <p className="text-slate-500">{firmaMatricula}</p>
+                                        <p className="text-slate-500">{user.especialidad}</p>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="print-only text-right text-xs text-slate-400 mt-4">
+                                Fecha: {formatDateFoot(new Date())}
                             </div>
                         </div>
                     )}

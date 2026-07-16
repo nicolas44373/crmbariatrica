@@ -890,9 +890,64 @@ const INFORME_TIPOS_POR_ROL: Record<string, { tipo: string; plantilla: string }[
     ],
 };
 
-function getInformeTipos(user: Profesional) {
+function getInformeTipos(user: Profesional, paciente?: PacienteCompleto) {
     const esp = (user.especialidad || '').toLowerCase();
-    if (esp.includes('ciruj') || esp.includes('bariat')) return [...INFORME_TIPOS_POR_ROL.cirugia, ...INFORME_TIPOS_POR_ROL.general];
+    
+    let plantillaQuirurgico = `INFORME QUIRÚRGICO\n\nFecha de cirugía: \nCirujano interviniente: \nAnestesista: \n\nTécnica quirúrgica utilizada:\n\nHallazgos intraoperatorios:\n\nComplicaciones intraoperatorias: Sin complicaciones\n\nDesarrollo del acto quirúrgico:\n\nEstado postoperatorio inmediato:\n\nIndicaciones postoperatorias:\n\nFirma y sello del cirujano:`;
+    
+    if (paciente) {
+        const { filiatorio, historiaClinica, cirugia } = paciente;
+        const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+        const hoy = new Date();
+        const fechaHoyStr = `${hoy.getDate()} de ${meses[hoy.getMonth()]} de ${hoy.getFullYear()}`;
+        
+        let edad = '';
+        if (filiatorio.fechaNacimiento) {
+            try {
+                const birthDate = new Date(filiatorio.fechaNacimiento.replace(/-/g, '/'));
+                const today = new Date();
+                let age = today.getFullYear() - birthDate.getFullYear();
+                const m = today.getMonth() - birthDate.getMonth();
+                if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+                    age--;
+                }
+                edad = age.toString();
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        
+        let pesoPostStr = '[peso_post]';
+        if (historiaClinica && historiaClinica.talla && historiaClinica.pesoInicial) {
+            const tallaM = historiaClinica.talla / 100;
+            const pesoInicial = historiaClinica.pesoInicial;
+            const pesoObjetivo = 25 * Math.pow(tallaM, 2);
+            const pesoPost = pesoInicial - (pesoInicial - pesoObjetivo) * 0.80;
+            pesoPostStr = pesoPost.toFixed(1);
+        }
+        
+        const comorbilidadesStr = historiaClinica && historiaClinica.comorbilidades && historiaClinica.comorbilidades.length > 0 
+            ? historiaClinica.comorbilidades.join(', ')
+            : 'Ninguna';
+            
+        const tallaMStr = historiaClinica && historiaClinica.talla ? (historiaClinica.talla / 100).toFixed(2) : '[talla]';
+        const pesoInicialStr = historiaClinica && historiaClinica.pesoInicial ? historiaClinica.pesoInicial.toString() : '[peso]';
+        const imcInicialStr = historiaClinica && historiaClinica.imcInicial ? historiaClinica.imcInicial.toString() : '[imc]';
+        
+        const tipoCirugiaStr = cirugia?.tipoCirugia || filiatorio.tipoCirugia || '[tipo de cirugia seleccionado en Resumen Clínico]';
+        const osStr = filiatorio.obraSocial || '[os]';
+        const afiliadoStr = filiatorio.nroAfiliado || '[numero de afiliado]';
+        
+        plantillaQuirurgico = `INFORME QUIRÚRGICO\nTucumán, ${fechaHoyStr}\nPACIENTE: ${filiatorio.apellido} ${filiatorio.nombres}   Obra Social: ${osStr}, ${afiliadoStr}\n\nPaciente de ${edad || '[edad]'} años, con diagnóstico de obesidad, en evaluación para eventual cirugía bariátrica luego de tratamientos médicos previos sin respuesta sostenida.\nAntecedentes generales:    (esto es lo que en general se edita)\nObesidad de más de 10 años de evolución\nRealizo tratamientos previos detallados en informe nutricional\nComorbilidades asociadas:\n${comorbilidadesStr}\n\nTalla\tPeso Inicial\tIMC\n${tallaMStr} m\t${pesoInicialStr} kg\t${imcInicialStr} kg/m2\n\nSe realizo una exhaustiva evaluación multidisciplinaria que incluye análisis de laboratorio, ECG y riesgo quirúrgico, radiografía de tórax, ecografía abdominal, examen funcional respiratorio, seriada esofagogastroduodenal y endoscopia digestiva alta, e interconsultas con psicología, nutrición, clínica médica, gastroenterología y cirugía.\n\nConclusión:\nReune los criterios clínicos para la realización de un ${tipoCirugiaStr} por via laparoscópica, con un descenso de peso estimado en ${pesoPostStr} kg en un periodo de 12 a 18 meses luego de la intervención. A esto se sumará la mejoría y/o remisión de sus enfermedades asociadas.\n\nPor lo expuesto, solicito la autorización correspondiente para la realización de la cirugía indicada.`;
+    }
+
+    const list = [
+        { tipo: 'Informe Quirúrgico', plantilla: plantillaQuirurgico },
+        { tipo: 'Epicrisis / Resumen de Alta', plantilla: `EPICRISIS\n\nFecha de ingreso: \nFecha de alta: \n\nDiagnóstico de ingreso:\nDiagnóstico de egreso:\n\nResumen de la internación:\n\nProcedimientos realizados:\n\nMedicación al alta:\n\nIndicaciones al alta:\n\nTurnos de seguimiento:\n\nFirma y sello del médico tratante:` },
+        { tipo: 'Informe de Consulta', plantilla: `INFORME DE CONSULTA\n\nMotivo de consulta:\n\nAntecedentes relevantes:\n\nExamen físico:\nPeso: \nTalla: \nIMC: \nTA: \n\nImpresión diagnóstica:\n\nPlan de tratamiento:\n\nPróximo control:\n\nFirma y sello:` }
+    ];
+
+    if (esp.includes('ciruj') || esp.includes('bariat')) return [...list, ...INFORME_TIPOS_POR_ROL.general];
     if (esp.includes('nutri')) return [...INFORME_TIPOS_POR_ROL.nutricion, ...INFORME_TIPOS_POR_ROL.general];
     if (esp.includes('psic')) return [...INFORME_TIPOS_POR_ROL.psicologia, ...INFORME_TIPOS_POR_ROL.general];
     return INFORME_TIPOS_POR_ROL.general;
@@ -911,7 +966,7 @@ const InformeModal = ({
     onClose: () => void;
     onSaveSuccess: () => void;
 }) => {
-    const informeTipos = getInformeTipos(user);
+    const informeTipos = getInformeTipos(user, paciente);
     const [informe, setInforme] = useState({ ...initialInforme, tipoInforme: initialInforme.tipoInforme || informeTipos[0]?.tipo || 'Resumen Clínico' });
     const [isSaving, setIsSaving] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
@@ -996,7 +1051,12 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
         }
     };
     
-    const handlePrint = () => window.print();
+    const handlePrint = () => {
+        const oldTitle = document.title;
+        document.title = '';
+        window.print();
+        document.title = oldTitle;
+    };
     
     const handleCopy = () => {
         if (informe.contenido) {
@@ -1092,8 +1152,8 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
                         `}
                     </style>
                     <div className="print-section">
-                        <h3 className="text-lg font-bold text-center text-slate-800">{informe.tipoInforme || 'Informe Clínico'}</h3>
-                        <div className="flex justify-between text-sm mt-4 mb-6 border-y py-2 text-slate-600">
+                        <h3 className="text-lg font-bold text-center text-slate-800 no-print">{informe.tipoInforme || 'Informe Clínico'}</h3>
+                        <div className="flex justify-between text-sm mt-4 mb-6 border-y py-2 text-slate-600 no-print">
                             <span><span className="font-semibold">Paciente:</span> {paciente.filiatorio.nombres} {paciente.filiatorio.apellido}</span>
                             <span><span className="font-semibold">Fecha:</span> {format(new Date(), 'dd/MM/yyyy')}</span>
                         </div>
@@ -1465,7 +1525,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
             setCurrentInforme(informe);
             setModal('editInforme');
         } else {
-            const tipos = getInformeTipos(user);
+            const tipos = getInformeTipos(user, paciente!);
             setCurrentInforme({
                 idPaciente: paciente!.filiatorio.idPaciente,
                 emailProfesionalAutor: user.email,
