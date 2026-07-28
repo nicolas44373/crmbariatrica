@@ -1132,8 +1132,7 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
                                 left: 0 !important;
                                 top: 0 !important;
                                 width: 100% !important;
-                                margin-top: 6cm !important; /* Top margin for pre-printed letterhead logo */
-                                padding: 0 2cm !important;
+                                padding: 1.5cm 2cm !important;
                                 font-size: 11pt !important;
                                 line-height: 1.6 !important;
                                 font-family: 'Outfit', sans-serif !important;
@@ -1145,8 +1144,7 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
                                 display: block !important;
                             }
                             @page {
-                                margin-top: 0;
-                                margin-bottom: 0;
+                                margin: 0;
                             }
                         }
                         `}
@@ -1164,8 +1162,38 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
                             className="w-full h-96 p-3 border rounded-md font-mono text-sm leading-relaxed no-print"
                             disabled={isGenerating}
                         />
-                        <div className="print-only hidden whitespace-pre-wrap text-sm leading-relaxed font-sans text-slate-800" style={{ minHeight: '10cm' }}>
-                            {informe.contenido}
+                        <div className="print-only hidden">
+                            <div className="flex justify-between items-start border-b-2 border-slate-800 pb-3 mb-4">
+                                <div>
+                                    <p className="text-lg font-bold uppercase tracking-wide text-slate-900">
+                                        Dr/a. {user.apellido}, {user.nombres}
+                                    </p>
+                                    <p className="text-sm text-slate-600">
+                                        {user.especialidad || 'Medicina'}
+                                        {user.matricula ? ` — M.P. ${user.matricula}` : ''}
+                                    </p>
+                                </div>
+                                <div className="text-right text-sm text-slate-600">
+                                    <p className="font-semibold text-slate-800">{informe.tipoInforme || 'Informe Clínico'}</p>
+                                    <p>{format(new Date(), "dd 'de' MMMM 'de' yyyy", { locale: es })}</p>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs bg-slate-50 rounded p-3 border mb-6">
+                                <div><span className="text-slate-500">Paciente:</span> <strong>{paciente.filiatorio.apellido}, {paciente.filiatorio.nombres}</strong></div>
+                                <div><span className="text-slate-500">DNI:</span> {paciente.filiatorio.dni}</div>
+                                <div><span className="text-slate-500">Fecha de nacimiento:</span> {paciente.filiatorio.fechaNacimiento ? format(new Date(paciente.filiatorio.fechaNacimiento.replace(/-/g, '/')), 'dd/MM/yyyy') : 'N/A'}</div>
+                                <div><span className="text-slate-500">Obra Social:</span> {paciente.filiatorio.obraSocial || '-'}</div>
+                            </div>
+                            <div className="whitespace-pre-wrap text-sm leading-relaxed font-sans text-slate-800" style={{ minHeight: '8cm' }}>
+                                {informe.contenido}
+                            </div>
+                            <div className="mt-10 pt-4 text-right text-xs text-slate-700">
+                                <div className="inline-block border-t border-slate-400 pt-2 min-w-[220px]">
+                                    <p className="font-semibold">Dr/a. {user.apellido}, {user.nombres}</p>
+                                    {user.matricula && <p className="text-slate-500">M.P. {user.matricula}</p>}
+                                    {user.especialidad && <p className="text-slate-500">{user.especialidad}</p>}
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

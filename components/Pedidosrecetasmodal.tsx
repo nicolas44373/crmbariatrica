@@ -224,13 +224,14 @@ const PRINT_STYLES = `
         max-width: 100% !important;
         border: none !important;
         box-shadow: none !important;
-        padding: 0 !important;
+        padding: 6mm 8mm !important;
         margin: 0 !important;
         font-family: Arial, sans-serif;
         font-size: 10pt;
         color: #000;
         background: white !important;
         display: block !important;
+        box-sizing: border-box !important;
     }
     
     .no-print {
@@ -249,13 +250,6 @@ const PRINT_STYLES = `
     }
 }
 `;
-
-const formatDateFoot = (date: Date) => {
-    const d = date.getDate();
-    const m = date.getMonth() + 1;
-    const y = date.getFullYear().toString().substring(2);
-    return `${d}/${m}/${y}`;
-};
 
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────────────────────────
 
@@ -549,13 +543,16 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
                     className="bg-white border rounded-lg p-6 text-sm space-y-4 shadow-sm flex-grow"
                     style={{ maxWidth: '105mm' }}
                 >
-                    {/* Logo Plenus */}
-                    <div className="border-b pb-3 mb-2 no-print">
+                    {/* Encabezado profesional */}
+                    <div className="border-b-2 border-slate-800 pb-3 mb-2">
                         <div className="flex justify-between items-start">
                             <div>
-                                <p className="font-bold text-base text-slate-900 uppercase tracking-wide">Plenus</p>
-                                <p className="font-bold text-xs text-slate-700 mt-0.5">PEDIDO DE ESTUDIOS</p>
-                                <p className="text-slate-500 text-xs mt-0.5">{user.especialidad || 'Medicina'}</p>
+                                <p className="font-bold text-base text-slate-900 uppercase tracking-wide">Dr/a. {user.apellido}, {user.nombres}</p>
+                                <p className="text-slate-600 text-xs mt-0.5">
+                                    {user.especialidad || 'Medicina'}
+                                    {user.matricula ? ` — M.P. ${user.matricula}` : ''}
+                                </p>
+                                <p className="font-semibold text-xs text-slate-700 mt-1">PEDIDO DE ESTUDIOS</p>
                             </div>
                             <p className="text-xs text-slate-500 text-right">{today}</p>
                         </div>
@@ -608,9 +605,6 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
                             </div>
                         </div>
                     )}
-                    <div className="print-only text-right text-xs text-slate-400 mt-4">
-                        Fecha: {formatDateFoot(new Date())}
-                    </div>
                 </div>
             </div>
         </div>
@@ -988,12 +982,15 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
                 >
                     {/* PARTE 1: LA RECETA */}
                     <div className="space-y-4">
-                        <div className="border-b pb-3 no-print">
+                        <div className="border-b-2 border-slate-800 pb-3">
                             <div className="flex justify-between items-start">
                                 <div>
-                                    <p className="font-bold text-base text-slate-900 uppercase tracking-wide">Plenus</p>
-                                    <p className="font-bold text-xs text-slate-700 mt-0.5">RECETA MÉDICA</p>
-                                    <p className="text-slate-500 text-xs mt-0.5">{user.especialidad || 'Medicina'}</p>
+                                    <p className="font-bold text-base text-slate-900 uppercase tracking-wide">Dr/a. {user.apellido}, {user.nombres}</p>
+                                    <p className="text-slate-600 text-xs mt-0.5">
+                                        {user.especialidad || 'Medicina'}
+                                        {firmaMatricula && showSignature ? ` — ${firmaMatricula}` : ''}
+                                    </p>
+                                    <p className="font-semibold text-xs text-slate-700 mt-1">RECETA MÉDICA</p>
                                 </div>
                                 <p className="text-xs text-slate-500 text-right">{today}</p>
                             </div>
@@ -1040,21 +1037,17 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
                                 </div>
                             </div>
                         )}
-
-                        <div className="print-only text-right text-xs text-slate-400 mt-4">
-                            Fecha: {formatDateFoot(new Date())}
-                        </div>
                     </div>
 
                     {/* PARTE 2: LAS INDICACIONES (EN HOJA APARTE) */}
                     {imprimirIndicaciones && (
                         <div className="page-break pt-6 space-y-4 border-t border-dashed mt-8">
-                            <div className="border-b pb-3 no-print">
+                            <div className="border-b-2 border-slate-800 pb-3">
                                 <div className="flex justify-between items-start">
                                     <div>
-                                        <p className="font-bold text-base text-slate-900 uppercase tracking-wide">Plenus</p>
-                                        <p className="font-bold text-xs text-slate-700 mt-0.5">INDICACIONES MÉDICAS</p>
-                                        <p className="text-slate-500 text-xs mt-0.5">{user.especialidad || 'Medicina'}</p>
+                                        <p className="font-bold text-base text-slate-900 uppercase tracking-wide">Dr/a. {user.apellido}, {user.nombres}</p>
+                                        <p className="text-slate-600 text-xs mt-0.5">{user.especialidad || 'Medicina'}</p>
+                                        <p className="font-semibold text-xs text-slate-700 mt-1">INDICACIONES MÉDICAS</p>
                                     </div>
                                     <p className="text-xs text-slate-500 text-right">{today}</p>
                                 </div>
@@ -1102,10 +1095,6 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
                                     </div>
                                 </div>
                             )}
-
-                            <div className="print-only text-right text-xs text-slate-400 mt-4">
-                                Fecha: {formatDateFoot(new Date())}
-                            </div>
                         </div>
                     )}
                 </div>
