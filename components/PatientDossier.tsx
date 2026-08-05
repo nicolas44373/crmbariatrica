@@ -196,8 +196,25 @@ const EditarPacienteModal = ({ paciente, onClose, onSuccess, onDelete }: { pacie
     const [error, setError] = useState<string | null>(null);
     const [obrasSociales, setObrasSociales] = useState<string[]>([]);
     const [profesionales, setProfesionales] = useState<Profesional[]>([]);
+    const [isUploadingFoto, setIsUploadingFoto] = useState(false);
 
     const user = authContext!.user!;
+
+    const handleFotoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file) return;
+        setIsUploadingFoto(true);
+        setError(null);
+        try {
+            const url = await (api as any).uploadEstudioFile(paciente.idPaciente, file, 'foto-perfil');
+            setFormData(prev => ({ ...prev, fotoPerfil: url }));
+        } catch (err: any) {
+            setError('Error al subir la foto: ' + (err.message || err));
+        } finally {
+            setIsUploadingFoto(false);
+        }
+    };
 
     useEffect(() => {
         const fetchObrasSociales = async () => {
@@ -421,9 +438,16 @@ const EditarPacienteModal = ({ paciente, onClose, onSuccess, onDelete }: { pacie
                         )}
 
                         <div className="flex items-end gap-4">
-                            <div className="flex-grow">
-                                <label htmlFor="fotoPerfil" className="block text-sm font-medium text-slate-700">Foto de Perfil (URL)</label>
-                                <input type="url" name="fotoPerfil" id="fotoPerfil" value={formData.fotoPerfil || ''} onChange={handleChange} placeholder="https://..." className="mt-1 block w-full rounded-md border-slate-300" />
+                            <div className="flex-grow space-y-1.5">
+                                <label className="block text-sm font-medium text-slate-700">Foto de Perfil</label>
+                                <div className="flex items-center gap-2">
+                                    <label className="cursor-pointer text-sm font-medium text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-md hover:bg-indigo-100">
+                                        {isUploadingFoto ? 'Subiendo...' : '📷 Subir foto'}
+                                        <input type="file" accept="image/*" className="hidden" disabled={isUploadingFoto} onChange={handleFotoFileChange} />
+                                    </label>
+                                    <span className="text-xs text-slate-400">o pegá una URL:</span>
+                                </div>
+                                <input type="url" name="fotoPerfil" id="fotoPerfil" value={formData.fotoPerfil || ''} onChange={handleChange} placeholder="https://..." className="block w-full rounded-md border-slate-300 text-sm" />
                             </div>
                             {formData.fotoPerfil && (
                                 <img src={formData.fotoPerfil} alt="preview" className="w-14 h-14 rounded-full object-cover border-2 border-slate-200 flex-shrink-0" />
@@ -1163,7 +1187,8 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
                             disabled={isGenerating}
                         />
                         <div className="print-only hidden">
-                            <div className="flex justify-between items-start border-b-2 border-slate-800 pb-3 mb-4">
+                            {/* Encabezado profesional — solo en pantalla, no se imprime (se usa hoja membretada) */}
+                            <div className="no-print flex justify-between items-start border-b-2 border-slate-800 pb-3 mb-4">
                                 <div>
                                     <p className="text-lg font-bold uppercase tracking-wide text-slate-900">
                                         Dr/a. {user.apellido}, {user.nombres}
@@ -1193,6 +1218,9 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
                                     {user.matricula && <p className="text-slate-500">M.P. {user.matricula}</p>}
                                     {user.especialidad && <p className="text-slate-500">{user.especialidad}</p>}
                                 </div>
+                            </div>
+                            <div className="mt-4 pt-2 text-right text-[10px] text-slate-400">
+                                {format(new Date(), 'd/M/yy')}
                             </div>
                         </div>
                     </div>
@@ -1468,7 +1496,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                 try {
                     uploadedUrl = await (api as any).uploadEstudioFile(paciente.filiatorio.idPaciente, selectedFile);
                 } catch (err: any) {
-                    alert('Error al subir el archivo. Asegúrese de que el storage de Supabase tenga un bucket público llamado "estudios": ' + (err.message || err));
+                    alert('Error al subir el archivo. Asegúrese de que el storage de Supabase tenga un bucket llamado "estudios": ' + (err.message || err));
                     setIsSaving(false);
                     return;
                 }

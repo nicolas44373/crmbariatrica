@@ -2161,22 +2161,28 @@ async function exportBackup(): Promise<object> {
   };
 }
 
-async function uploadEstudioFile(idPaciente: string, file: File): Promise<string> {
-  const fileExt = file.name.split('.').pop();
-  const fileName = `${Date.now()}_${file.name}`;
-  const filePath = `${idPaciente}/${fileName}`;
+// URLs firmadas de larga duración (10 años): funcionan tanto si el bucket
+// 'estudios' es público como si es privado, a diferencia de getPublicUrl(),
+// que devuelve un link roto cuando el bucket no está marcado como público.
+const SIGNED_URL_EXPIRY_SECONDS = 60 * 60 * 24 * 365 * 10;
 
-  const { data, error } = await supabase.storage
+async function uploadEstudioFile(idPaciente: string, file: File, carpeta: string = ''): Promise<string> {
+  const fileName = `${Date.now()}_${file.name}`;
+  const filePath = carpeta ? `${idPaciente}/${carpeta}/${fileName}` : `${idPaciente}/${fileName}`;
+
+  const { error: uploadError } = await supabase.storage
     .from('estudios')
     .upload(filePath, file);
 
-  if (error) throw error;
+  if (uploadError) throw uploadError;
 
-  const { data: { publicUrl } } = supabase.storage
+  const { data, error: signError } = await supabase.storage
     .from('estudios')
-    .getPublicUrl(filePath);
+    .createSignedUrl(filePath, SIGNED_URL_EXPIRY_SECONDS);
 
-  return publicUrl;
+  if (signError) throw signError;
+
+  return data.signedUrl;
 }
 
 // ─── EXPORT ───────────────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { PacienteCompleto, Profesional } from '../types';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -179,13 +180,16 @@ const PRINT_STYLES = `
         height: auto !important;
         overflow: visible !important;
     }
-    
-    #root, #root > div {
-        height: auto !important;
-        overflow: visible !important;
-        display: block !important;
+
+    /* El resto de la app (ficha del paciente, dashboard, etc.) queda oculto
+       pero sigue ocupando espacio en el flujo del documento si solo se usa
+       visibility:hidden — eso genera hojas en blanco extra al imprimir.
+       Como el modal se renderiza en un portal fuera de #root, se puede
+       ocultar #root por completo sin afectar el contenido a imprimir. */
+    #root {
+        display: none !important;
     }
-    
+
     .fixed.inset-0 {
         position: absolute !important;
         left: 0 !important;
@@ -222,6 +226,9 @@ const PRINT_STYLES = `
         top: 0 !important;
         width: 100% !important;
         max-width: 100% !important;
+        height: auto !important;
+        min-height: 0 !important;
+        flex: none !important;
         border: none !important;
         box-shadow: none !important;
         padding: 6mm 8mm !important;
@@ -233,7 +240,7 @@ const PRINT_STYLES = `
         display: block !important;
         box-sizing: border-box !important;
     }
-    
+
     .no-print {
         display: none !important;
     }
@@ -266,7 +273,7 @@ export const PedidosRecetasModal: React.FC<PedidosRecetasModalProps> = ({
 }) => {
     const [tab, setTab] = useState<ModalTab>('pedido');
 
-    return (
+    return createPortal(
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
             <style>{PRINT_STYLES}</style>
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl m-4 flex flex-col max-h-[92vh]">
@@ -315,7 +322,8 @@ export const PedidosRecetasModal: React.FC<PedidosRecetasModalProps> = ({
                     )}
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 
@@ -399,12 +407,16 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
     };
 
     const today = format(new Date(), "dd 'de' MMMM 'de' yyyy", { locale: es });
+    const todayCorta = format(new Date(), 'd/M/yy');
     const { filiatorio } = paciente;
 
     return (
         <div className="flex flex-col lg:flex-row h-full">
             {/* LEFT — Editor */}
             <div className="w-full lg:w-1/2 p-5 border-r overflow-y-auto no-print space-y-4">
+                <p className="text-xs text-slate-500 bg-slate-50 border rounded-md p-2 leading-snug">
+                    La impresión sale sin encabezado (para usar con hoja membretada) y en tamaño A5. Si aparecen hojas en blanco o datos de fecha/URL fuera del margen, desmarcá "Encabezados y pies de página" en las opciones del diálogo de impresión del navegador.
+                </p>
                 <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1">Plantilla</label>
                     <div className="grid grid-cols-2 gap-2">
@@ -543,8 +555,8 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
                     className="bg-white border rounded-lg p-6 text-sm space-y-4 shadow-sm flex-grow"
                     style={{ maxWidth: '105mm' }}
                 >
-                    {/* Encabezado profesional */}
-                    <div className="border-b-2 border-slate-800 pb-3 mb-2">
+                    {/* Encabezado profesional — solo en pantalla, no se imprime (se usa hoja membretada) */}
+                    <div className="no-print border-b-2 border-slate-800 pb-3 mb-2">
                         <div className="flex justify-between items-start">
                             <div>
                                 <p className="font-bold text-base text-slate-900 uppercase tracking-wide">Dr/a. {user.apellido}, {user.nombres}</p>
@@ -558,7 +570,7 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
                         </div>
                     </div>
 
-                    {/* Datos del paciente */}
+                    {/* Datos del paciente — primera línea del impreso */}
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs bg-slate-50 rounded p-3 border">
                         <div><span className="text-slate-500">Paciente:</span> <strong>{filiatorio.apellido}, {filiatorio.nombres}</strong></div>
                         <div><span className="text-slate-500">DNI:</span> {filiatorio.dni}</div>
@@ -605,6 +617,11 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
                             </div>
                         </div>
                     )}
+
+                    {/* Pie de página — fecha corta */}
+                    <div className="mt-4 pt-2 text-right text-[10px] text-slate-400">
+                        {todayCorta}
+                    </div>
                 </div>
             </div>
         </div>
@@ -721,12 +738,16 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
     };
 
     const today = format(new Date(), "dd 'de' MMMM 'de' yyyy", { locale: es });
+    const todayCorta = format(new Date(), 'd/M/yy');
     const { filiatorio } = paciente;
 
     return (
         <div className="flex flex-col lg:flex-row h-full">
             {/* LEFT — Editor */}
             <div className="w-full lg:w-1/2 p-5 border-r overflow-y-auto no-print space-y-4">
+                <p className="text-xs text-slate-500 bg-slate-50 border rounded-md p-2 leading-snug">
+                    La impresión sale sin encabezado (para usar con hoja membretada) y en tamaño A5. Si aparecen hojas en blanco o datos de fecha/URL fuera del margen, desmarcá "Encabezados y pies de página" en las opciones del diálogo de impresión del navegador.
+                </p>
 
                 {/* Banner MRx */}
                 <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
@@ -982,7 +1003,8 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
                 >
                     {/* PARTE 1: LA RECETA */}
                     <div className="space-y-4">
-                        <div className="border-b-2 border-slate-800 pb-3">
+                        {/* Encabezado profesional — solo en pantalla, no se imprime (se usa hoja membretada) */}
+                        <div className="no-print border-b-2 border-slate-800 pb-3">
                             <div className="flex justify-between items-start">
                                 <div>
                                     <p className="font-bold text-base text-slate-900 uppercase tracking-wide">Dr/a. {user.apellido}, {user.nombres}</p>
@@ -996,6 +1018,7 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
                             </div>
                         </div>
 
+                        {/* Datos del paciente — primera línea del impreso */}
                         <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs bg-slate-50 rounded p-3 border">
                             <div><span className="text-slate-500">Paciente:</span> <strong>{filiatorio.apellido}, {filiatorio.nombres}</strong></div>
                             <div><span className="text-slate-500">DNI:</span> {filiatorio.dni}</div>
@@ -1037,12 +1060,18 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
                                 </div>
                             </div>
                         )}
+
+                        {/* Pie de página — fecha corta */}
+                        <div className="mt-4 pt-2 text-right text-[10px] text-slate-400">
+                            {todayCorta}
+                        </div>
                     </div>
 
                     {/* PARTE 2: LAS INDICACIONES (EN HOJA APARTE) */}
                     {imprimirIndicaciones && (
                         <div className="page-break pt-6 space-y-4 border-t border-dashed mt-8">
-                            <div className="border-b-2 border-slate-800 pb-3">
+                            {/* Encabezado profesional — solo en pantalla, no se imprime (se usa hoja membretada) */}
+                            <div className="no-print border-b-2 border-slate-800 pb-3">
                                 <div className="flex justify-between items-start">
                                     <div>
                                         <p className="font-bold text-base text-slate-900 uppercase tracking-wide">Dr/a. {user.apellido}, {user.nombres}</p>
@@ -1053,6 +1082,7 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
                                 </div>
                             </div>
 
+                            {/* Datos del paciente — primera línea del impreso */}
                             <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs bg-slate-50 rounded p-3 border">
                                 <div><span className="text-slate-500">Paciente:</span> <strong>{filiatorio.apellido}, {filiatorio.nombres}</strong></div>
                                 <div><span className="text-slate-500">DNI:</span> {filiatorio.dni}</div>
@@ -1095,6 +1125,11 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
                                     </div>
                                 </div>
                             )}
+
+                            {/* Pie de página — fecha corta */}
+                            <div className="mt-4 pt-2 text-right text-[10px] text-slate-400">
+                                {todayCorta}
+                            </div>
                         </div>
                     )}
                 </div>
