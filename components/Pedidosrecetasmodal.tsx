@@ -165,7 +165,7 @@ const PRINT_STYLES = `
 @media print {
     @page {
         size: A5 portrait;
-        margin: 8mm 10mm;
+        margin: 40mm 10mm 8mm 10mm;
     }
     
     body * {
@@ -231,7 +231,7 @@ const PRINT_STYLES = `
         flex: none !important;
         border: none !important;
         box-shadow: none !important;
-        padding: 6mm 8mm !important;
+        padding: 0mm 8mm 6mm 8mm !important;
         margin: 0 !important;
         font-family: Arial, sans-serif;
         font-size: 10pt;

@@ -1156,7 +1156,7 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
                                 left: 0 !important;
                                 top: 0 !important;
                                 width: 100% !important;
-                                padding: 1.5cm 2cm !important;
+                                padding: 4cm 2cm 1.5cm 2cm !important;
                                 font-size: 11pt !important;
                                 line-height: 1.6 !important;
                                 font-family: 'Outfit', sans-serif !important;
