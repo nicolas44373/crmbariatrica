@@ -287,7 +287,8 @@ const getPrintStyles = (format: 'A5' | 'A4') => `
         padding: 0mm 8mm 6mm 8mm !important;
         margin: 0 !important;
         font-family: Arial, sans-serif;
-        font-size: 10pt;
+        font-size: 12pt;
+        line-height: 1.5;
         color: #000;
         background: white !important;
         display: block !important;
@@ -297,7 +298,7 @@ const getPrintStyles = (format: 'A5' | 'A4') => `
     .no-print {
         display: none !important;
     }
-    
+
     .page-break {
         page-break-before: always !important;
         break-before: page !important;
@@ -666,7 +667,7 @@ const PedidoEstudiosPanel: React.FC<{
                     </div>
 
                     {/* Datos del paciente — primera línea del impreso */}
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs bg-slate-50 rounded p-3 border">
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm bg-slate-50 rounded p-3 border">
                         <div><span className="text-slate-500">Paciente:</span> <strong>{filiatorio.apellido}, {filiatorio.nombres}</strong></div>
                         <div><span className="text-slate-500">DNI:</span> {filiatorio.dni}</div>
                         <div><span className="text-slate-500">Obra Social:</span> {filiatorio.obraSocial || '-'}</div>
@@ -675,14 +676,14 @@ const PedidoEstudiosPanel: React.FC<{
 
                     {/* Lista de estudios — sin número ni DX por ítem */}
                     <div>
-                        <p className="font-semibold text-slate-800 mb-2 text-xs uppercase tracking-wide">Se solicita:</p>
+                        <p className="font-semibold text-slate-800 mb-2 text-sm uppercase tracking-wide">Se solicita:</p>
                         <ul className="space-y-1.5">
                             {items.filter(i => i.descripcion.trim()).map((item) => (
-                                <li key={item.id} className="text-xs flex items-start gap-1.5">
+                                <li key={item.id} className="text-sm flex items-start gap-1.5">
                                     <span className="text-slate-400 flex-shrink-0 mt-0.5">•</span>
                                     <div>
                                         {item.urgente && (
-                                            <span className="bg-red-100 text-red-700 text-xs font-bold px-1 py-0.5 rounded mr-1">URGENTE</span>
+                                            <span className="bg-red-100 text-red-700 text-sm font-bold px-1 py-0.5 rounded mr-1">URGENTE</span>
                                         )}
                                         <strong>{item.descripcion}</strong>
                                         {item.indicaciones && (
@@ -696,7 +697,7 @@ const PedidoEstudiosPanel: React.FC<{
 
                     {/* Diagnóstico al pie del pedido */}
                     {diagnostico && (
-                        <div className="mt-3 pt-3 border-t border-slate-200 text-xs">
+                        <div className="mt-3 pt-3 border-t border-slate-200 text-sm">
                             <span className="text-slate-500 font-medium">Diagnóstico: </span>
                             <span className="text-slate-700 italic">{diagnostico}</span>
                         </div>
@@ -704,7 +705,7 @@ const PedidoEstudiosPanel: React.FC<{
 
                     {/* Firma */}
                     {showSignature && (
-                        <div className="mt-6 pt-4 border-t text-right text-xs text-slate-700">
+                        <div className="mt-6 pt-4 border-t text-right text-sm text-slate-700">
                             <div className="inline-block border-t border-slate-400 pt-2 min-w-[180px]">
                                 <p className="font-semibold">{firmaNombre}</p>
                                 <p className="text-slate-500">{firmaMatricula}</p>
@@ -714,7 +715,7 @@ const PedidoEstudiosPanel: React.FC<{
                     )}
 
                     {/* Pie de página — fecha corta */}
-                    <div className="mt-4 pt-2 text-right text-[10px] text-slate-400">
+                    <div className="mt-4 pt-2 text-right text-xs text-slate-400">
                         {todayCorta}
                     </div>
                 </div>
@@ -1153,7 +1154,7 @@ const RecetaPanel: React.FC<{
                         </div>
 
                         {/* Datos del paciente — primera línea del impreso */}
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs bg-slate-50 rounded p-3 border">
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm bg-slate-50 rounded p-3 border">
                             <div><span className="text-slate-500">Paciente:</span> <strong>{filiatorio.apellido}, {filiatorio.nombres}</strong></div>
                             <div><span className="text-slate-500">DNI:</span> {filiatorio.dni}</div>
                             <div><span className="text-slate-500">Obra Social:</span> {filiatorio.obraSocial || '-'}</div>
@@ -1161,7 +1162,7 @@ const RecetaPanel: React.FC<{
                         </div>
 
                         {diagnostico && (
-                            <div className="text-xs">
+                            <div className="text-sm">
                                 <span className="text-slate-500 font-medium">Diagnóstico: </span>
                                 <span className="text-slate-800">{diagnostico}</span>
                             </div>
@@ -1169,7 +1170,7 @@ const RecetaPanel: React.FC<{
 
                         <div className="space-y-3">
                             {items.filter(i => i.medicamento.trim()).map((item, idx) => (
-                                <div key={item.id} className="border-l-2 border-indigo-300 pl-3 text-xs space-y-0.5">
+                                <div key={item.id} className="border-l-2 border-indigo-300 pl-3 text-sm space-y-0.5">
                                     <p className="font-bold text-slate-900">
                                         {idx + 1}. {item.medicamento}
                                         {item.dosis && <span className="font-normal text-slate-600"> — {item.dosis}</span>}
@@ -1186,7 +1187,7 @@ const RecetaPanel: React.FC<{
                         </div>
 
                         {showSignature && (
-                            <div className="mt-8 pt-4 border-t text-right text-xs text-slate-700">
+                            <div className="mt-8 pt-4 border-t text-right text-sm text-slate-700">
                                 <div className="inline-block border-t border-slate-400 pt-2 min-w-[180px]">
                                     <p className="font-semibold">Dr/a. {user.apellido}, {user.nombres}</p>
                                     <p className="text-slate-500">{firmaMatricula}</p>
@@ -1196,7 +1197,7 @@ const RecetaPanel: React.FC<{
                         )}
 
                         {/* Pie de página — fecha corta */}
-                        <div className="mt-4 pt-2 text-right text-[10px] text-slate-400">
+                        <div className="mt-4 pt-2 text-right text-xs text-slate-400">
                             {todayCorta}
                         </div>
                     </div>
@@ -1217,15 +1218,15 @@ const RecetaPanel: React.FC<{
                             </div>
 
                             {/* Datos del paciente — primera línea del impreso */}
-                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs bg-slate-50 rounded p-3 border">
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm bg-slate-50 rounded p-3 border">
                                 <div><span className="text-slate-500">Paciente:</span> <strong>{filiatorio.apellido}, {filiatorio.nombres}</strong></div>
                                 <div><span className="text-slate-500">DNI:</span> {filiatorio.dni}</div>
                             </div>
 
                             <div className="space-y-4">
-                                <p className="font-semibold text-slate-800 text-xs uppercase tracking-wide">Plan de toma:</p>
+                                <p className="font-semibold text-slate-800 text-sm uppercase tracking-wide">Plan de toma:</p>
                                 {items.filter(i => i.medicamento.trim()).map((item, idx) => (
-                                    <div key={item.id} className="border-l-2 border-green-300 pl-3 text-xs space-y-1">
+                                    <div key={item.id} className="border-l-2 border-green-300 pl-3 text-sm space-y-1">
                                         <p className="font-bold text-slate-900">
                                             {idx + 1}. {item.medicamento} {item.droga ? `(${item.droga})` : ''}
                                         </p>
@@ -1244,14 +1245,14 @@ const RecetaPanel: React.FC<{
                             </div>
 
                             {indicacionesGenerales && (
-                                <div className="p-2.5 bg-slate-50 rounded border text-xs text-slate-700 space-y-1">
-                                    <p className="font-semibold text-slate-500 uppercase tracking-wide text-[10px]">Indicaciones Generales:</p>
+                                <div className="p-2.5 bg-slate-50 rounded border text-sm text-slate-700 space-y-1">
+                                    <p className="font-semibold text-slate-500 uppercase tracking-wide text-xs">Indicaciones Generales:</p>
                                     <p className="whitespace-pre-wrap">{indicacionesGenerales}</p>
                                 </div>
                             )}
 
                             {showSignature && (
-                                <div className="mt-8 pt-4 border-t text-right text-xs text-slate-700">
+                                <div className="mt-8 pt-4 border-t text-right text-sm text-slate-700">
                                     <div className="inline-block border-t border-slate-400 pt-2 min-w-[180px]">
                                         <p className="font-semibold">Dr/a. {user.apellido}, {user.nombres}</p>
                                         <p className="text-slate-500">{firmaMatricula}</p>
@@ -1261,7 +1262,7 @@ const RecetaPanel: React.FC<{
                             )}
 
                             {/* Pie de página — fecha corta */}
-                            <div className="mt-4 pt-2 text-right text-[10px] text-slate-400">
+                            <div className="mt-4 pt-2 text-right text-xs text-slate-400">
                                 {todayCorta}
                             </div>
                         </div>
