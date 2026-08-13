@@ -971,7 +971,7 @@ function getInformeTipos(user: Profesional, paciente?: PacienteCompleto) {
         { tipo: 'Informe de Consulta', plantilla: `INFORME DE CONSULTA\n\nMotivo de consulta:\n\nAntecedentes relevantes:\n\nExamen físico:\nPeso: \nTalla: \nIMC: \nTA: \n\nImpresión diagnóstica:\n\nPlan de tratamiento:\n\nPróximo control:\n\nFirma y sello:` }
     ];
 
-    if (esp.includes('ciruj') || esp.includes('bariat')) return [...list, ...INFORME_TIPOS_POR_ROL.general];
+    if (esp.includes('ciruj') || esp.includes('bariat') || user.rol === UserRole.SUPERADMIN) return [...list, ...INFORME_TIPOS_POR_ROL.general];
     if (esp.includes('nutri')) return [...INFORME_TIPOS_POR_ROL.nutricion, ...INFORME_TIPOS_POR_ROL.general];
     if (esp.includes('psic')) return [...INFORME_TIPOS_POR_ROL.psicologia, ...INFORME_TIPOS_POR_ROL.general];
     return INFORME_TIPOS_POR_ROL.general;
