@@ -3,6 +3,12 @@ import { createPortal } from 'react-dom';
 import { PacienteCompleto, Profesional } from '../types';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { checkPrintFit, PRINT_OVERFLOW_MESSAGE } from '../services/printGuard';
+
+const PRINT_AREA_WIDTH_MM = 112;
+const PRINT_AREA_HEIGHT_MM = 156;
+const PRINT_AREA_WIDTH_MM_A4 = 174;
+const PRINT_AREA_HEIGHT_MM_A4 = 243;
 
 // ─── TIPOS ────────────────────────────────────────────────────────────────────
 
@@ -161,10 +167,10 @@ const PLANTILLAS_PEDIDO: PlantillaPedido[] = [
 
 // ─── PRINT STYLES ─────────────────────────────────────────────────────────────
 
-const PRINT_STYLES = `
+const getPrintStyles = (format: 'A5' | 'A4') => `
 @media print {
     @page {
-        size: A5 portrait;
+        size: ${format} portrait;
         margin: 40mm 10mm 8mm 10mm;
     }
     
@@ -249,6 +255,11 @@ const PRINT_STYLES = `
         page-break-before: always !important;
         break-before: page !important;
     }
+
+    .print-avoid-break {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+    }
 }
 
 @media screen {
@@ -272,10 +283,11 @@ export const PedidosRecetasModal: React.FC<PedidosRecetasModalProps> = ({
     onClose,
 }) => {
     const [tab, setTab] = useState<ModalTab>('pedido');
+    const [printFormat, setPrintFormat] = useState<'A5' | 'A4'>('A5');
 
     return createPortal(
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
-            <style>{PRINT_STYLES}</style>
+            <style>{getPrintStyles(printFormat)}</style>
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl m-4 flex flex-col max-h-[92vh]">
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b bg-slate-50 rounded-t-xl no-print">
@@ -315,10 +327,10 @@ export const PedidosRecetasModal: React.FC<PedidosRecetasModalProps> = ({
                 {/* Content */}
                 <div className="flex-grow overflow-y-auto">
                     {tab === 'pedido' && (
-                        <PedidoEstudiosPanel paciente={paciente} user={user} />
+                        <PedidoEstudiosPanel paciente={paciente} user={user} printFormat={printFormat} setPrintFormat={setPrintFormat} />
                     )}
                     {tab === 'receta' && (
-                        <RecetaPanel paciente={paciente} user={user} />
+                        <RecetaPanel paciente={paciente} user={user} printFormat={printFormat} setPrintFormat={setPrintFormat} />
                     )}
                 </div>
             </div>
@@ -329,9 +341,16 @@ export const PedidosRecetasModal: React.FC<PedidosRecetasModalProps> = ({
 
 // ─── PANEL PEDIDO DE ESTUDIOS ─────────────────────────────────────────────────
 
-const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> = ({
+const PedidoEstudiosPanel: React.FC<{
+    paciente: PacienteCompleto;
+    user: Profesional;
+    printFormat: 'A5' | 'A4';
+    setPrintFormat: (format: 'A5' | 'A4') => void;
+}> = ({
     paciente,
     user,
+    printFormat,
+    setPrintFormat,
 }) => {
     const [selectedPlantilla, setSelectedPlantilla] = useState<string>('pre-quirurgico');
     const [items, setItems] = useState<ItemPedido[]>(() => {
@@ -348,6 +367,7 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
     const [showSignature, setShowSignature] = useState(false);
     const [firmaNombre] = useState(`Dr/a. ${user.apellido}, ${user.nombres}`);
     const [firmaMatricula, setFirmaMatricula] = useState('M.P. ');
+    const [printError, setPrintError] = useState<string | null>(null);
     const printRef = useRef<HTMLDivElement>(null);
 
     const loadPlantilla = (id: string) => {
@@ -387,11 +407,33 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
         setItems(prev => prev.map(i => (i.id === id ? { ...i, [field]: value } : i)));
     };
 
-    const handlePrint = () => {
+    const doPrint = () => {
         const oldTitle = document.title;
         document.title = '';
         window.print();
         document.title = oldTitle;
+    };
+
+    const handlePrint = () => {
+        setPrintError(null);
+        if (!printRef.current) {
+            setPrintFormat('A5');
+            doPrint();
+            return;
+        }
+        const fitA5 = checkPrintFit(printRef.current, PRINT_AREA_WIDTH_MM, PRINT_AREA_HEIGHT_MM);
+        if (fitA5.fits) {
+            setPrintFormat('A5');
+            requestAnimationFrame(doPrint);
+            return;
+        }
+        const fitA4 = checkPrintFit(printRef.current, PRINT_AREA_WIDTH_MM_A4, PRINT_AREA_HEIGHT_MM_A4);
+        if (fitA4.fits) {
+            setPrintFormat('A4');
+            requestAnimationFrame(doPrint);
+            return;
+        }
+        setPrintError(PRINT_OVERFLOW_MESSAGE);
     };
 
     const handleWhatsApp = () => {
@@ -547,6 +589,12 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
                         </button>
                     </div>
                 </div>
+                {printError && (
+                    <p className="no-print text-xs text-red-600 bg-red-50 px-3 py-1.5 rounded-md border border-red-200 mb-3">{printError}</p>
+                )}
+                {!printError && printFormat === 'A4' && (
+                    <p className="no-print text-xs text-amber-700 bg-amber-50 px-3 py-1.5 rounded-md border border-amber-200 mb-3">El contenido no entra en A5: se imprimirá en A4 (1 sola hoja).</p>
+                )}
 
                 {/* PRINT AREA */}
                 <div
@@ -556,7 +604,7 @@ const PedidoEstudiosPanel: React.FC<{ paciente: PacienteCompleto; user: Profesio
                     style={{ maxWidth: '105mm' }}
                 >
                     {/* Encabezado profesional — solo en pantalla, no se imprime (se usa hoja membretada) */}
-                    <div className="no-print border-b-2 border-slate-800 pb-3 mb-2">
+                    <div className="no-print print-avoid-break border-b-2 border-slate-800 pb-3 mb-2">
                         <div className="flex justify-between items-start">
                             <div>
                                 <p className="font-bold text-base text-slate-900 uppercase tracking-wide">Dr/a. {user.apellido}, {user.nombres}</p>
@@ -648,9 +696,16 @@ function saveVademecum(items: VademecumItem[], userEmail: string) {
 
 // ─── PANEL RECETA MÉDICA ──────────────────────────────────────────────────────
 
-const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> = ({
+const RecetaPanel: React.FC<{
+    paciente: PacienteCompleto;
+    user: Profesional;
+    printFormat: 'A5' | 'A4';
+    setPrintFormat: (format: 'A5' | 'A4') => void;
+}> = ({
     paciente,
     user,
+    printFormat,
+    setPrintFormat,
 }) => {
     const [items, setItems] = useState<ItemReceta[]>([
         { id: '1', medicamento: '', droga: '', presentacion: '', dosis: '', frecuencia: '', duracion: '', indicaciones: '' },
@@ -663,6 +718,9 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
     const [showMRxInfo, setShowMRxInfo] = useState(false);
     const [vademecum, setVademecum] = useState<VademecumItem[]>(() => loadVademecum(user.email));
     const [showVademecum, setShowVademecum] = useState(false);
+    const [printError, setPrintError] = useState<string | null>(null);
+    const recetaRef = useRef<HTMLDivElement>(null);
+    const indicacionesRef = useRef<HTMLDivElement>(null);
 
     const addItem = () => {
         setItems(prev => [
@@ -710,11 +768,34 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
         saveVademecum(updated, user.email);
     };
 
-    const handlePrint = () => {
+    const doPrint = () => {
         const oldTitle = document.title;
         document.title = '';
         window.print();
         document.title = oldTitle;
+    };
+
+    const fitsAt = (widthMm: number, heightMm: number) => {
+        const fitReceta = recetaRef.current ? checkPrintFit(recetaRef.current, widthMm, heightMm).fits : true;
+        const fitIndicaciones = imprimirIndicaciones && indicacionesRef.current
+            ? checkPrintFit(indicacionesRef.current, widthMm, heightMm).fits
+            : true;
+        return fitReceta && fitIndicaciones;
+    };
+
+    const handlePrint = () => {
+        setPrintError(null);
+        if (fitsAt(PRINT_AREA_WIDTH_MM, PRINT_AREA_HEIGHT_MM)) {
+            setPrintFormat('A5');
+            requestAnimationFrame(doPrint);
+            return;
+        }
+        if (fitsAt(PRINT_AREA_WIDTH_MM_A4, PRINT_AREA_HEIGHT_MM_A4)) {
+            setPrintFormat('A4');
+            requestAnimationFrame(doPrint);
+            return;
+        }
+        setPrintError(PRINT_OVERFLOW_MESSAGE);
     };
 
     const handleWhatsApp = () => {
@@ -995,6 +1076,12 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
                         </button>
                     </div>
                 </div>
+                {printError && (
+                    <p className="no-print text-xs text-red-600 bg-red-50 px-3 py-1.5 rounded-md border border-red-200 mb-3">{printError}</p>
+                )}
+                {!printError && printFormat === 'A4' && (
+                    <p className="no-print text-xs text-amber-700 bg-amber-50 px-3 py-1.5 rounded-md border border-amber-200 mb-3">El contenido no entra en A5: se imprimirá en A4 (1 sola hoja).</p>
+                )}
 
                 <div
                     id="print-area"
@@ -1002,9 +1089,9 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
                     style={{ maxWidth: '105mm' }}
                 >
                     {/* PARTE 1: LA RECETA */}
-                    <div className="space-y-4">
+                    <div className="space-y-4" ref={recetaRef}>
                         {/* Encabezado profesional — solo en pantalla, no se imprime (se usa hoja membretada) */}
-                        <div className="no-print border-b-2 border-slate-800 pb-3">
+                        <div className="no-print print-avoid-break border-b-2 border-slate-800 pb-3">
                             <div className="flex justify-between items-start">
                                 <div>
                                     <p className="font-bold text-base text-slate-900 uppercase tracking-wide">Dr/a. {user.apellido}, {user.nombres}</p>
@@ -1069,9 +1156,9 @@ const RecetaPanel: React.FC<{ paciente: PacienteCompleto; user: Profesional }> =
 
                     {/* PARTE 2: LAS INDICACIONES (EN HOJA APARTE) */}
                     {imprimirIndicaciones && (
-                        <div className="page-break pt-6 space-y-4 border-t border-dashed mt-8">
+                        <div className="page-break pt-6 space-y-4 border-t border-dashed mt-8" ref={indicacionesRef}>
                             {/* Encabezado profesional — solo en pantalla, no se imprime (se usa hoja membretada) */}
-                            <div className="no-print border-b-2 border-slate-800 pb-3">
+                            <div className="no-print print-avoid-break border-b-2 border-slate-800 pb-3">
                                 <div className="flex justify-between items-start">
                                     <div>
                                         <p className="font-bold text-base text-slate-900 uppercase tracking-wide">Dr/a. {user.apellido}, {user.nombres}</p>

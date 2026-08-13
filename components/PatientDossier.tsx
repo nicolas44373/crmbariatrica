@@ -27,6 +27,7 @@ import {
 } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { supabase } from '../services/supabaseClient';
+import { checkPrintFit, PRINT_OVERFLOW_MESSAGE } from '../services/printGuard';
 import { TurnHistoryModal } from './TurnHistoryModal';
 import { PedidosRecetasModal } from './Pedidosrecetasmodal';
 import AgendarTurnoModal from './Agendarturnomodal';
@@ -997,6 +998,10 @@ const InformeModal = ({
     const [clipboardStatus, setClipboardStatus] = useState('');
     const [showTemplates, setShowTemplates] = useState(!initialInforme.contenido);
     const printRef = useRef<HTMLDivElement>(null);
+    const printOnlyRef = useRef<HTMLDivElement>(null);
+    const [printError, setPrintError] = useState<string | null>(null);
+    const [printFormat, setPrintFormat] = useState<'A5' | 'A4'>('A5');
+    const esInformeQuirurgico = informe.tipoInforme === 'Informe Quirúrgico';
 
     const handleGenerateInforme = async () => {
         setIsGenerating(true);
@@ -1075,11 +1080,33 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
         }
     };
     
-    const handlePrint = () => {
+    const doPrint = () => {
         const oldTitle = document.title;
         document.title = '';
         window.print();
         document.title = oldTitle;
+    };
+
+    const handlePrint = () => {
+        setPrintError(null);
+        if (!printOnlyRef.current) {
+            setPrintFormat('A5');
+            doPrint();
+            return;
+        }
+        const fitA5 = checkPrintFit(printOnlyRef.current, 108, 155);
+        if (fitA5.fits) {
+            setPrintFormat('A5');
+            requestAnimationFrame(doPrint);
+            return;
+        }
+        const fitA4 = checkPrintFit(printOnlyRef.current, 170, 242);
+        if (fitA4.fits) {
+            setPrintFormat('A4');
+            requestAnimationFrame(doPrint);
+            return;
+        }
+        setPrintError(PRINT_OVERFLOW_MESSAGE);
     };
     
     const handleCopy = () => {
@@ -1167,7 +1194,12 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
                             .print-only {
                                 display: block !important;
                             }
+                            .print-avoid-break {
+                                page-break-inside: avoid !important;
+                                break-inside: avoid !important;
+                            }
                             @page {
+                                size: ${printFormat === 'A4' ? 'A4' : 'A5'} portrait;
                                 margin: 0;
                             }
                         }
@@ -1186,9 +1218,9 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
                             className="w-full h-96 p-3 border rounded-md font-mono text-sm leading-relaxed no-print"
                             disabled={isGenerating}
                         />
-                        <div className="print-only hidden">
+                        <div className="print-only hidden" ref={printOnlyRef}>
                             {/* Encabezado profesional — solo en pantalla, no se imprime (se usa hoja membretada) */}
-                            <div className="no-print flex justify-between items-start border-b-2 border-slate-800 pb-3 mb-4">
+                            <div className="no-print print-avoid-break flex justify-between items-start border-b-2 border-slate-800 pb-3 mb-4">
                                 <div>
                                     <p className="text-lg font-bold uppercase tracking-wide text-slate-900">
                                         Dr/a. {user.apellido}, {user.nombres}
@@ -1203,16 +1235,18 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
                                     <p>{format(new Date(), "dd 'de' MMMM 'de' yyyy", { locale: es })}</p>
                                 </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs bg-slate-50 rounded p-3 border mb-6">
-                                <div><span className="text-slate-500">Paciente:</span> <strong>{paciente.filiatorio.apellido}, {paciente.filiatorio.nombres}</strong></div>
-                                <div><span className="text-slate-500">DNI:</span> {paciente.filiatorio.dni}</div>
-                                <div><span className="text-slate-500">Fecha de nacimiento:</span> {paciente.filiatorio.fechaNacimiento ? format(new Date(paciente.filiatorio.fechaNacimiento.replace(/-/g, '/')), 'dd/MM/yyyy') : 'N/A'}</div>
-                                <div><span className="text-slate-500">Obra Social:</span> {paciente.filiatorio.obraSocial || '-'}</div>
-                            </div>
+                            {!esInformeQuirurgico && (
+                                <div className="print-avoid-break grid grid-cols-2 gap-x-4 gap-y-1 text-xs bg-slate-50 rounded p-3 border mb-6">
+                                    <div><span className="text-slate-500">Paciente:</span> <strong>{paciente.filiatorio.apellido}, {paciente.filiatorio.nombres}</strong></div>
+                                    <div><span className="text-slate-500">DNI:</span> {paciente.filiatorio.dni}</div>
+                                    <div><span className="text-slate-500">Fecha de nacimiento:</span> {paciente.filiatorio.fechaNacimiento ? format(new Date(paciente.filiatorio.fechaNacimiento.replace(/-/g, '/')), 'dd/MM/yyyy') : 'N/A'}</div>
+                                    <div><span className="text-slate-500">Obra Social:</span> {paciente.filiatorio.obraSocial || '-'}</div>
+                                </div>
+                            )}
                             <div className="whitespace-pre-wrap text-sm leading-relaxed font-sans text-slate-800" style={{ minHeight: '8cm' }}>
                                 {informe.contenido}
                             </div>
-                            <div className="mt-10 pt-4 text-right text-xs text-slate-700">
+                            <div className="print-avoid-break mt-10 pt-4 text-right text-xs text-slate-700">
                                 <div className="inline-block border-t border-slate-400 pt-2 min-w-[220px]">
                                     <p className="font-semibold">Dr/a. {user.apellido}, {user.nombres}</p>
                                     {user.matricula && <p className="text-slate-500">M.P. {user.matricula}</p>}
@@ -1244,6 +1278,8 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
                     </div>
                     <div className="flex flex-col items-end gap-2">
                         {saveError && <p className="text-xs text-red-600 bg-red-50 px-3 py-1.5 rounded-md border border-red-200">{saveError}</p>}
+                        {printError && <p className="text-xs text-red-600 bg-red-50 px-3 py-1.5 rounded-md border border-red-200">{printError}</p>}
+                        {!printError && printFormat === 'A4' && <p className="text-xs text-amber-700 bg-amber-50 px-3 py-1.5 rounded-md border border-amber-200">El contenido no entra en A5: se imprimirá en A4 (1 sola hoja).</p>}
                         <div className="flex items-center space-x-3">
                              <button onClick={handleCopy} className="flex items-center px-4 py-2 text-sm font-medium text-slate-700 bg-slate-200 rounded-md hover:bg-slate-300">
                                  <ClipboardIcon/>
