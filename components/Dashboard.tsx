@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { PacienteFiliatorio, UserRole, ContactoCRM, ContactoTag, ContactoStatus, Priority, CrmHistoryEntry, Task, TaskStatus, TaskHistoryEntry, PostOpStage, Folder, FolderTrackingStatus, MessageTemplate, CrmSimpleProfessionals, ChecklistItemStatus, LostReason, ProspectoCanalOrigen, ProspectoEstadoSeguimiento, TurnoConPaciente, ConfiguracionGeneral, Turno, DiaSemana, EstadoTurnoDia, TurnoDiario, Profesional } from '../types';
 import { api } from '../services/mockApi';
 import { AuthContext } from '../App';
@@ -2097,8 +2098,63 @@ const EstadisticasModal = ({ onClose, onSelectPatient }: { onClose: () => void; 
         }
     };
 
-    return (
+    return createPortal(
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+            <style>
+                {`
+                @media print {
+                    html, body {
+                        height: auto !important;
+                        overflow: visible !important;
+                    }
+                    body * {
+                        visibility: hidden !important;
+                    }
+                    .print-section, .print-section * {
+                        visibility: visible !important;
+                    }
+                    #root {
+                        display: none !important;
+                    }
+                    .fixed.inset-0 {
+                        position: absolute !important;
+                        left: 0 !important;
+                        top: 0 !important;
+                        width: 100% !important;
+                        height: auto !important;
+                        overflow: visible !important;
+                        display: block !important;
+                        background: none !important;
+                        padding: 0 !important;
+                    }
+                    .fixed.inset-0 > div {
+                        max-height: none !important;
+                        height: auto !important;
+                        overflow: visible !important;
+                        display: block !important;
+                        box-shadow: none !important;
+                        border: none !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        width: 100% !important;
+                    }
+                    .flex-grow.overflow-y-auto, .overflow-y-auto {
+                        overflow: visible !important;
+                        max-height: none !important;
+                        height: auto !important;
+                        display: block !important;
+                    }
+                    .print-section {
+                        position: static !important;
+                        width: 100% !important;
+                        padding: 1.5cm !important;
+                    }
+                    .no-print {
+                        display: none !important;
+                    }
+                }
+                `}
+            </style>
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border">
                 <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-indigo-700 to-indigo-600 text-white">
                     <div>
@@ -2148,7 +2204,7 @@ const EstadisticasModal = ({ onClose, onSelectPatient }: { onClose: () => void; 
                 </div>
 
                 {/* Contenido principal */}
-                <div className="flex-grow overflow-y-auto p-6 bg-slate-50/50">
+                <div className="flex-grow overflow-y-auto p-6 bg-slate-50/50 print-section">
                     {isLoading && (
                         <div className="flex flex-col items-center justify-center py-20 text-slate-500">
                             <span className="animate-spin text-3xl mb-3">⏳</span>
@@ -2165,7 +2221,8 @@ const EstadisticasModal = ({ onClose, onSelectPatient }: { onClose: () => void; 
                     <button onClick={onClose} className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow transition-all">Cerrar</button>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 
@@ -3349,8 +3406,63 @@ const LiquidacionDiariaModal = ({ onClose }: { onClose: () => void }) => {
         return { totalRecaudado, totalEfectivo, totalTransferencia, totalTarjeta, porProfesional };
     }, [turnosAtendidos]);
 
-    return (
+    return createPortal(
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <style>
+                {`
+                @media print {
+                    html, body {
+                        height: auto !important;
+                        overflow: visible !important;
+                    }
+                    body * {
+                        visibility: hidden !important;
+                    }
+                    .print-section, .print-section * {
+                        visibility: visible !important;
+                    }
+                    #root {
+                        display: none !important;
+                    }
+                    .fixed.inset-0 {
+                        position: absolute !important;
+                        left: 0 !important;
+                        top: 0 !important;
+                        width: 100% !important;
+                        height: auto !important;
+                        overflow: visible !important;
+                        display: block !important;
+                        background: none !important;
+                        padding: 0 !important;
+                    }
+                    .fixed.inset-0 > div {
+                        max-height: none !important;
+                        height: auto !important;
+                        overflow: visible !important;
+                        display: block !important;
+                        box-shadow: none !important;
+                        border: none !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        width: 100% !important;
+                    }
+                    .flex-grow.overflow-y-auto {
+                        overflow: visible !important;
+                        max-height: none !important;
+                        height: auto !important;
+                        display: block !important;
+                    }
+                    .print-section {
+                        position: static !important;
+                        width: 100% !important;
+                        padding: 1.5cm !important;
+                    }
+                    .no-print {
+                        display: none !important;
+                    }
+                }
+                `}
+            </style>
             <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl m-4 flex flex-col max-h-[90vh]">
                 <div className="p-4 border-b bg-slate-50 no-print"><h2 className="text-xl font-bold text-slate-800">Cierre de Caja Diario (Liquidación)</h2></div>
                 <div className="p-6 flex-grow overflow-y-auto print-section">
@@ -3445,7 +3557,8 @@ const LiquidacionDiariaModal = ({ onClose }: { onClose: () => void }) => {
                     <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md">Cerrar</button>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 

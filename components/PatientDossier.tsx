@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { PacienteCompleto, EtiquetaFlujo, UserRole, CirugiaTipo, Profesional, Turno, ConfiguracionGeneral, DiaSemana, TurnoConPaciente, EstadoTurnoDia, PacienteFiliatorio, HistoriaClinicaEstatica, TipoEstudio, EvolucionClinica, EstudioRealizado, ResultadoLaboratorio, PlantillaLaboratorioParametro, CirugiaInfo, TipoCirugiaBariatrica, NutricionInfo, PsicologiaInfo, InformeClinico, Task, Priority, PostOpStage } from '../types';
 import { api } from '../services/mockApi';
 import { AuthContext } from '../App';
@@ -1121,7 +1122,7 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
         }
     };
 
-    return (
+    return createPortal(
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl m-4 flex flex-col max-h-[90vh]">
                 <div className="p-4 border-b flex justify-between items-center no-print">
@@ -1172,11 +1173,50 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
                     <style>
                         {`
                         @media print {
+                            html, body {
+                                height: auto !important;
+                                overflow: visible !important;
+                            }
                             body * {
                                 visibility: hidden !important;
                             }
                             .print-section, .print-section * {
                                 visibility: visible !important;
+                            }
+                            /* El resto de la app queda oculto con visibility:hidden, pero sigue
+                               ocupando espacio en el flujo (max-height/overflow del modal y del
+                               fondo) — eso es lo que generaba hojas extra o repetidas al imprimir.
+                               Como este modal ahora se renderiza en un portal fuera de #root, se
+                               puede ocultar #root por completo sin afectar el contenido a imprimir. */
+                            #root {
+                                display: none !important;
+                            }
+                            .fixed.inset-0 {
+                                position: absolute !important;
+                                left: 0 !important;
+                                top: 0 !important;
+                                width: 100% !important;
+                                height: auto !important;
+                                overflow: visible !important;
+                                display: block !important;
+                                background: none !important;
+                            }
+                            .fixed.inset-0 > div {
+                                max-height: none !important;
+                                height: auto !important;
+                                overflow: visible !important;
+                                display: block !important;
+                                box-shadow: none !important;
+                                border: none !important;
+                                margin: 0 !important;
+                                padding: 0 !important;
+                                width: 100% !important;
+                            }
+                            .flex-grow.overflow-y-auto {
+                                overflow: visible !important;
+                                max-height: none !important;
+                                height: auto !important;
+                                display: block !important;
                             }
                             .print-section {
                                 position: absolute !important;
@@ -1298,15 +1338,17 @@ INSTRUCCIÓN: Basado en la información anterior, genera un informe de resumen d
                     </div>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 
 const getFileNameFromUrl = (url: string) => {
     if (!url) return '';
     if (url.startsWith('http')) {
-        const parts = url.split('/');
-        const lastPart = parts[parts.length - 1];
+        const withoutQuery = url.split('?')[0];
+        const parts = withoutQuery.split('/');
+        const lastPart = decodeURIComponent(parts[parts.length - 1]);
         const underscoreIndex = lastPart.indexOf('_');
         if (underscoreIndex !== -1 && !isNaN(Number(lastPart.substring(0, underscoreIndex)))) {
             return lastPart.substring(underscoreIndex + 1);
@@ -1538,23 +1580,36 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                 }
             }
 
-            const newEstudio: Omit<EstudioRealizado, 'idEstudio'> = {
-                idPaciente: paciente.filiatorio.idPaciente,
+            const estudioPayload = {
                 fecha: estudioData.fecha || format(new Date(), 'yyyy-MM-dd'),
                 tipo: estudioData.tipo || TipoEstudio.OTROS,
                 nombreArchivo: uploadedUrl,
                 descripcion: estudioData.descripcion,
-                resultados: estudioData.tipo === TipoEstudio.LABORATORIO 
-                    ? estudioData.resultados?.filter(r => r.valor && r.valor.trim() !== '') 
+                resultados: estudioData.tipo === TipoEstudio.LABORATORIO
+                    ? estudioData.resultados?.filter(r => r.valor && r.valor.trim() !== '')
                     : undefined,
                 resultadoBiopsia: estudioData.tipo === TipoEstudio.ENDOSCOPIA ? estudioData.resultadoBiopsia : undefined,
             };
-            await api.createEstudio(newEstudio, user);
+            if (estudioData.idEstudio) {
+                await api.updateEstudio(estudioData.idEstudio, estudioPayload, user.rol);
+            } else {
+                await api.createEstudio({ idPaciente: paciente.filiatorio.idPaciente, ...estudioPayload }, user);
+            }
             setSelectedFile(null);
             fetchData();
             setModal(null);
-        } catch (error) { console.error("Error creating study:", error); } 
+        } catch (error) { console.error("Error creating study:", error); }
         finally { setIsSaving(false); }
+    };
+
+    const handleDeleteEstudio = async (idEstudio: string) => {
+        if (!window.confirm('¿Eliminar este estudio/archivo? Esta acción no se puede deshacer.')) return;
+        try {
+            await api.deleteEstudio(idEstudio, user.rol);
+            fetchData();
+        } catch (error: any) {
+            alert('Error al eliminar el estudio: ' + (error?.message || error));
+        }
     };
 
     const handleLabResultChange = (index: number, field: keyof ResultadoLaboratorio, value: string) => {
@@ -1840,6 +1895,20 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
         </div>
     );
 
+    const handleOpenEditEstudio = (estudio: EstudioRealizado) => {
+        setEstudioData({
+            idEstudio: estudio.idEstudio,
+            fecha: estudio.fecha,
+            tipo: estudio.tipo,
+            descripcion: estudio.descripcion,
+            nombreArchivo: estudio.nombreArchivo,
+            resultados: estudio.resultados,
+            resultadoBiopsia: estudio.resultadoBiopsia,
+        });
+        setSelectedFile(null);
+        setModal('newEstudio');
+    };
+
     const renderEstudios = () => (
         <div className="bg-white rounded-lg shadow h-full">
              <div className="flex justify-between items-center p-4 border-b">
@@ -1888,12 +1957,20 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                         <>
                             {visibleEstudios.map(estudio => (
                                 <div key={estudio.idEstudio} className="bg-slate-50 p-3 rounded-md border">
-                                    <p className="font-semibold text-sm">{format(new Date(estudio.fecha.replace(/-/g, '/')), 'dd/MM/yyyy')} - {estudio.descripcion || estudio.tipo}</p>
+                                    <div className="flex items-start justify-between gap-2">
+                                        <p className="font-semibold text-sm">{format(new Date(estudio.fecha.replace(/-/g, '/')), 'dd/MM/yyyy')} - {estudio.descripcion || estudio.tipo}</p>
+                                        {(user.rol === UserRole.MEDICO || isSuperAdmin) && (
+                                            <div className="flex items-center gap-2 flex-shrink-0">
+                                                <button onClick={() => handleOpenEditEstudio(estudio)} className="text-xs text-slate-500 hover:text-indigo-600 hover:underline">Editar</button>
+                                                <button onClick={() => handleDeleteEstudio(estudio.idEstudio)} className="text-xs text-slate-500 hover:text-red-600 hover:underline">Eliminar</button>
+                                            </div>
+                                        )}
+                                    </div>
                                     {estudio.nombreArchivo && (
-                                        <a 
-                                            href={estudio.nombreArchivo} 
-                                            target="_blank" 
-                                            rel="noopener noreferrer" 
+                                        <a
+                                            href={estudio.nombreArchivo}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
                                             className="text-xs text-indigo-600 hover:underline inline-flex items-center gap-1 font-semibold"
                                         >
                                             📄 {getFileNameFromUrl(estudio.nombreArchivo)}
@@ -2221,7 +2298,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
                 </Modal>
             )}
             {modal === 'newEstudio' && (
-                <Modal title="Registrar Nuevo Estudio" onClose={() => setModal(null)} maxWidth="max-w-3xl">
+                <Modal title={estudioData.idEstudio ? 'Editar Estudio' : 'Registrar Nuevo Estudio'} onClose={() => setModal(null)} maxWidth="max-w-3xl">
                     <ModalForm onSave={handleCreateEstudio} onCancel={() => setModal(null)} isSaving={isSaving}>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
@@ -2263,7 +2340,7 @@ export default function PatientDossier({ patientId, onBack }: PatientDossierProp
         className="mt-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
     />
     {estudioData.nombreArchivo && (
-        <p className="text-xs text-slate-500 mt-1">Archivo: {estudioData.nombreArchivo}</p>
+        <p className="text-xs text-slate-500 mt-1">Archivo: {selectedFile ? selectedFile.name : getFileNameFromUrl(estudioData.nombreArchivo)}</p>
     )}
 </div>
 

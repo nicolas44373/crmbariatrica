@@ -1296,6 +1296,13 @@ async function updateEstudio(
   return mapEstudio(data);
 }
 
+async function deleteEstudio(idEstudio: string, userRole: UserRole): Promise<void> {
+  if (!canMedico(userRole)) throw new Error('Permiso denegado para eliminar estudios.');
+
+  const { error } = await supabase.from('estudios').delete().eq('id_estudio', idEstudio);
+  if (error) handleSupabaseError(error);
+}
+
 // ─── CIRUGÍA, NUTRICIÓN, PSICOLOGÍA ──────────────────────────────────────────
 
 async function updateCirugiaInfo(
@@ -2233,6 +2240,7 @@ export const api = {
   // Estudios
   createEstudio,
   updateEstudio,
+  deleteEstudio,
   // Módulos clínicos
   updateCirugiaInfo,
   updateNutricionInfo,
