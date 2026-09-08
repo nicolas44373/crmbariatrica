@@ -1329,7 +1329,7 @@ async function updateCirugiaInfo(
     }).eq('id_paciente', idPaciente);
   }
   if (updates.fechaRealizada) {
-    await supabase.from('pacientes').update({ etiqueta_activa: 'POSBARIATRICO' }).eq('id_paciente', idPaciente);
+    await supabase.from('pacientes').update({ etiqueta_activa: 'POSBARIATRICO', cg_operado: true }).eq('id_paciente', idPaciente);
   }
 
   return mapCirugia(data);
