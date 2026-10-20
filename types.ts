@@ -35,6 +35,7 @@ export enum EstadoTurnoDia {
     ATENDIDO = 'ATENDIDO',
     CANCELADO = 'CANCELADO',
     AUSENTE = 'AUSENTE',
+    PRE_RESERVA = 'PRE_RESERVA',
 }
 
 export enum TipoCirugiaBariatrica {
@@ -456,4 +457,82 @@ export interface ContactoCRM {
     modalidadCobertura?: string;
     cgOperado?: boolean;
     tiProfesionalEmail?: string;
+}
+
+// ─── WHATSAPP INBOX ──────────────────────────────────────────────────────────
+
+export interface WhatsAppConversacion {
+    telefono: string;
+    idPaciente: string | null;
+    nombreContacto: string | null;
+    ultimoMensaje: string | null;
+    ultimoMensajeFecha: string | null; // ISO string
+    modo: 'bot' | 'humano';
+    estado: 'abierta' | 'atendida';
+    atendidoPorEmail: string | null;
+    derivado: boolean;
+    derivadoMotivo: string | null;
+    ultimaLectura: string | null; // ISO string — última vez que alguien del equipo abrió esta conversación
+    asignadoAEmail: string | null; // a quién se le asignó el seguimiento (independiente de quién la "tomó")
+    canal: 'whatsapp' | 'instagram';
+    tipoContacto: 'paciente' | 'prospecto' | 'desconocido';
+    idContacto: string | null; // crm_contactos.id_contacto cuando es prospecto
+}
+
+// Prospecto tal como lo carga el bot en crm_contactos
+export interface ProspectoBot {
+    idContacto: string;
+    nombres: string | null;
+    apellido: string | null;
+    dni: string | null;
+    fechaNacimiento: string | null; // YYYY-MM-DD
+    obraSocial: string | null;
+    nroAfiliado: string | null;
+    estado: string | null; // Nuevo | Contactado | Interesado | Tibio | Frio | Hibernado | Descartado | Pre-reserva | Paciente
+    motivo: string | null;
+    contactoNombre: string | null;
+    contactoVinculo: string | null;
+    telefono: string | null;
+    idTurnoPrereserva: string | null;
+    ultimoMensajeAt: string | null;
+}
+
+export interface PreReserva {
+    idTurno: string;
+    fechaTurno: string; // ISO
+    profesionalEmail: string;
+    idContacto: string | null;
+    prospecto: ProspectoBot | null;
+    avisoEnviado: boolean;
+}
+
+export interface ResumenPacienteWhatsApp {
+    idPaciente: string;
+    nombres: string;
+    apellido: string;
+    dni: string;
+    obraSocial: string;
+    etiqueta: string;
+    proximosTurnos: { fechaTurno: string; profesionalEmail: string; estado: string }[];
+}
+
+export interface BloqueoCentro {
+    fecha: string; // YYYY-MM-DD
+    motivo: string | null;
+    origen: string | null; // 'api' (feriados automáticos) o manual
+}
+
+export type WhatsAppTipoMensaje = 'texto' | 'imagen' | 'audio' | 'video' | 'documento' | 'sticker';
+
+export interface WhatsAppMensaje {
+    idMensaje: string;
+    telefono: string;
+    remitente: string; // 'paciente' | 'bot' | email de la secretaria
+    texto: string;
+    fecha: string; // ISO string
+    tipo: WhatsAppTipoMensaje;
+    mediaPath: string | null; // ruta dentro del bucket privado 'whatsapp-media'
+    mediaUrl: string | null; // URL firmada, resuelta al cargar
+    mediaMime: string | null;
+    mediaNombre: string | null;
 }

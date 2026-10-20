@@ -36,6 +36,13 @@ import {
   FolderTrackingStatus,
   ChecklistItemStatus,
   LostReason,
+  WhatsAppConversacion,
+  WhatsAppMensaje,
+  WhatsAppTipoMensaje,
+  ProspectoBot,
+  PreReserva,
+  ResumenPacienteWhatsApp,
+  BloqueoCentro,
 } from '../types';
 import { ETIQUETAS_FLUJO, TIPOS_ESTUDIO, normalizeString } from '../constants';
 
@@ -2192,6 +2199,357 @@ async function uploadEstudioFile(idPaciente: string, file: File, carpeta: string
   return data.signedUrl;
 }
 
+// ─── WHATSAPP INBOX ──────────────────────────────────────────────────────────
+
+const N8N_WHATSAPP_SEND_URL = import.meta.env.VITE_N8N_WHATSAPP_SEND_URL as string | undefined;
+const N8N_WHATSAPP_CONFIRM_URL = (import.meta.env.VITE_N8N_WHATSAPP_CONFIRM_URL as string | undefined)
+  ?? N8N_WHATSAPP_SEND_URL?.replace('whatsapp-enviar-humano', 'whatsapp-confirmar-prereserva');
+// Si en n8n se define CRM_WEBHOOK_SECRET, los webhooks del CRM exigen este header.
+const N8N_CRM_SECRET = import.meta.env.VITE_N8N_CRM_SECRET as string | undefined;
+
+function headersN8n(): Record<string, string> {
+  return { 'Content-Type': 'application/json', ...(N8N_CRM_SECRET ? { 'x-crm-secret': N8N_CRM_SECRET } : {}) };
+}
+
+async function postN8n(url: string, body: unknown): Promise<any> {
+  const resp = await fetch(url, { method: 'POST', headers: headersN8n(), body: JSON.stringify(body) });
+  const json = await resp.json().catch(() => null);
+  if (!resp.ok || json?.ok === false) {
+    if (resp.status === 401 || resp.status === 403) {
+      throw new Error('n8n rechazó el pedido por autenticación: revisá VITE_N8N_CRM_SECRET en el .env.');
+    }
+    throw new Error(json?.error || `n8n respondió con error (HTTP ${resp.status}).`);
+  }
+  return json;
+}
+
+function mapWhatsAppConversacion(row: any): WhatsAppConversacion {
+  return {
+    telefono: row.telefono,
+    idPaciente: row.id_paciente ?? null,
+    nombreContacto: row.nombre_contacto ?? null,
+    ultimoMensaje: row.ultimo_mensaje ?? null,
+    ultimoMensajeFecha: row.ultimo_mensaje_fecha ?? null,
+    modo: (row.modo ?? 'bot') as 'bot' | 'humano',
+    estado: (row.estado ?? 'abierta') as 'abierta' | 'atendida',
+    atendidoPorEmail: row.atendido_por_email ?? null,
+    derivado: row.derivado ?? false,
+    derivadoMotivo: row.derivado_motivo ?? null,
+    ultimaLectura: row.ultima_lectura ?? null,
+    asignadoAEmail: row.asignado_a_email ?? null,
+    canal: (row.canal ?? 'whatsapp') as 'whatsapp' | 'instagram',
+    tipoContacto: (row.tipo_contacto ?? (row.id_paciente ? 'paciente' : 'desconocido')) as WhatsAppConversacion['tipoContacto'],
+    idContacto: row.id_contacto != null ? String(row.id_contacto) : null,
+  };
+}
+
+function mapWhatsAppMensaje(row: any): WhatsAppMensaje {
+  return {
+    idMensaje: row.id_mensaje,
+    telefono: row.telefono,
+    remitente: row.remitente,
+    texto: row.texto ?? '',
+    fecha: row.fecha,
+    tipo: (row.tipo ?? 'texto') as WhatsAppTipoMensaje,
+    mediaPath: row.media_path ?? null,
+    mediaUrl: null,
+    mediaMime: row.media_mime ?? null,
+    mediaNombre: row.media_nombre ?? null,
+  };
+}
+
+const WHATSAPP_MEDIA_BUCKET = 'whatsapp-media';
+const WHATSAPP_MEDIA_URL_TTL_S = 60 * 60;
+// Cache de URLs firmadas: el polling recarga los mensajes cada pocos segundos y,
+// sin cache, cada recarga cambiaría la URL y las imágenes parpadearían.
+const signedMediaCache = new Map<string, { url: string; expira: number }>();
+
+async function resolverUrlsMedia(paths: string[]): Promise<void> {
+  const ahora = Date.now();
+  const faltantes = paths.filter(p => {
+    const c = signedMediaCache.get(p);
+    return !c || c.expira - ahora < 5 * 60 * 1000;
+  });
+  if (faltantes.length === 0) return;
+  const { data, error } = await supabase.storage
+    .from(WHATSAPP_MEDIA_BUCKET)
+    .createSignedUrls(faltantes, WHATSAPP_MEDIA_URL_TTL_S);
+  if (error || !data) return;
+  data.forEach(d => {
+    if (d.path && d.signedUrl) {
+      signedMediaCache.set(d.path, { url: d.signedUrl, expira: ahora + WHATSAPP_MEDIA_URL_TTL_S * 1000 });
+    }
+  });
+}
+
+function tipoDesdeMime(mime: string): WhatsAppTipoMensaje {
+  if (mime.startsWith('image/')) return 'imagen';
+  if (mime.startsWith('video/')) return 'video';
+  if (mime.startsWith('audio/')) return 'audio';
+  return 'documento';
+}
+
+async function getWhatsAppConversaciones(): Promise<WhatsAppConversacion[]> {
+  const { data, error } = await supabase
+    .from('whatsapp_conversaciones')
+    .select('*')
+    .order('ultimo_mensaje_fecha', { ascending: false, nullsFirst: false });
+  if (error) handleSupabaseError(error);
+  return (data ?? []).map(mapWhatsAppConversacion);
+}
+
+// Conversaciones derivadas a secretaría que todavía no fueron marcadas como atendidas.
+// Se usa para el badge de pendientes y las notificaciones del navegador.
+async function getWhatsAppPendientes(): Promise<WhatsAppConversacion[]> {
+  const { data, error } = await supabase
+    .from('whatsapp_conversaciones')
+    .select('*')
+    .eq('derivado', true)
+    .neq('estado', 'atendida')
+    .order('ultimo_mensaje_fecha', { ascending: false, nullsFirst: false });
+  if (error) handleSupabaseError(error);
+  return (data ?? []).map(mapWhatsAppConversacion);
+}
+
+async function getWhatsAppMensajes(telefono: string): Promise<WhatsAppMensaje[]> {
+  const { data, error } = await supabase
+    .from('whatsapp_mensajes')
+    .select('*')
+    .eq('telefono', telefono)
+    .order('fecha', { ascending: true });
+  if (error) handleSupabaseError(error);
+  const mensajes = (data ?? []).map(mapWhatsAppMensaje);
+  const paths = mensajes.map(m => m.mediaPath).filter((p): p is string => !!p);
+  if (paths.length > 0) {
+    await resolverUrlsMedia(paths);
+    mensajes.forEach(m => {
+      if (m.mediaPath) m.mediaUrl = signedMediaCache.get(m.mediaPath)?.url ?? null;
+    });
+  }
+  return mensajes;
+}
+
+async function enviarMensajeWhatsApp(
+  telefono: string,
+  texto: string,
+  emailSecretaria: string,
+  archivo?: File,
+): Promise<void> {
+  if (!N8N_WHATSAPP_SEND_URL) {
+    throw new Error('Falta configurar la variable de entorno VITE_N8N_WHATSAPP_SEND_URL con la URL del webhook de n8n.');
+  }
+
+  const body: Record<string, any> = { telefono, texto, email_secretaria: emailSecretaria, tipo: 'texto' };
+
+  if (archivo) {
+    const nombreSeguro = archivo.name.replace(/[^\w.\-]+/g, '_');
+    const path = `${telefono}/${Date.now()}_${nombreSeguro}`;
+    const { error: upErr } = await supabase.storage
+      .from(WHATSAPP_MEDIA_BUCKET)
+      .upload(path, archivo, { contentType: archivo.type || undefined });
+    if (upErr) throw new Error(`No se pudo subir el archivo: ${upErr.message}`);
+    // Meta descarga el archivo desde esta URL en el momento del envío.
+    const { data: signed, error: signErr } = await supabase.storage
+      .from(WHATSAPP_MEDIA_BUCKET)
+      .createSignedUrl(path, WHATSAPP_MEDIA_URL_TTL_S);
+    if (signErr || !signed) throw new Error('No se pudo generar el enlace del archivo.');
+
+    Object.assign(body, {
+      tipo: tipoDesdeMime(archivo.type || ''),
+      media_path: path,
+      media_url: signed.signedUrl,
+      media_mime: archivo.type || 'application/octet-stream',
+      media_nombre: archivo.name,
+    });
+  }
+
+  try {
+    await postN8n(N8N_WHATSAPP_SEND_URL, body);
+  } catch (e: any) {
+    throw new Error(`No se pudo enviar el mensaje: ${e.message}`);
+  }
+}
+
+// ─── Bot v4: prospectos, pre-reservas, cupos y cierres del centro ────────────
+
+const PROSPECTO_BOT_COLS = 'id_contacto,nombres,apellido,dni,fecha_nacimiento,obra_social,nro_afiliado,estado,motivo_consulta,contacto_nombre,contacto_vinculo,telefono,id_turno_prereserva,ultimo_mensaje_at';
+
+function mapProspectoBot(row: any): ProspectoBot {
+  return {
+    idContacto: String(row.id_contacto),
+    nombres: row.nombres ?? null,
+    apellido: row.apellido ?? null,
+    dni: row.dni ?? null,
+    fechaNacimiento: row.fecha_nacimiento ?? null,
+    obraSocial: row.obra_social ?? null,
+    nroAfiliado: row.nro_afiliado ?? null,
+    estado: row.estado ?? null,
+    motivo: row.motivo_consulta ?? null,
+    contactoNombre: row.contacto_nombre ?? null,
+    contactoVinculo: row.contacto_vinculo ?? null,
+    telefono: row.telefono ?? null,
+    idTurnoPrereserva: row.id_turno_prereserva != null ? String(row.id_turno_prereserva) : null,
+    ultimoMensajeAt: row.ultimo_mensaje_at ?? null,
+  };
+}
+
+async function getProspectoBot(idContacto: string): Promise<ProspectoBot | null> {
+  const { data, error } = await supabase
+    .from('crm_contactos')
+    .select(PROSPECTO_BOT_COLS)
+    .eq('id_contacto', idContacto)
+    .maybeSingle();
+  if (error) handleSupabaseError(error);
+  return data ? mapProspectoBot(data) : null;
+}
+
+async function getResumenPacienteWhatsApp(idPaciente: string): Promise<ResumenPacienteWhatsApp | null> {
+  const [{ data: p, error }, { data: turnos }] = await Promise.all([
+    supabase.from('pacientes').select('id_paciente,nombres,apellido,dni,obra_social,etiqueta_activa').eq('id_paciente', idPaciente).maybeSingle(),
+    supabase.from('turnos').select('fecha_turno,profesional_email,estado')
+      .eq('id_paciente', idPaciente).neq('estado', 'CANCELADO')
+      .gte('fecha_turno', new Date().toISOString()).order('fecha_turno').limit(3),
+  ]);
+  if (error) handleSupabaseError(error);
+  if (!p) return null;
+  return {
+    idPaciente: p.id_paciente,
+    nombres: p.nombres ?? '',
+    apellido: p.apellido ?? '',
+    dni: p.dni ?? '',
+    obraSocial: p.obra_social ?? '',
+    etiqueta: p.etiqueta_activa ?? '',
+    proximosTurnos: (turnos ?? []).map((t: any) => ({ fechaTurno: t.fecha_turno, profesionalEmail: t.profesional_email, estado: t.estado })),
+  };
+}
+
+async function getPreReservas(): Promise<PreReserva[]> {
+  const desde = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from('turnos')
+    .select('id_turno,fecha_turno,profesional_email,id_contacto,aviso_prereserva_at')
+    .eq('estado', EstadoTurnoDia.PRE_RESERVA)
+    .gte('fecha_turno', desde)
+    .order('fecha_turno');
+  if (error) handleSupabaseError(error);
+  const filas = data ?? [];
+  const ids = [...new Set(filas.map((t: any) => t.id_contacto).filter((x: any) => x != null))];
+  const prospectos = new Map<string, ProspectoBot>();
+  if (ids.length) {
+    const { data: cs } = await supabase.from('crm_contactos').select(PROSPECTO_BOT_COLS).in('id_contacto', ids);
+    (cs ?? []).forEach((c: any) => prospectos.set(String(c.id_contacto), mapProspectoBot(c)));
+  }
+  return filas.map((t: any) => ({
+    idTurno: String(t.id_turno),
+    fechaTurno: t.fecha_turno,
+    profesionalEmail: t.profesional_email,
+    idContacto: t.id_contacto != null ? String(t.id_contacto) : null,
+    prospecto: t.id_contacto != null ? prospectos.get(String(t.id_contacto)) ?? null : null,
+    avisoEnviado: !!t.aviso_prereserva_at,
+  }));
+}
+
+// La secretaría confirma: n8n convierte el prospecto en paciente y le manda la plantilla de confirmación.
+async function confirmarPreReserva(idTurno: string, emailSecretaria: string): Promise<void> {
+  if (!N8N_WHATSAPP_CONFIRM_URL) {
+    throw new Error('Falta configurar VITE_N8N_WHATSAPP_CONFIRM_URL (webhook whatsapp-confirmar-prereserva de n8n).');
+  }
+  await postN8n(N8N_WHATSAPP_CONFIRM_URL, { id_turno: idTurno, email_secretaria: emailSecretaria });
+}
+
+// Rechazo: libera el horario y devuelve el prospecto a "Interesado" para que pueda elegir otro.
+async function rechazarPreReserva(idTurno: string, idContacto: string | null): Promise<void> {
+  const { error } = await supabase
+    .from('turnos')
+    .update({ estado: EstadoTurnoDia.CANCELADO })
+    .eq('id_turno', idTurno)
+    .eq('estado', EstadoTurnoDia.PRE_RESERVA);
+  if (error) handleSupabaseError(error);
+  if (idContacto) {
+    await supabase.from('crm_contactos')
+      .update({ estado: 'Interesado', id_turno_prereserva: null })
+      .eq('id_contacto', idContacto);
+  }
+}
+
+async function getBloqueosCentro(): Promise<BloqueoCentro[]> {
+  const hoy = new Date().toISOString().slice(0, 10);
+  const { data, error } = await supabase
+    .from('bloqueos_centro')
+    .select('fecha,motivo,origen')
+    .gte('fecha', hoy)
+    .order('fecha');
+  if (error) handleSupabaseError(error);
+  return (data ?? []).map((b: any) => ({ fecha: String(b.fecha).slice(0, 10), motivo: b.motivo ?? null, origen: b.origen ?? null }));
+}
+
+async function agregarBloqueoCentro(fecha: string, motivo: string): Promise<void> {
+  const { error } = await supabase
+    .from('bloqueos_centro')
+    .upsert({ fecha, motivo: motivo || 'Centro cerrado', origen: 'manual' }, { onConflict: 'fecha' });
+  if (error) handleSupabaseError(error);
+}
+
+async function eliminarBloqueoCentro(fecha: string): Promise<void> {
+  const { error } = await supabase.from('bloqueos_centro').delete().eq('fecha', fecha);
+  if (error) handleSupabaseError(error);
+}
+
+// Marca qué bloques horarios ofrece el bot como cupo de primera consulta (config_turnos.horarios[].primeraVezBot).
+async function setCupoPrimeraVezBot(profesionalEmail: string, bloqueId: string, habilitado: boolean): Promise<void> {
+  const { data, error } = await supabase
+    .from('profesionales').select('config_turnos').eq('email', profesionalEmail).single();
+  if (error) handleSupabaseError(error);
+  const config = data?.config_turnos ?? {};
+  const horarios = (config.horarios ?? []).map((h: any) => h.id === bloqueId ? { ...h, primeraVezBot: habilitado } : h);
+  const { error: upErr } = await supabase
+    .from('profesionales').update({ config_turnos: { ...config, horarios } }).eq('email', profesionalEmail);
+  if (upErr) handleSupabaseError(upErr);
+}
+
+async function tomarConversacionWhatsApp(
+  telefono: string,
+  emailSecretaria: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('whatsapp_conversaciones')
+    .update({ modo: 'humano', atendido_por_email: emailSecretaria })
+    .eq('telefono', telefono);
+  if (error) handleSupabaseError(error);
+}
+
+async function asignarConversacionWhatsApp(
+  telefono: string,
+  emailAsignado: string | null,
+): Promise<void> {
+  const { error } = await supabase
+    .from('whatsapp_conversaciones')
+    .update({ asignado_a_email: emailAsignado })
+    .eq('telefono', telefono);
+  if (error) handleSupabaseError(error);
+}
+
+async function marcarConversacionWhatsAppLeida(telefono: string): Promise<void> {
+  const { error } = await supabase
+    .from('whatsapp_conversaciones')
+    .update({ ultima_lectura: new Date().toISOString() })
+    .eq('telefono', telefono);
+  if (error) handleSupabaseError(error);
+}
+
+async function marcarConversacionWhatsAppAtendida(
+  telefono: string,
+  devolverAlBot: boolean,
+): Promise<void> {
+  const updates: any = { estado: 'atendida', derivado: false };
+  if (devolverAlBot) updates.modo = 'bot';
+  const { error } = await supabase
+    .from('whatsapp_conversaciones')
+    .update(updates)
+    .eq('telefono', telefono);
+  if (error) handleSupabaseError(error);
+}
+
 // ─── EXPORT ───────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -2274,4 +2632,22 @@ export const api = {
   exportBackup,
   // Storage
   uploadEstudioFile,
+  // WhatsApp Inbox
+  getWhatsAppConversaciones,
+  getWhatsAppPendientes,
+  getWhatsAppMensajes,
+  enviarMensajeWhatsApp,
+  tomarConversacionWhatsApp,
+  marcarConversacionWhatsAppAtendida,
+  asignarConversacionWhatsApp,
+  marcarConversacionWhatsAppLeida,
+  getProspectoBot,
+  getResumenPacienteWhatsApp,
+  getPreReservas,
+  confirmarPreReserva,
+  rechazarPreReserva,
+  getBloqueosCentro,
+  agregarBloqueoCentro,
+  eliminarBloqueoCentro,
+  setCupoPrimeraVezBot,
 };

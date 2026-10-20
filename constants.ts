@@ -92,6 +92,7 @@ export const ESTADO_TURNO_MAP: Record<EstadoTurnoDia, { texto: string; color: st
     [EstadoTurnoDia.ATENDIDO]: { texto: 'Atendido', color: 'border-green-500', colorFondo: 'bg-green-50', colorTexto: 'text-green-800' },
     [EstadoTurnoDia.CANCELADO]: { texto: 'Cancelado', color: 'border-red-500', colorFondo: 'bg-red-50', colorTexto: 'text-red-800' },
     [EstadoTurnoDia.AUSENTE]: { texto: 'Ausente', color: 'border-orange-400', colorFondo: 'bg-orange-50', colorTexto: 'text-orange-800' },
+    [EstadoTurnoDia.PRE_RESERVA]: { texto: 'Pre-reserva', color: 'border-emerald-500', colorFondo: 'bg-emerald-50', colorTexto: 'text-emerald-800' },
 };
 
 export const COMORBILIDADES_PREDEFINIDAS: string[] = [
