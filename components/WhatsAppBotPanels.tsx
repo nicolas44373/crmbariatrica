@@ -4,11 +4,13 @@ import { BloqueoCentro, PreReserva, Profesional, ProspectoBot } from '../types';
 
 // ─── Helpers compartidos con el inbox ───────────────────────────────────────
 
-// Horario de secretaría (debe coincidir con TURNOS_SECRETARIA del bot en n8n).
+// Horario de secretaría (debe coincidir con TURNOS_SECRETARIA del bot en n8n, v9).
 const TURNOS_SECRETARIA = [
-    { dia: 1, inicio: 10 * 60, fin: 16 * 60 },
-    { dia: 2, inicio: 16 * 60, fin: 21 * 60 },
-    { dia: 4, inicio: 16 * 60, fin: 21 * 60 },
+    { dia: 1, inicio: 10 * 60, fin: 18 * 60 },
+    { dia: 2, inicio: 13 * 60, fin: 21 * 60 },
+    { dia: 3, inicio: 10 * 60, fin: 18 * 60 },
+    { dia: 4, inicio: 13 * 60, fin: 21 * 60 },
+    { dia: 5, inicio: 10 * 60, fin: 18 * 60 },
 ];
 
 export function secretariaAbierta(ahora = new Date()): boolean {
@@ -17,19 +19,48 @@ export function secretariaAbierta(ahora = new Date()): boolean {
     return TURNOS_SECRETARIA.some(t => t.dia === ar.getDay() && min >= t.inicio && min < t.fin);
 }
 
-export const HORARIO_SECRETARIA_TEXTO = 'Lun 10–16 · Mar y Jue 16–21';
+export const HORARIO_SECRETARIA_TEXTO = 'Lun, Mié y Vie 10–18 · Mar y Jue 13–21';
 
 // El bot guarda derivado_motivo como "<etiqueta>: <detalle>".
 const ETIQUETAS_DERIVACION: { prefijo: string; corto: string; clase: string; urgente?: boolean }[] = [
     { prefijo: 'Mencionó síntomas', corto: 'Síntomas', clase: 'bg-red-100 text-red-700', urgente: true },
     { prefijo: 'Consulta de precios', corto: 'Precio', clase: 'bg-amber-100 text-amber-800' },
+    { prefijo: 'Consulta de cobertura', corto: 'Cobertura', clase: 'bg-yellow-100 text-yellow-800' },
+    { prefijo: 'Archivo recibido', corto: 'Archivo', clase: 'bg-teal-100 text-teal-700' },
     { prefijo: 'Dice ser paciente, no encontrado', corto: 'No encontrado', clase: 'bg-orange-100 text-orange-800' },
     { prefijo: 'Pedido del Dr. Brahin', corto: 'Dr. Brahin', clase: 'bg-violet-100 text-violet-700' },
     { prefijo: 'Fallo de agenda', corto: 'Fallo agenda', clase: 'bg-rose-100 text-rose-700' },
     { prefijo: 'Pide hablar con una persona', corto: 'Pide humano', clase: 'bg-sky-100 text-sky-700' },
     { prefijo: 'Pre-reserva pendiente', corto: 'Pre-reserva', clase: 'bg-emerald-100 text-emerald-700' },
     { prefijo: 'Nuevo prospecto', corto: 'Prospecto', clase: 'bg-indigo-100 text-indigo-700' },
+    { prefijo: 'Derivación', corto: 'Derivada', clase: 'bg-amber-100 text-amber-800' },
 ];
+
+export const esDerivacionArchivo = (motivo: string | null) => (motivo ?? '').startsWith('Archivo recibido');
+
+// Misma regla que COBERTURA DE LA PRIMERA CONSULTA del prompt: así la secretaría ve lo que el bot le dijo a la persona.
+export function coberturaPrimeraConsulta(obraSocial: string | null, apellidoProfesional: string): { particular: boolean; texto: string } {
+    const os = (obraSocial ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const ap = apellidoProfesional.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const sinOS = !os || /particular|no tiene|ninguna|sin obra/.test(os);
+    const siempreParticular = sinOS || /osde|pami|galeno/.test(os);
+    const swissNoMendoza = /swiss/.test(os) && /posse|brahi[nm]|alascio/.test(ap);
+    if (siempreParticular || swissNoMendoza) {
+        return { particular: true, texto: 'El bot le informó consulta particular: hay que pasarle el valor al confirmar.' };
+    }
+    return { particular: false, texto: 'El bot le informó consulta con obra social: verificar la cobertura al confirmar.' };
+}
+
+// Etapas del rescate automático de prospectos (cron de envíos del bot)
+export const ETAPAS_RESCATE: { key: 'rescateTibioAt' | 'rescateFrioAt' | 'rescateHibernadoAt'; label: string; cuando: string }[] = [
+    { key: 'rescateTibioAt', label: 'Tibio', cuando: '3 días sin responder' },
+    { key: 'rescateFrioAt', label: 'Frío', cuando: '15 días' },
+    { key: 'rescateHibernadoAt', label: 'Hibernado', cuando: '60 días' },
+];
+
+export const VirtualChip = () => (
+    <span className="text-[10px] font-semibold bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded">Virtual</span>
+);
 
 export function infoDerivacion(motivo: string | null): { corto: string; detalle: string; clase: string; urgente: boolean } {
     const m = motivo ?? '';
@@ -94,6 +125,7 @@ export function TarjetaPreReserva({
     const horasFaltan = (new Date(pr.fechaTurno).getTime() - Date.now()) / 3600000;
     const vencida = horasFaltan < 0;
     const urgente = !vencida && horasFaltan < 24;
+    const cobertura = p ? coberturaPrimeraConsulta(p.obraSocial, equipo.find(x => x.email === pr.profesionalEmail)?.apellido ?? '') : null;
 
     const confirmar = async () => {
         setTrabajando('confirmar'); setError(null);
@@ -116,7 +148,10 @@ export function TarjetaPreReserva({
                     <p className="font-semibold text-slate-800 truncate">
                         {p ? `${p.nombres ?? ''} ${p.apellido ?? ''}`.trim() || 'Sin nombre' : 'Prospecto'}
                     </p>
-                    <p className="text-sm text-slate-600">{fmtTurno(pr.fechaTurno)} · {nombreProf(equipo, pr.profesionalEmail)}</p>
+                    <p className="text-sm text-slate-600 flex items-center gap-1.5 flex-wrap">
+                        {fmtTurno(pr.fechaTurno)} · {nombreProf(equipo, pr.profesionalEmail)}
+                        {pr.virtual && <VirtualChip />}
+                    </p>
                 </div>
                 {vencida
                     ? <span className="text-[11px] font-semibold bg-red-100 text-red-700 px-2 py-0.5 rounded flex-shrink-0">Turno pasado</span>
@@ -137,6 +172,15 @@ export function TarjetaPreReserva({
                 </dl>
             )}
 
+            {cobertura && (
+                <p className={`mt-2 text-[11px] rounded px-2 py-1 ${cobertura.particular ? 'bg-amber-50 text-amber-800' : 'bg-sky-50 text-sky-800'}`}>
+                    {cobertura.particular ? 'Particular' : 'Con obra social'} · {cobertura.texto}
+                </p>
+            )}
+            {pr.virtual && !compacta && (
+                <p className="mt-1.5 text-[11px] text-violet-700">Consulta virtual: el día del turno hay que escribirle para registrar la consulta (y el pago si corresponde); después el profesional la llama por videollamada de WhatsApp.</p>
+            )}
+
             {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
 
             <div className="mt-3 flex flex-wrap gap-2">
@@ -155,7 +199,7 @@ export function TarjetaPreReserva({
                     </button>
                 )}
             </div>
-            {!compacta && <p className="mt-2 text-[11px] text-slate-400">Al confirmar, n8n crea la ficha del paciente y le envía la plantilla de confirmación por WhatsApp.</p>}
+            {!compacta && <p className="mt-2 text-[11px] text-slate-400">Al confirmar, n8n crea la ficha del paciente y le envía la plantilla de confirmación por WhatsApp (presencial o virtual).</p>}
         </div>
     );
 }
@@ -213,9 +257,13 @@ export function PanelConfigBot({ equipo, onEquipoCambiado }: { equipo: Profesion
         [equipo],
     );
 
-    const toggleCupo = async (email: string, bloqueId: string, valor: boolean) => {
-        setGuardando(bloqueId); setError(null);
-        try { await api.setCupoPrimeraVezBot(email, bloqueId, valor); onEquipoCambiado(); }
+    const toggleBloque = async (campo: 'primeraVez' | 'virtual', email: string, bloqueId: string, valor: boolean) => {
+        setGuardando(`${campo}:${bloqueId}`); setError(null);
+        try {
+            if (campo === 'primeraVez') await api.setCupoPrimeraVezBot(email, bloqueId, valor);
+            else await api.setBloqueVirtualBot(email, bloqueId, valor);
+            onEquipoCambiado();
+        }
         catch (e: any) { setError(e?.message ?? 'No se pudo guardar.'); }
         finally { setGuardando(null); }
     };
@@ -251,9 +299,10 @@ export function PanelConfigBot({ equipo, onEquipoCambiado }: { equipo: Profesion
                 </section>
 
                 <section className="bg-white rounded-xl border border-slate-200 p-4">
-                    <h3 className="font-semibold text-slate-800">Cupos de primera consulta para el bot</h3>
+                    <h3 className="font-semibold text-slate-800">Bloques de agenda para el bot</h3>
                     <p className="text-sm text-slate-500 mb-4">
-                        Marcá en qué bloques el bot puede ofrecer pre-reservas de primera vez. Si no marcás ninguno, el bot ofrece todos los horarios del profesional.
+                        <span className="font-medium text-emerald-700">1ª vez</span>: bloques donde el bot puede pre-reservar primeras consultas (si no marcás ninguno, ofrece todos los horarios del profesional).{' '}
+                        <span className="font-medium text-violet-700">Virtual</span>: el bot ofrece esos horarios como consulta por videollamada de WhatsApp.
                     </p>
                     {conAgenda.length === 0 && <p className="text-sm text-slate-400">No hay profesionales con horarios configurados.</p>}
                     <div className="space-y-4">
@@ -270,13 +319,22 @@ export function PanelConfigBot({ equipo, onEquipoCambiado }: { equipo: Profesion
                                     </div>
                                     <div className="p-2 flex flex-wrap gap-2">
                                         {bloques.map((b: any) => {
-                                            const on = b.primeraVezBot === true;
+                                            const primera = b.primeraVezBot === true;
+                                            const virtual = b.virtual === true;
+                                            const chip = (on: boolean, color: string) =>
+                                                `text-[11px] font-medium px-2 py-1 rounded-md border transition-colors disabled:opacity-50 ${on ? color : 'bg-white border-slate-200 text-slate-400 hover:border-slate-300'}`;
                                             return (
-                                                <button key={b.id} disabled={guardando === b.id}
-                                                    onClick={() => toggleCupo(p.email, b.id, !on)}
-                                                    className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors disabled:opacity-50 ${on ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'}`}>
-                                                    <span className="font-semibold">{DIAS[Number(b.dia)]?.slice(0, 3)}</span> {b.horaInicio}–{b.horaFin} {on ? '✓' : ''}
-                                                </button>
+                                                <div key={b.id} className={`flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-lg border ${virtual ? 'border-violet-200 bg-violet-50/40' : 'border-slate-200'}`}>
+                                                    <span className="text-xs text-slate-700"><span className="font-semibold">{DIAS[Number(b.dia)]?.slice(0, 3)}</span> {b.horaInicio}–{b.horaFin}</span>
+                                                    <button disabled={guardando === `primeraVez:${b.id}`} onClick={() => toggleBloque('primeraVez', p.email, b.id, !primera)}
+                                                        className={chip(primera, 'bg-emerald-50 border-emerald-300 text-emerald-800')}>
+                                                        1ª vez{primera ? ' ✓' : ''}
+                                                    </button>
+                                                    <button disabled={guardando === `virtual:${b.id}`} onClick={() => toggleBloque('virtual', p.email, b.id, !virtual)}
+                                                        className={chip(virtual, 'bg-violet-50 border-violet-300 text-violet-800')}>
+                                                        Virtual{virtual ? ' ✓' : ''}
+                                                    </button>
+                                                </div>
                                             );
                                         })}
                                     </div>
@@ -313,7 +371,35 @@ export function PanelConfigBot({ equipo, onEquipoCambiado }: { equipo: Profesion
                         ))}
                     </ul>
                 </section>
+
+                <section className="bg-white rounded-xl border border-slate-200 p-4">
+                    <h3 className="font-semibold text-slate-800">Mensajes automáticos (plantillas de Meta)</h3>
+                    <p className="text-sm text-slate-500 mb-3">
+                        Fuera de las 24 h WhatsApp solo deja escribir con plantillas aprobadas. Tienen que existir en Meta en español (es_AR) con estos nombres y variables, o configurarse en las Variables de n8n.
+                    </p>
+                    <ul className="divide-y divide-slate-100 text-sm">
+                        {PLANTILLAS_BOT.map(t => (
+                            <li key={t.nombre} className="py-2 flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1">
+                                <span>
+                                    <code className="text-xs bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">{t.nombre}</code>
+                                    <span className="text-slate-600"> · {t.uso}</span>
+                                </span>
+                                <span className="text-xs text-slate-400 sm:text-right">{t.variables}{t.interruptor ? ` · se activa con ${t.interruptor}=true` : ''}</span>
+                            </li>
+                        ))}
+                    </ul>
+                </section>
             </div>
         </div>
     );
 }
+
+const PLANTILLAS_BOT: { nombre: string; uso: string; variables: string; interruptor?: string }[] = [
+    { nombre: 'plenus_confirmacion_turno', uso: 'Confirmación de turno presencial', variables: '{{1}} nombre, {{2}} profesional, {{3}} día, {{4}} hora' },
+    { nombre: 'plenus_confirmacion_virtual', uso: 'Confirmación de consulta virtual', variables: 'igual + {{5}} profesional' },
+    { nombre: 'plenus_recordatorio_24h', uso: 'Recordatorio del día anterior (8 h) con botón "Confirmo"', variables: '{{1}} nombre, {{2}} día, {{3}} hora, {{4}} profesional' },
+    { nombre: 'plenus_aviso_ausencia', uso: 'Aviso cuando el paciente faltó', variables: '{{1}} nombre, {{2}} profesional, {{3}} día', interruptor: 'AUSENCIA_ACTIVO' },
+    { nombre: 'plenus_rescate_tibio', uso: 'Rescate de prospecto a los 3 días', variables: '{{1}} nombre', interruptor: 'RESCATE_ACTIVO' },
+    { nombre: 'plenus_rescate_frio', uso: 'Rescate a los 15 días', variables: '{{1}} nombre', interruptor: 'RESCATE_ACTIVO' },
+    { nombre: 'plenus_rescate_hibernado', uso: 'Rescate a los 60 días (con opción BAJA)', variables: '{{1}} nombre', interruptor: 'RESCATE_ACTIVO' },
+];

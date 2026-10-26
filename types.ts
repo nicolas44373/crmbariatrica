@@ -477,6 +477,17 @@ export interface WhatsAppConversacion {
     canal: 'whatsapp' | 'instagram';
     tipoContacto: 'paciente' | 'prospecto' | 'desconocido';
     idContacto: string | null; // crm_contactos.id_contacto cuando es prospecto
+    intentosVerificacion: number; // verificaciones por DNI fallidas (a las 2 el bot deja de intentar por 24 h)
+    intentosAgenda: number; // horarios rechazados seguidos (a los 2 el bot deja de ofrecer y deriva)
+    ultimoMensajeSistemaAt: string | null; // última plantilla automática (recordatorio, confirmación, rescate…)
+}
+
+// Vínculo del número con un paciente verificado por DNI (whatsapp_vinculos)
+export interface VinculoWhatsApp {
+    idPaciente: string;
+    contactoNombre: string | null;
+    contactoVinculo: string | null;
+    expiraAt: string | null; // con fecha = gestiona un tercero (vínculo temporal)
 }
 
 // Prospecto tal como lo carga el bot en crm_contactos
@@ -495,6 +506,12 @@ export interface ProspectoBot {
     telefono: string | null;
     idTurnoPrereserva: string | null;
     ultimoMensajeAt: string | null;
+    noContactar: boolean; // pidió BAJA
+    estadoPrevio: string | null; // estado al que vuelve si responde durante el rescate
+    estadoCambiadoAt: string | null;
+    rescateTibioAt: string | null;
+    rescateFrioAt: string | null;
+    rescateHibernadoAt: string | null;
 }
 
 export interface PreReserva {
@@ -504,6 +521,7 @@ export interface PreReserva {
     idContacto: string | null;
     prospecto: ProspectoBot | null;
     avisoEnviado: boolean;
+    virtual: boolean;
 }
 
 export interface ResumenPacienteWhatsApp {
@@ -513,7 +531,7 @@ export interface ResumenPacienteWhatsApp {
     dni: string;
     obraSocial: string;
     etiqueta: string;
-    proximosTurnos: { fechaTurno: string; profesionalEmail: string; estado: string }[];
+    proximosTurnos: { idTurno: string; fechaTurno: string; profesionalEmail: string; estado: string; virtual: boolean; recordatorioEnviado: boolean }[];
 }
 
 export interface BloqueoCentro {
@@ -527,7 +545,7 @@ export type WhatsAppTipoMensaje = 'texto' | 'imagen' | 'audio' | 'video' | 'docu
 export interface WhatsAppMensaje {
     idMensaje: string;
     telefono: string;
-    remitente: string; // 'paciente' | 'bot' | email de la secretaria
+    remitente: string; // 'paciente' | 'bot' | 'sistema' (plantilla automática) | email de la secretaria
     texto: string;
     fecha: string; // ISO string
     tipo: WhatsAppTipoMensaje;

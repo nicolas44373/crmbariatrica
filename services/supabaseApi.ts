@@ -43,6 +43,7 @@ import {
   PreReserva,
   ResumenPacienteWhatsApp,
   BloqueoCentro,
+  VinculoWhatsApp,
 } from '../types';
 import { ETIQUETAS_FLUJO, TIPOS_ESTUDIO, normalizeString } from '../constants';
 
@@ -2240,6 +2241,9 @@ function mapWhatsAppConversacion(row: any): WhatsAppConversacion {
     canal: (row.canal ?? 'whatsapp') as 'whatsapp' | 'instagram',
     tipoContacto: (row.tipo_contacto ?? (row.id_paciente ? 'paciente' : 'desconocido')) as WhatsAppConversacion['tipoContacto'],
     idContacto: row.id_contacto != null ? String(row.id_contacto) : null,
+    intentosVerificacion: Number(row.intentos_verificacion) || 0,
+    intentosAgenda: Number(row.intentos_agenda) || 0,
+    ultimoMensajeSistemaAt: row.ultimo_mensaje_sistema_at ?? null,
   };
 }
 
@@ -2372,7 +2376,18 @@ async function enviarMensajeWhatsApp(
 
 // ─── Bot v4: prospectos, pre-reservas, cupos y cierres del centro ────────────
 
-const PROSPECTO_BOT_COLS = 'id_contacto,nombres,apellido,dni,fecha_nacimiento,obra_social,nro_afiliado,estado,motivo_consulta,contacto_nombre,contacto_vinculo,telefono,id_turno_prereserva,ultimo_mensaje_at';
+const PROSPECTO_BOT_COLS_BASE = 'id_contacto,nombres,apellido,dni,fecha_nacimiento,obra_social,nro_afiliado,estado,motivo_consulta,contacto_nombre,contacto_vinculo,telefono,id_turno_prereserva,ultimo_mensaje_at,estado_previo,estado_cambiado_at';
+// Columnas de la migración v9 (BAJA y rescate). Si todavía no se corrió, se cae a las básicas.
+const PROSPECTO_BOT_COLS = `${PROSPECTO_BOT_COLS_BASE},no_contactar,rescate_tibio_at,rescate_frio_at,rescate_hibernado_at`;
+
+async function selectProspectos(aplicarFiltro: (q: any) => any): Promise<any[]> {
+  const r = await aplicarFiltro(supabase.from('crm_contactos').select(PROSPECTO_BOT_COLS));
+  if (!r.error) return r.data ?? [];
+  if (r.error.code !== '42703') handleSupabaseError(r.error);
+  const r2 = await aplicarFiltro(supabase.from('crm_contactos').select(PROSPECTO_BOT_COLS_BASE));
+  if (r2.error) handleSupabaseError(r2.error);
+  return r2.data ?? [];
+}
 
 function mapProspectoBot(row: any): ProspectoBot {
   return {
@@ -2390,25 +2405,75 @@ function mapProspectoBot(row: any): ProspectoBot {
     telefono: row.telefono ?? null,
     idTurnoPrereserva: row.id_turno_prereserva != null ? String(row.id_turno_prereserva) : null,
     ultimoMensajeAt: row.ultimo_mensaje_at ?? null,
+    noContactar: row.no_contactar === true,
+    estadoPrevio: row.estado_previo ?? null,
+    estadoCambiadoAt: row.estado_cambiado_at ?? null,
+    rescateTibioAt: row.rescate_tibio_at ?? null,
+    rescateFrioAt: row.rescate_frio_at ?? null,
+    rescateHibernadoAt: row.rescate_hibernado_at ?? null,
   };
 }
 
 async function getProspectoBot(idContacto: string): Promise<ProspectoBot | null> {
+  const filas = await selectProspectos(q => q.eq('id_contacto', idContacto).limit(1));
+  return filas[0] ? mapProspectoBot(filas[0]) : null;
+}
+
+// BAJA desde el CRM (el bot y los rescates dejan de escribirle) o reactivación de un prospecto descartado.
+async function setNoContactarProspecto(idContacto: string, noContactar: boolean): Promise<void> {
+  const ahora = new Date().toISOString();
+  const updates = noContactar
+    ? { no_contactar: true, estado: 'Descartado', estado_previo: null, estado_cambiado_at: ahora }
+    : { no_contactar: false, estado: 'Contactado', estado_previo: null, estado_cambiado_at: ahora, ultimo_mensaje_at: ahora };
+  const { error } = await supabase.from('crm_contactos').update(updates).eq('id_contacto', idContacto);
+  if (error) handleSupabaseError(error);
+}
+
+async function getVinculoWhatsApp(telefono: string): Promise<VinculoWhatsApp | null> {
   const { data, error } = await supabase
-    .from('crm_contactos')
-    .select(PROSPECTO_BOT_COLS)
-    .eq('id_contacto', idContacto)
+    .from('whatsapp_vinculos')
+    .select('id_paciente,contacto_nombre,contacto_vinculo,expira_at')
+    .eq('telefono', telefono)
     .maybeSingle();
   if (error) handleSupabaseError(error);
-  return data ? mapProspectoBot(data) : null;
+  if (!data) return null;
+  return {
+    idPaciente: String(data.id_paciente),
+    contactoNombre: data.contacto_nombre ?? null,
+    contactoVinculo: data.contacto_vinculo ?? null,
+    expiraAt: data.expira_at ?? null,
+  };
+}
+
+// Destraba al bot: vuelve a permitir la verificación por DNI y a ofrecer horarios.
+async function reiniciarIntentosBotWhatsApp(telefono: string): Promise<void> {
+  const { error } = await supabase
+    .from('whatsapp_conversaciones')
+    .update({ intentos_verificacion: 0, intentos_verificacion_at: null, intentos_agenda: 0 })
+    .eq('telefono', telefono);
+  if (error) handleSupabaseError(error);
+}
+
+// Confirma un turno de un paciente y n8n le manda la plantilla de confirmación (presencial o virtual).
+async function confirmarTurnoYAvisarWhatsApp(idTurno: string, emailSecretaria: string): Promise<void> {
+  if (!N8N_WHATSAPP_CONFIRM_URL) {
+    throw new Error('Falta configurar VITE_N8N_WHATSAPP_CONFIRM_URL (webhook whatsapp-confirmar-prereserva de n8n).');
+  }
+  const { error } = await supabase
+    .from('turnos')
+    .update({ estado: EstadoTurnoDia.CONFIRMADO })
+    .eq('id_turno', idTurno)
+    .in('estado', [EstadoTurnoDia.AGENDADO, EstadoTurnoDia.CONFIRMADO]);
+  if (error) handleSupabaseError(error);
+  await postN8n(N8N_WHATSAPP_CONFIRM_URL, { id_turno: idTurno, email_secretaria: emailSecretaria });
 }
 
 async function getResumenPacienteWhatsApp(idPaciente: string): Promise<ResumenPacienteWhatsApp | null> {
   const [{ data: p, error }, { data: turnos }] = await Promise.all([
     supabase.from('pacientes').select('id_paciente,nombres,apellido,dni,obra_social,etiqueta_activa').eq('id_paciente', idPaciente).maybeSingle(),
-    supabase.from('turnos').select('fecha_turno,profesional_email,estado')
+    supabase.from('turnos').select('id_turno,fecha_turno,profesional_email,estado,es_videoconsulta,recordatorio_enviado_at')
       .eq('id_paciente', idPaciente).neq('estado', 'CANCELADO')
-      .gte('fecha_turno', new Date().toISOString()).order('fecha_turno').limit(3),
+      .gte('fecha_turno', new Date().toISOString()).order('fecha_turno').limit(5),
   ]);
   if (error) handleSupabaseError(error);
   if (!p) return null;
@@ -2419,7 +2484,14 @@ async function getResumenPacienteWhatsApp(idPaciente: string): Promise<ResumenPa
     dni: p.dni ?? '',
     obraSocial: p.obra_social ?? '',
     etiqueta: p.etiqueta_activa ?? '',
-    proximosTurnos: (turnos ?? []).map((t: any) => ({ fechaTurno: t.fecha_turno, profesionalEmail: t.profesional_email, estado: t.estado })),
+    proximosTurnos: (turnos ?? []).map((t: any) => ({
+      idTurno: String(t.id_turno),
+      fechaTurno: t.fecha_turno,
+      profesionalEmail: t.profesional_email,
+      estado: t.estado,
+      virtual: t.es_videoconsulta === true,
+      recordatorioEnviado: !!t.recordatorio_enviado_at,
+    })),
   };
 }
 
@@ -2427,7 +2499,7 @@ async function getPreReservas(): Promise<PreReserva[]> {
   const desde = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
   const { data, error } = await supabase
     .from('turnos')
-    .select('id_turno,fecha_turno,profesional_email,id_contacto,aviso_prereserva_at')
+    .select('id_turno,fecha_turno,profesional_email,id_contacto,aviso_prereserva_at,es_videoconsulta')
     .eq('estado', EstadoTurnoDia.PRE_RESERVA)
     .gte('fecha_turno', desde)
     .order('fecha_turno');
@@ -2436,8 +2508,8 @@ async function getPreReservas(): Promise<PreReserva[]> {
   const ids = [...new Set(filas.map((t: any) => t.id_contacto).filter((x: any) => x != null))];
   const prospectos = new Map<string, ProspectoBot>();
   if (ids.length) {
-    const { data: cs } = await supabase.from('crm_contactos').select(PROSPECTO_BOT_COLS).in('id_contacto', ids);
-    (cs ?? []).forEach((c: any) => prospectos.set(String(c.id_contacto), mapProspectoBot(c)));
+    const cs = await selectProspectos(q => q.in('id_contacto', ids));
+    cs.forEach((c: any) => prospectos.set(String(c.id_contacto), mapProspectoBot(c)));
   }
   return filas.map((t: any) => ({
     idTurno: String(t.id_turno),
@@ -2446,6 +2518,7 @@ async function getPreReservas(): Promise<PreReserva[]> {
     idContacto: t.id_contacto != null ? String(t.id_contacto) : null,
     prospecto: t.id_contacto != null ? prospectos.get(String(t.id_contacto)) ?? null : null,
     avisoEnviado: !!t.aviso_prereserva_at,
+    virtual: t.es_videoconsulta === true,
   }));
 }
 
@@ -2469,6 +2542,11 @@ async function rechazarPreReserva(idTurno: string, idContacto: string | null): P
     await supabase.from('crm_contactos')
       .update({ estado: 'Interesado', id_turno_prereserva: null })
       .eq('id_contacto', idContacto);
+    // El bot dejó la conversación marcada como "Pre-reserva pendiente": ya no corresponde.
+    await supabase.from('whatsapp_conversaciones')
+      .update({ derivado: false, derivado_motivo: null })
+      .eq('id_contacto', idContacto)
+      .like('derivado_motivo', 'Pre-reserva%');
   }
 }
 
@@ -2502,6 +2580,18 @@ async function setCupoPrimeraVezBot(profesionalEmail: string, bloqueId: string, 
   if (error) handleSupabaseError(error);
   const config = data?.config_turnos ?? {};
   const horarios = (config.horarios ?? []).map((h: any) => h.id === bloqueId ? { ...h, primeraVezBot: habilitado } : h);
+  const { error: upErr } = await supabase
+    .from('profesionales').update({ config_turnos: { ...config, horarios } }).eq('email', profesionalEmail);
+  if (upErr) handleSupabaseError(upErr);
+}
+
+// Marca un bloque como consulta virtual (videollamada de WhatsApp): el bot ofrece esos horarios como "(virtual)".
+async function setBloqueVirtualBot(profesionalEmail: string, bloqueId: string, virtual: boolean): Promise<void> {
+  const { data, error } = await supabase
+    .from('profesionales').select('config_turnos').eq('email', profesionalEmail).single();
+  if (error) handleSupabaseError(error);
+  const config = data?.config_turnos ?? {};
+  const horarios = (config.horarios ?? []).map((h: any) => h.id === bloqueId ? { ...h, virtual } : h);
   const { error: upErr } = await supabase
     .from('profesionales').update({ config_turnos: { ...config, horarios } }).eq('email', profesionalEmail);
   if (upErr) handleSupabaseError(upErr);
@@ -2542,7 +2632,8 @@ async function marcarConversacionWhatsAppAtendida(
   devolverAlBot: boolean,
 ): Promise<void> {
   const updates: any = { estado: 'atendida', derivado: false };
-  if (devolverAlBot) updates.modo = 'bot';
+  // Al volver al bot se reinicia el contador de fallos de agenda; si no, sigue sin ofrecer horarios.
+  if (devolverAlBot) { updates.modo = 'bot'; updates.intentos_agenda = 0; }
   const { error } = await supabase
     .from('whatsapp_conversaciones')
     .update(updates)
@@ -2650,4 +2741,9 @@ export const api = {
   agregarBloqueoCentro,
   eliminarBloqueoCentro,
   setCupoPrimeraVezBot,
+  setBloqueVirtualBot,
+  setNoContactarProspecto,
+  getVinculoWhatsApp,
+  reiniciarIntentosBotWhatsApp,
+  confirmarTurnoYAvisarWhatsApp,
 };

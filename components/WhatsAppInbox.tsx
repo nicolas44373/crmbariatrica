@@ -1,10 +1,10 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AuthContext } from '../App';
 import { api } from '../services/supabaseApi';
-import { MessageTemplate, PreReserva, Profesional, ProspectoBot, ResumenPacienteWhatsApp, WhatsAppConversacion, WhatsAppMensaje } from '../types';
+import { MessageTemplate, PreReserva, Profesional, ProspectoBot, ResumenPacienteWhatsApp, VinculoWhatsApp, WhatsAppConversacion, WhatsAppMensaje } from '../types';
 import {
-    CLASE_ESTADO_PROSPECTO, DATOS_PROSPECTO, HORARIO_SECRETARIA_TEXTO, PanelConfigBot, PanelPreReservas,
-    TarjetaPreReserva, fmtFechaCorta, fmtTurno, infoDerivacion, secretariaAbierta,
+    CLASE_ESTADO_PROSPECTO, DATOS_PROSPECTO, ETAPAS_RESCATE, HORARIO_SECRETARIA_TEXTO, PanelConfigBot, PanelPreReservas,
+    TarjetaPreReserva, VirtualChip, esDerivacionArchivo, fmtFechaCorta, fmtTurno, infoDerivacion, secretariaAbierta,
 } from './WhatsAppBotPanels';
 
 const POLL_MS = 5000;
@@ -102,6 +102,10 @@ function colorAvatar(seed: string): string {
     return AVATAR_COLORES[h % AVATAR_COLORES.length];
 }
 
+function esVinculoTercero(v: VinculoWhatsApp | null): boolean {
+    return !!v?.expiraAt && new Date(v.expiraAt).getTime() > Date.now();
+}
+
 function nombreProfesional(p?: Profesional): string {
     return p ? `${p.nombres} ${p.apellido}`.trim() : '';
 }
@@ -134,13 +138,14 @@ function validarArchivo(f: File): string | null {
     return null;
 }
 
-type Filtro = 'todas' | 'noLeidas' | 'derivadas' | 'sintomas' | 'prospectos' | 'humano' | 'mias' | 'atendidas';
+type Filtro = 'todas' | 'noLeidas' | 'derivadas' | 'sintomas' | 'archivos' | 'prospectos' | 'humano' | 'mias' | 'atendidas';
 
 const FILTROS: { id: Filtro; label: string }[] = [
     { id: 'todas', label: 'Todas' },
     { id: 'noLeidas', label: 'Sin leer' },
     { id: 'derivadas', label: 'Derivadas' },
     { id: 'sintomas', label: 'Síntomas' },
+    { id: 'archivos', label: 'Archivos' },
     { id: 'prospectos', label: 'Prospectos' },
     { id: 'humano', label: 'En curso' },
     { id: 'mias', label: 'Mías' },
@@ -158,6 +163,7 @@ function aplicaFiltro(c: WhatsAppConversacion, f: Filtro, email: string): boolea
         case 'noLeidas': return esNoLeida(c);
         case 'derivadas': return c.derivado && c.estado !== 'atendida';
         case 'sintomas': return c.derivado && c.estado !== 'atendida' && infoDerivacion(c.derivadoMotivo).urgente;
+        case 'archivos': return c.derivado && c.estado !== 'atendida' && esDerivacionArchivo(c.derivadoMotivo);
         case 'prospectos': return c.tipoContacto === 'prospecto';
         case 'humano': return c.modo === 'humano' && c.estado !== 'atendida';
         case 'mias': return c.asignadoAEmail === email || (c.modo === 'humano' && c.atendidoPorEmail === email);
@@ -251,6 +257,8 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
     const [preReservas, setPreReservas] = useState<PreReserva[]>([]);
     const [prospecto, setProspecto] = useState<ProspectoBot | null>(null);
     const [resumenPaciente, setResumenPaciente] = useState<ResumenPacienteWhatsApp | null>(null);
+    const [vinculo, setVinculo] = useState<VinculoWhatsApp | null>(null);
+    const [confirmandoTurno, setConfirmandoTurno] = useState<string | null>(null);
 
     const seleccionadaRef = useRef<string | null>(null);
     seleccionadaRef.current = seleccionada;
@@ -368,12 +376,22 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
     const idContactoActual = convActual?.idContacto ?? null;
     const idPacienteActual = convActual?.idPaciente ?? null;
     const cargarDatosContacto = () => {
-        if (idPacienteActual) api.getResumenPacienteWhatsApp(idPacienteActual).then(setResumenPaciente).catch(() => setResumenPaciente(null));
-        else setResumenPaciente(null);
         if (idContactoActual) api.getProspectoBot(idContactoActual).then(setProspecto).catch(() => setProspecto(null));
         else setProspecto(null);
+        if (!seleccionada) { setVinculo(null); setResumenPaciente(null); return; }
+        api.getVinculoWhatsApp(seleccionada).catch(() => null).then(v => {
+            setVinculo(v);
+            // Si gestiona un tercero, la conversación no tiene id_paciente: se usa el del vínculo.
+            const id = idPacienteActual ?? (esVinculoTercero(v) ? v!.idPaciente : null);
+            if (id) api.getResumenPacienteWhatsApp(id).then(setResumenPaciente).catch(() => setResumenPaciente(null));
+            else setResumenPaciente(null);
+        });
     };
-    useEffect(cargarDatosContacto, [idContactoActual, idPacienteActual, mensajes.length]);
+    useEffect(cargarDatosContacto, [idContactoActual, idPacienteActual, seleccionada, mensajes.length]);
+
+    // Vínculo temporal: quien escribe gestiona turnos de otra persona (madre, hijo…).
+    const gestionaTercero = esVinculoTercero(vinculo);
+    const idPacienteVista = idPacienteActual ?? (gestionaTercero ? vinculo!.idPaciente : null);
 
     const preReservaActual = useMemo(
         () => preReservas.find(pr => (idContactoActual && pr.idContacto === idContactoActual) || pr.prospecto?.telefono === seleccionada) ?? null,
@@ -476,6 +494,20 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
     const tomar = () => seleccionada && accion(() => api.tomarConversacionWhatsApp(seleccionada, email), 'No se pudo tomar la conversación.');
     const atendida = (devolverAlBot: boolean) => seleccionada && accion(() => api.marcarConversacionWhatsAppAtendida(seleccionada, devolverAlBot), 'No se pudo marcar como atendida.');
     const asignar = (e: string) => seleccionada && accion(() => api.asignarConversacionWhatsApp(seleccionada, e || null), 'No se pudo asignar la conversación.');
+    const destrabarBot = () => seleccionada && accion(() => api.reiniciarIntentosBotWhatsApp(seleccionada), 'No se pudo reiniciar el bot.');
+    const cambiarBaja = async (noContactar: boolean) => {
+        if (!prospecto) return;
+        if (noContactar && !window.confirm('¿Dar de baja a este prospecto? El bot y los mensajes de rescate no le van a volver a escribir.')) return;
+        try { await api.setNoContactarProspecto(prospecto.idContacto, noContactar); cargarDatosContacto(); }
+        catch (e: any) { setError(e?.message ?? 'No se pudo actualizar el prospecto.'); }
+    };
+    const confirmarTurno = async (idTurno: string) => {
+        if (!window.confirm('Se marca el turno como confirmado y se le envía la confirmación por WhatsApp. ¿Continuar?')) return;
+        setConfirmandoTurno(idTurno);
+        try { await api.confirmarTurnoYAvisarWhatsApp(idTurno, email); cargarDatosContacto(); if (seleccionada) await cargarMensajes(seleccionada); }
+        catch (e: any) { setError(e?.message ?? 'No se pudo confirmar el turno.'); }
+        finally { setConfirmandoTurno(null); }
+    };
 
     const atendidoPor = equipo.find(p => p.email === convActual?.atendidoPorEmail);
     const puedeEnviar = (!!borrador.trim() || !!archivo) && !enviando && ventana.abierta;
@@ -684,15 +716,17 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
                                     {g.items.map((m, i) => {
                                         const esPaciente = m.remitente === 'paciente';
                                         const esBot = m.remitente === 'bot';
+                                        const esSistema = m.remitente === 'sistema';
                                         const previo = g.items[i - 1];
                                         const mismoAutor = previo && previo.remitente === m.remitente;
-                                        const autor = esBot ? 'Bot' : nombreProfesional(equipo.find(p => p.email === m.remitente)) || m.remitente;
+                                        const autor = esBot ? 'Bot' : esSistema ? 'Mensaje automático (plantilla)' : nombreProfesional(equipo.find(p => p.email === m.remitente)) || m.remitente;
+                                        const fondo = esPaciente ? 'bg-white' : esBot ? 'bg-sky-100' : esSistema ? 'bg-violet-50 border border-violet-200' : 'bg-[#d9fdd3]';
                                         return (
                                             <div key={m.idMensaje} className={`flex ${esPaciente ? 'justify-start' : 'justify-end'} ${mismoAutor ? '' : 'pt-1.5'}`}>
-                                                <div className={`max-w-[85%] sm:max-w-[70%] rounded-lg px-3 pt-1.5 pb-1 text-[14.5px] leading-snug shadow-sm ${esPaciente ? 'bg-white text-slate-800' : esBot ? 'bg-sky-100 text-slate-800' : 'bg-[#d9fdd3] text-slate-800'}`}>
-                                                    {!esPaciente && !mismoAutor && (
-                                                        <p className={`text-[11px] font-semibold mb-0.5 flex items-center gap-1 ${esBot ? 'text-sky-700' : 'text-emerald-700'}`}>
-                                                            {esBot && <Svg d={I.bot} className="w-3 h-3" />}{autor}
+                                                <div className={`max-w-[85%] sm:max-w-[70%] rounded-lg px-3 pt-1.5 pb-1 text-[14.5px] leading-snug shadow-sm text-slate-800 ${fondo}`}>
+                                                    {!esPaciente && (!mismoAutor || esSistema) && (
+                                                        <p className={`text-[11px] font-semibold mb-0.5 flex items-center gap-1 ${esBot ? 'text-sky-700' : esSistema ? 'text-violet-700' : 'text-emerald-700'}`}>
+                                                            {esBot && <Svg d={I.bot} className="w-3 h-3" />}{esSistema && <Svg d={I.clock} className="w-3 h-3" />}{autor}
                                                         </p>
                                                     )}
                                                     <Adjunto m={m} onAbrirImagen={setLightbox} />
@@ -860,7 +894,22 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
                             </div>
                         )}
 
-                        {convActual.idPaciente && (
+                        {gestionaTercero && vinculo && (
+                            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                                <p className="font-semibold">Escribe un tercero</p>
+                                <p>{[vinculo.contactoNombre, vinculo.contactoVinculo].filter(Boolean).join(' · ') || 'Sin datos del contacto'} gestiona turnos del paciente hasta las {formatHora(vinculo.expiraAt!)}. El bot no le da información clínica.</p>
+                            </div>
+                        )}
+
+                        {(convActual.intentosVerificacion >= 2 || convActual.intentosAgenda >= 2) && (
+                            <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900 space-y-1">
+                                {convActual.intentosVerificacion >= 2 && <p>La verificación por DNI falló 2 veces: el bot no lo vuelve a intentar por 24 h.</p>}
+                                {convActual.intentosAgenda >= 2 && <p>Hubo 2 horarios rechazados seguidos: el bot dejó de ofrecer turnos.</p>}
+                                <button onClick={destrabarBot} className="font-medium text-rose-700 underline">Reiniciar contadores del bot</button>
+                            </div>
+                        )}
+
+                        {idPacienteVista && (
                             <div>
                                 <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1.5">Paciente</p>
                                 {resumenPaciente && (
@@ -872,16 +921,30 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
                                             <p className="text-slate-400 mb-0.5">Próximos turnos</p>
                                             {resumenPaciente.proximosTurnos.length === 0 && <p className="text-slate-500">Sin turnos próximos.</p>}
                                             {resumenPaciente.proximosTurnos.map(t => (
-                                                <p key={t.fechaTurno + t.profesionalEmail} className="text-slate-700">
-                                                    {fmtTurno(t.fechaTurno)} · {nombreProfesional(equipo.find(p => p.email === t.profesionalEmail)) || t.profesionalEmail}
-                                                    {t.estado === 'CONFIRMADO' && <span className="text-emerald-600"> ✓</span>}
-                                                </p>
+                                                <div key={t.idTurno} className="py-1 border-t border-slate-100 first:border-t-0">
+                                                    <p className="text-slate-700 flex items-center gap-1 flex-wrap">
+                                                        {fmtTurno(t.fechaTurno)} · {nombreProfesional(equipo.find(p => p.email === t.profesionalEmail)) || t.profesionalEmail}
+                                                        {t.virtual && <VirtualChip />}
+                                                    </p>
+                                                    <p className="text-[11px] flex items-center gap-2">
+                                                        {t.estado === 'CONFIRMADO' && <span className="text-emerald-600 font-medium">Confirmado ✓</span>}
+                                                        {t.estado === 'PRE_RESERVA' && <span className="text-emerald-700 font-medium">Pre-reserva</span>}
+                                                        {t.estado === 'AGENDADO' && <span className="text-slate-500">Sin confirmar</span>}
+                                                        {t.recordatorioEnviado && <span className="text-slate-400">Recordatorio enviado</span>}
+                                                        {(t.estado === 'AGENDADO' || t.estado === 'CONFIRMADO') && (
+                                                            <button onClick={() => confirmarTurno(t.idTurno)} disabled={confirmandoTurno === t.idTurno}
+                                                                className="ml-auto text-sky-600 hover:underline disabled:opacity-50">
+                                                                {confirmandoTurno === t.idTurno ? 'Enviando…' : t.estado === 'CONFIRMADO' ? 'Reenviar confirmación' : 'Confirmar y avisar'}
+                                                            </button>
+                                                        )}
+                                                    </p>
+                                                </div>
                                             ))}
                                         </div>
                                     </div>
                                 )}
                                 <button
-                                    onClick={() => onSelectPatient?.(convActual.idPaciente!)}
+                                    onClick={() => onSelectPatient?.(idPacienteVista!)}
                                     className="w-full text-left px-3 py-2 rounded-lg border border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-100 font-medium"
                                 >
                                     Ver ficha del paciente →
@@ -889,7 +952,7 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
                             </div>
                         )}
 
-                        {!convActual.idPaciente && prospecto && (() => {
+                        {!idPacienteVista && prospecto && (() => {
                             const faltan = DATOS_PROSPECTO.filter(d => !prospecto[d.key]);
                             return (
                                 <div>
@@ -920,11 +983,34 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
                                             ? `Faltan para pre-reservar: ${faltan.map(f => f.label.toLowerCase()).join(', ')}.`
                                             : 'Datos completos: el bot puede ofrecer cupos de primera consulta.'}
                                     </p>
+
+                                    {prospecto.noContactar ? (
+                                        <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-2.5 text-xs text-red-800">
+                                            <p className="font-semibold">Pidió BAJA</p>
+                                            <p>El bot y los mensajes de rescate no le escriben. Si vuelve a escribir, se reactiva solo.</p>
+                                            <button onClick={() => cambiarBaja(false)} className="mt-1 font-medium underline">Reactivar contacto</button>
+                                        </div>
+                                    ) : (
+                                        <div className="mt-2 rounded-lg border border-slate-200 p-2.5 text-xs space-y-1">
+                                            <p className="text-slate-400">Seguimiento automático</p>
+                                            {prospecto.ultimoMensajeAt && <p className="text-slate-600">Último mensaje: {fmtFechaCorta(prospecto.ultimoMensajeAt)}</p>}
+                                            {ETAPAS_RESCATE.map(e => (
+                                                <p key={e.key} className="flex justify-between gap-2">
+                                                    <span className="text-slate-600">{e.label} <span className="text-slate-400">({e.cuando})</span></span>
+                                                    <span className={prospecto[e.key] ? 'text-emerald-700' : 'text-slate-300'}>
+                                                        {prospecto[e.key] ? `Enviado ${fmtFechaCorta(prospecto[e.key])}` : '—'}
+                                                    </span>
+                                                </p>
+                                            ))}
+                                            {prospecto.estadoPrevio && <p className="text-slate-500">Si responde, vuelve a “{prospecto.estadoPrevio}”.</p>}
+                                            <button onClick={() => cambiarBaja(true)} className="pt-1 text-red-600 hover:underline">Dar de baja (no contactar)</button>
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })()}
 
-                        {!convActual.idPaciente && !prospecto && (
+                        {!idPacienteVista && !prospecto && (
                             <div>
                                 <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1.5">Contacto</p>
                                 <p className="text-slate-500 text-xs">Todavía no identificado. El bot le pregunta si ya es paciente o si es su primera consulta cuando lo necesita.</p>
