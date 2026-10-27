@@ -2202,7 +2202,9 @@ async function uploadEstudioFile(idPaciente: string, file: File, carpeta: string
 
 // ─── WHATSAPP INBOX ──────────────────────────────────────────────────────────
 
-const N8N_WHATSAPP_SEND_URL = import.meta.env.VITE_N8N_WHATSAPP_SEND_URL as string | undefined;
+// Valor por defecto para que el CRM publicado funcione aunque el hosting no tenga la variable (la URL no es secreta).
+const N8N_WHATSAPP_SEND_URL = (import.meta.env.VITE_N8N_WHATSAPP_SEND_URL as string | undefined)
+  || 'https://juanpmendoza.app.n8n.cloud/webhook/whatsapp-enviar-humano';
 const N8N_WHATSAPP_CONFIRM_URL = (import.meta.env.VITE_N8N_WHATSAPP_CONFIRM_URL as string | undefined)
   ?? N8N_WHATSAPP_SEND_URL?.replace('whatsapp-enviar-humano', 'whatsapp-confirmar-prereserva');
 // Si en n8n se define CRM_WEBHOOK_SECRET, los webhooks del CRM exigen este header.
