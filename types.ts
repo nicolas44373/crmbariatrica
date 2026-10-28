@@ -524,6 +524,18 @@ export interface PreReserva {
     virtual: boolean;
 }
 
+// Turno del próximo día de atención que el paciente todavía no confirmó (WhatsApp → Sin confirmar).
+export interface TurnoSinConfirmar {
+    idTurno: string;
+    fechaTurno: string; // ISO
+    profesionalEmail: string;
+    idPaciente: string;
+    paciente: string;
+    telefono: string | null;
+    virtual: boolean;
+    recordatorioEnviado: boolean;
+}
+
 export interface ResumenPacienteWhatsApp {
     idPaciente: string;
     nombres: string;

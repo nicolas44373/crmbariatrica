@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../services/supabaseApi';
-import { BloqueoCentro, PreReserva, Profesional, ProspectoBot } from '../types';
+import { BloqueoCentro, PreReserva, Profesional, ProspectoBot, TurnoSinConfirmar } from '../types';
 
 // ─── Helpers compartidos con el inbox ───────────────────────────────────────
 
@@ -233,6 +233,88 @@ export function PanelPreReservas({
                     <TarjetaPreReserva key={pr.idTurno} pr={pr} equipo={equipo} email={email}
                         onHecho={onRecargar} onAbrirConversacion={onAbrirConversacion} />
                 ))}
+            </div>
+        </div>
+    );
+}
+
+// ─── Panel de turnos sin confirmar ──────────────────────────────────────────
+
+export function PanelSinConfirmar({
+    turnos, equipo, email, onRecargar, conversacionDe, onAbrirConversacion,
+}: {
+    turnos: TurnoSinConfirmar[];
+    equipo: Profesional[];
+    email: string;
+    onRecargar: () => void;
+    conversacionDe: (telefono: string | null) => string | null;
+    onAbrirConversacion: (telefono: string) => void;
+}) {
+    const [confirmando, setConfirmando] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    const confirmar = async (t: TurnoSinConfirmar) => {
+        if (!window.confirm(`Se marca el turno de ${t.paciente} como confirmado y se le envía la confirmación por WhatsApp. ¿Continuar?`)) return;
+        setConfirmando(t.idTurno); setError(null);
+        try { await api.confirmarTurnoYAvisarWhatsApp(t.idTurno, email); onRecargar(); }
+        catch (e: any) { setError(e?.message ?? 'No se pudo confirmar el turno.'); }
+        finally { setConfirmando(null); }
+    };
+
+    return (
+        <div className="h-full overflow-y-auto p-4 sm:p-6 bg-slate-50">
+            <div className="max-w-3xl mx-auto space-y-4">
+                <div>
+                    <h2 className="text-lg font-semibold text-slate-800">Turnos sin confirmar</h2>
+                    <p className="text-sm text-slate-500">
+                        Próximo día de atención. El paciente no tocó "Confirmo" en el recordatorio: llamalo y confirmá o reprogramá el turno.
+                        A las 15 hs el bot deja una tarea con este listado.
+                    </p>
+                </div>
+                {error && <p className="text-sm text-red-600">{error}</p>}
+                {turnos.length === 0 && (
+                    <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-400">
+                        Todos los turnos del próximo día de atención están confirmados.
+                    </div>
+                )}
+                {turnos.map(t => {
+                    const conv = conversacionDe(t.telefono);
+                    return (
+                        <div key={t.idTurno} className="rounded-xl border border-amber-200 bg-white p-4">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <p className="font-semibold text-slate-800 truncate">{t.paciente}</p>
+                                    <p className="text-sm text-slate-600 flex items-center gap-1.5 flex-wrap">
+                                        {fmtTurno(t.fechaTurno)} · {nombreProf(equipo, t.profesionalEmail)}
+                                        {t.virtual && <VirtualChip />}
+                                    </p>
+                                    <p className="text-xs text-slate-500 mt-0.5">{t.telefono || 'Sin teléfono registrado'}</p>
+                                </div>
+                                {t.recordatorioEnviado
+                                    ? <span className="text-[11px] font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded flex-shrink-0">Recordatorio sin respuesta</span>
+                                    : <span className="text-[11px] font-semibold bg-slate-200 text-slate-700 px-2 py-0.5 rounded flex-shrink-0">Sin recordatorio</span>}
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                <button onClick={() => confirmar(t)} disabled={confirmando === t.idTurno}
+                                    className="text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 px-3 py-1.5 rounded-lg">
+                                    {confirmando === t.idTurno ? 'Confirmando…' : 'Confirmar y avisar'}
+                                </button>
+                                {conv && (
+                                    <button onClick={() => onAbrirConversacion(conv)}
+                                        className="text-sm font-medium text-slate-700 bg-slate-50 border border-slate-200 hover:bg-slate-100 px-3 py-1.5 rounded-lg">
+                                        Ver chat
+                                    </button>
+                                )}
+                                {t.telefono && (
+                                    <a href={`tel:${t.telefono.replace(/[^\d+]/g, '')}`}
+                                        className="text-sm font-medium text-slate-700 bg-slate-50 border border-slate-200 hover:bg-slate-100 px-3 py-1.5 rounded-lg">
+                                        Llamar
+                                    </a>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })}
             </div>
         </div>
     );

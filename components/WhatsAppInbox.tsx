@@ -1,15 +1,15 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AuthContext } from '../App';
 import { api } from '../services/supabaseApi';
-import { MessageTemplate, PreReserva, Profesional, ProspectoBot, ResumenPacienteWhatsApp, VinculoWhatsApp, WhatsAppConversacion, WhatsAppMensaje } from '../types';
+import { MessageTemplate, PreReserva, Profesional, ProspectoBot, ResumenPacienteWhatsApp, TurnoSinConfirmar, VinculoWhatsApp, WhatsAppConversacion, WhatsAppMensaje } from '../types';
 import {
     CLASE_ESTADO_PROSPECTO, DATOS_PROSPECTO, ETAPAS_RESCATE, HORARIO_SECRETARIA_TEXTO, PanelConfigBot, PanelPreReservas,
-    TarjetaPreReserva, VirtualChip, esDerivacionArchivo, fmtFechaCorta, fmtTurno, infoDerivacion, secretariaAbierta,
+    PanelSinConfirmar, TarjetaPreReserva, VirtualChip, esDerivacionArchivo, fmtFechaCorta, fmtTurno, infoDerivacion, secretariaAbierta,
 } from './WhatsAppBotPanels';
 
 const POLL_MS = 5000;
 const POLL_PRERESERVAS_MS = 20000;
-type Vista = 'chats' | 'prereservas' | 'bot';
+type Vista = 'chats' | 'prereservas' | 'sinconfirmar' | 'bot';
 const VENTANA_MS = 24 * 60 * 60 * 1000;
 const MB = 1024 * 1024;
 
@@ -255,6 +255,7 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
     const [arrastrando, setArrastrando] = useState(false);
     const [vista, setVista] = useState<Vista>('chats');
     const [preReservas, setPreReservas] = useState<PreReserva[]>([]);
+    const [sinConfirmar, setSinConfirmar] = useState<TurnoSinConfirmar[]>([]);
     const [prospecto, setProspecto] = useState<ProspectoBot | null>(null);
     const [resumenPaciente, setResumenPaciente] = useState<ResumenPacienteWhatsApp | null>(null);
     const [vinculo, setVinculo] = useState<VinculoWhatsApp | null>(null);
@@ -291,12 +292,14 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
 
     const cargarEquipo = () => api.getProfesionales().then(setEquipo).catch(() => {});
     const cargarPreReservas = () => api.getPreReservas().then(setPreReservas).catch(() => {});
+    const cargarSinConfirmar = () => api.getTurnosSinConfirmar().then(setSinConfirmar).catch(() => {});
 
     useEffect(() => {
         cargarConversaciones();
         cargarPreReservas();
+        cargarSinConfirmar();
         const id = setInterval(cargarConversaciones, POLL_MS);
-        const idPr = setInterval(cargarPreReservas, POLL_PRERESERVAS_MS);
+        const idPr = setInterval(() => { cargarPreReservas(); cargarSinConfirmar(); }, POLL_PRERESERVAS_MS);
         cargarEquipo();
         api.getMessageTemplates().then(setPlantillas).catch(() => {});
         return () => { clearInterval(id); clearInterval(idPr); };
@@ -401,6 +404,12 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
     const abrirConversacion = (telefono: string) => {
         setVista('chats');
         handleSeleccionar(telefono);
+    };
+    // Conversación de un teléfono cargado en la ficha (formatos distintos: se comparan los últimos 10 dígitos).
+    const conversacionDe = (telefono: string | null) => {
+        const ult10 = (t: string) => t.replace(/\D/g, '').slice(-10);
+        if (!telefono || ult10(telefono).length < 10) return null;
+        return conversaciones.find(c => ult10(c.telefono) === ult10(telefono))?.telefono ?? null;
     };
 
     const conteos = useMemo(() => {
@@ -519,13 +528,14 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
                 {([
                     { id: 'chats', label: 'Conversaciones', badge: conteos.noLeidas },
                     { id: 'prereservas', label: 'Pre-reservas', badge: preReservas.length },
+                    { id: 'sinconfirmar', label: 'Sin confirmar', badge: sinConfirmar.length },
                     { id: 'bot', label: 'Configuración del bot', badge: 0 },
                 ] as { id: Vista; label: string; badge: number }[]).map(t => (
                     <button key={t.id} onClick={() => setVista(t.id)}
                         className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${vista === t.id ? 'border-sky-600 text-sky-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
                         {t.label}
                         {t.badge > 0 && (
-                            <span className={`text-[10px] font-bold rounded-full px-1.5 py-0.5 ${t.id === 'prereservas' ? 'bg-emerald-500 text-white' : 'bg-sky-100 text-sky-700'}`}>{t.badge}</span>
+                            <span className={`text-[10px] font-bold rounded-full px-1.5 py-0.5 ${t.id === 'prereservas' ? 'bg-emerald-500 text-white' : t.id === 'sinconfirmar' ? 'bg-amber-500 text-white' : 'bg-sky-100 text-sky-700'}`}>{t.badge}</span>
                         )}
                     </button>
                 ))}
@@ -539,6 +549,12 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
                 <div className="flex-grow min-h-0">
                     <PanelPreReservas preReservas={preReservas} equipo={equipo} email={email}
                         onRecargar={() => { cargarPreReservas(); cargarConversaciones(); }} onAbrirConversacion={abrirConversacion} />
+                </div>
+            )}
+            {vista === 'sinconfirmar' && (
+                <div className="flex-grow min-h-0">
+                    <PanelSinConfirmar turnos={sinConfirmar} equipo={equipo} email={email}
+                        onRecargar={cargarSinConfirmar} conversacionDe={conversacionDe} onAbrirConversacion={abrirConversacion} />
                 </div>
             )}
             {vista === 'bot' && (

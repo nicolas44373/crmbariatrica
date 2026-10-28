@@ -41,6 +41,7 @@ import {
   WhatsAppTipoMensaje,
   ProspectoBot,
   PreReserva,
+  TurnoSinConfirmar,
   ResumenPacienteWhatsApp,
   BloqueoCentro,
   VinculoWhatsApp,
@@ -2524,6 +2525,45 @@ async function getPreReservas(): Promise<PreReserva[]> {
   }));
 }
 
+// Turnos AGENDADOS del próximo día de atención (mañana; el viernes cubre sábado a lunes) que el paciente no confirmó.
+// Misma ventana que el control de las 15 hs del bot en n8n.
+async function getTurnosSinConfirmar(): Promise<TurnoSinConfirmar[]> {
+  const sumarDias = (f: string, n: number) => { const d = new Date(`${f}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  const esFinDeSemana = (f: string) => [0, 6].includes(new Date(`${f}T12:00:00Z`).getUTCDay());
+  const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' });
+  const desde = sumarDias(hoy, 1);
+  let hasta = desde;
+  while (esFinDeSemana(hasta)) hasta = sumarDias(hasta, 1);
+
+  const { data, error } = await supabase
+    .from('turnos')
+    .select('id_turno,fecha_turno,profesional_email,id_paciente,es_videoconsulta,recordatorio_enviado_at')
+    .eq('estado', EstadoTurnoDia.AGENDADO)
+    .not('id_paciente', 'is', null)
+    .gte('fecha_turno', `${desde}T00:00:00-03:00`)
+    .lte('fecha_turno', `${hasta}T23:59:59-03:00`)
+    .order('fecha_turno');
+  if (error) handleSupabaseError(error);
+  const filas = data ?? [];
+  const ids = [...new Set(filas.map((t: any) => t.id_paciente))];
+  const pacientes = new Map<string, { nombre: string; telefono: string | null }>();
+  if (ids.length) {
+    const { data: ps, error: e2 } = await supabase.from('pacientes').select('id_paciente,nombres,apellido,telefono').in('id_paciente', ids);
+    if (e2) handleSupabaseError(e2);
+    (ps ?? []).forEach((p: any) => pacientes.set(String(p.id_paciente), { nombre: `${p.apellido ?? ''}, ${p.nombres ?? ''}`.replace(/^, |, $/g, ''), telefono: p.telefono ?? null }));
+  }
+  return filas.map((t: any) => ({
+    idTurno: String(t.id_turno),
+    fechaTurno: t.fecha_turno,
+    profesionalEmail: t.profesional_email,
+    idPaciente: String(t.id_paciente),
+    paciente: pacientes.get(String(t.id_paciente))?.nombre || 'Paciente',
+    telefono: pacientes.get(String(t.id_paciente))?.telefono ?? null,
+    virtual: t.es_videoconsulta === true,
+    recordatorioEnviado: !!t.recordatorio_enviado_at,
+  }));
+}
+
 // La secretaría confirma: n8n convierte el prospecto en paciente y le manda la plantilla de confirmación.
 async function confirmarPreReserva(idTurno: string, emailSecretaria: string): Promise<void> {
   if (!N8N_WHATSAPP_CONFIRM_URL) {
@@ -2737,6 +2777,7 @@ export const api = {
   getProspectoBot,
   getResumenPacienteWhatsApp,
   getPreReservas,
+  getTurnosSinConfirmar,
   confirmarPreReserva,
   rechazarPreReserva,
   getBloqueosCentro,
