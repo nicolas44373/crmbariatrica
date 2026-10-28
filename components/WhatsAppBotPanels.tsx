@@ -252,6 +252,18 @@ export function PanelSinConfirmar({
 }) {
     const [confirmando, setConfirmando] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [busqueda, setBusqueda] = useState('');
+
+    // Busca por paciente, teléfono o profesional, sin distinguir mayúsculas ni acentos.
+    const filtrados = useMemo(() => {
+        const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+        const q = norm(busqueda.trim());
+        if (!q) return turnos;
+        const qDigitos = q.replace(/\D/g, '');
+        return turnos.filter(t =>
+            norm(`${t.paciente} ${nombreProf(equipo, t.profesionalEmail)}`).includes(q)
+            || (qDigitos.length >= 3 && (t.telefono ?? '').replace(/\D/g, '').includes(qDigitos)));
+    }, [turnos, busqueda, equipo]);
 
     const confirmar = async (t: TurnoSinConfirmar) => {
         if (!window.confirm(`Se marca el turno de ${t.paciente} como confirmado y se le envía la confirmación por WhatsApp. ¿Continuar?`)) return;
@@ -271,13 +283,23 @@ export function PanelSinConfirmar({
                         A las 15 hs el bot deja una tarea con este listado.
                     </p>
                 </div>
+                {turnos.length > 0 && (
+                    <input type="search" value={busqueda} onChange={e => setBusqueda(e.target.value)}
+                        placeholder="Buscar paciente, teléfono o profesional"
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500" />
+                )}
                 {error && <p className="text-sm text-red-600">{error}</p>}
                 {turnos.length === 0 && (
                     <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-400">
                         Todos los turnos del próximo día de atención están confirmados.
                     </div>
                 )}
-                {turnos.map(t => {
+                {turnos.length > 0 && filtrados.length === 0 && (
+                    <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-400">
+                        Ningún turno coincide con "{busqueda}".
+                    </div>
+                )}
+                {filtrados.map(t => {
                     const conv = conversacionDe(t.telefono);
                     return (
                         <div key={t.idTurno} className="rounded-xl border border-amber-200 bg-white p-4">
