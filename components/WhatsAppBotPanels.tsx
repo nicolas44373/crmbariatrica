@@ -378,9 +378,36 @@ export function PanelConfigBot({ equipo, onEquipoCambiado }: { equipo: Profesion
         try { await api.agregarBloqueoCentro(nuevaFecha, nuevoMotivo.trim()); setNuevaFecha(''); setNuevoMotivo(''); cargarBloqueos(); }
         catch (e: any) { setError(e?.message ?? 'No se pudo agregar.'); }
     };
-    const quitar = async (fecha: string) => {
-        try { await api.eliminarBloqueoCentro(fecha); cargarBloqueos(); }
+    const quitar = async (b: BloqueoCentro) => {
+        if (b.origen === 'api' && !window.confirm(`¿Se atiende el ${fmtFechaCorta(b.fecha)} (${b.motivo || 'feriado'})? El bot va a ofrecer turnos ese día.`)) return;
+        try { await api.eliminarBloqueoCentro(b.fecha, b.origen); cargarBloqueos(); }
         catch (e: any) { setError(e?.message ?? 'No se pudo eliminar.'); }
+    };
+    const restaurar = async (fecha: string) => {
+        try { await api.restaurarFeriado(fecha); cargarBloqueos(); }
+        catch (e: any) { setError(e?.message ?? 'No se pudo restaurar el feriado.'); }
+    };
+
+    // Días puntuales en que un profesional no atiende (config_turnos.diasBloqueados)
+    const [profDia, setProfDia] = useState('');
+    const [fechaDia, setFechaDia] = useState('');
+    const hoyISO = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' });
+    const diasProfesionales = useMemo(
+        () => conAgenda.flatMap(p => ((p.config_turnos?.diasBloqueados ?? []) as string[])
+            .filter(d => d >= hoyISO)
+            .map(d => ({ email: p.email, nombre: `${p.nombres} ${p.apellido}`.trim(), fecha: d })))
+            .sort((a, b) => a.fecha.localeCompare(b.fecha)),
+        [conAgenda, hoyISO],
+    );
+    const bloquearDia = async (email: string, fecha: string, bloquear: boolean) => {
+        setGuardando(`dia:${email}:${fecha}`); setError(null);
+        try {
+            await api.setDiaBloqueadoProfesional(email, fecha, bloquear);
+            if (bloquear) setFechaDia('');
+            onEquipoCambiado();
+        }
+        catch (e: any) { setError(e?.message ?? 'No se pudo guardar el día.'); }
+        finally { setGuardando(null); }
     };
 
     const abierta = secretariaAbierta();
@@ -405,7 +432,7 @@ export function PanelConfigBot({ equipo, onEquipoCambiado }: { equipo: Profesion
                 <section className="bg-white rounded-xl border border-slate-200 p-4">
                     <h3 className="font-semibold text-slate-800">Bloques de agenda para el bot</h3>
                     <p className="text-sm text-slate-500 mb-4">
-                        <span className="font-medium text-emerald-700">1ª vez</span>: bloques donde el bot puede pre-reservar primeras consultas (si no marcás ninguno, ofrece todos los horarios del profesional).{' '}
+                        <span className="font-medium text-emerald-700">1ª vez</span>: bloques donde el bot puede pre-reservar primeras consultas (si no marcás ninguno, ofrece todos los horarios del profesional). A los pacientes ya registrados el bot les ofrece todos los bloques.{' '}
                         <span className="font-medium text-violet-700">Virtual</span>: el bot ofrece esos horarios como consulta por videollamada de WhatsApp.
                     </p>
                     {conAgenda.length === 0 && <p className="text-sm text-slate-400">No hay profesionales con horarios configurados.</p>}
@@ -463,14 +490,48 @@ export function PanelConfigBot({ equipo, onEquipoCambiado }: { equipo: Profesion
                     </div>
                     <ul className="divide-y divide-slate-100">
                         {bloqueos.length === 0 && <li className="text-sm text-slate-400 py-2">No hay cierres próximos cargados.</li>}
-                        {bloqueos.map(b => (
-                            <li key={b.fecha} className="flex items-center justify-between py-2 gap-3">
-                                <div className="min-w-0">
-                                    <span className="text-sm font-medium text-slate-700">{fmtFechaCorta(b.fecha)}</span>
-                                    <span className="text-sm text-slate-500"> · {b.motivo || 'Sin motivo'}</span>
-                                    {b.origen === 'api' && <span className="ml-2 text-[10px] font-semibold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">automático</span>}
-                                </div>
-                                <button onClick={() => quitar(b.fecha)} className="text-xs text-red-600 hover:underline flex-shrink-0">Quitar</button>
+                        {bloqueos.map(b => {
+                            const anulado = b.origen === 'anulado';
+                            return (
+                                <li key={b.fecha} className="flex items-center justify-between py-2 gap-3">
+                                    <div className={`min-w-0 ${anulado ? 'opacity-60' : ''}`}>
+                                        <span className={`text-sm font-medium text-slate-700 ${anulado ? 'line-through' : ''}`}>{fmtFechaCorta(b.fecha)}</span>
+                                        <span className="text-sm text-slate-500"> · {b.motivo || 'Sin motivo'}</span>
+                                        {b.origen === 'api' && <span className="ml-2 text-[10px] font-semibold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">automático</span>}
+                                        {anulado && <span className="ml-2 text-[10px] font-semibold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">se atiende</span>}
+                                    </div>
+                                    {anulado
+                                        ? <button onClick={() => restaurar(b.fecha)} className="text-xs text-sky-700 hover:underline flex-shrink-0">Volver a cerrar</button>
+                                        : <button onClick={() => quitar(b)} className="text-xs text-red-600 hover:underline flex-shrink-0">{b.origen === 'api' ? 'Se atiende igual' : 'Quitar'}</button>}
+                                </li>
+                            );
+                        })}
+                    </ul>
+                </section>
+
+                <section className="bg-white rounded-xl border border-slate-200 p-4">
+                    <h3 className="font-semibold text-slate-800">Días que no atiende un profesional</h3>
+                    <p className="text-sm text-slate-500 mb-3">
+                        Para un día puntual (congreso, licencia, cirugías). El bot no ofrece turnos de ese profesional ese día. Los turnos ya dados no se cancelan: revisalos en la agenda.
+                    </p>
+                    <div className="flex flex-wrap gap-2 mb-4">
+                        <select value={profDia} onChange={e => setProfDia(e.target.value)}
+                            className="text-sm rounded-lg border border-slate-300 px-2.5 py-1.5 flex-grow min-w-[12rem]">
+                            <option value="">Elegí un profesional…</option>
+                            {conAgenda.map(p => <option key={p.email} value={p.email}>{p.nombres} {p.apellido}</option>)}
+                        </select>
+                        <input type="date" value={fechaDia} min={hoyISO} onChange={e => setFechaDia(e.target.value)}
+                            className="text-sm rounded-lg border border-slate-300 px-2.5 py-1.5" />
+                        <button onClick={() => bloquearDia(profDia, fechaDia, true)} disabled={!profDia || !fechaDia || !!guardando}
+                            className="text-sm font-medium text-white bg-sky-600 hover:bg-sky-700 disabled:opacity-50 px-3 py-1.5 rounded-lg">Bloquear día</button>
+                    </div>
+                    <ul className="divide-y divide-slate-100">
+                        {diasProfesionales.length === 0 && <li className="text-sm text-slate-400 py-2">No hay días bloqueados próximos.</li>}
+                        {diasProfesionales.map(d => (
+                            <li key={`${d.email}:${d.fecha}`} className="flex items-center justify-between py-2 gap-3">
+                                <span className="text-sm text-slate-700"><span className="font-medium">{fmtFechaCorta(d.fecha)}</span> · {d.nombre}</span>
+                                <button onClick={() => bloquearDia(d.email, d.fecha, false)} disabled={guardando === `dia:${d.email}:${d.fecha}`}
+                                    className="text-xs text-red-600 hover:underline flex-shrink-0 disabled:opacity-50">Quitar</button>
                             </li>
                         ))}
                     </ul>

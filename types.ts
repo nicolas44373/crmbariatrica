@@ -549,7 +549,7 @@ export interface ResumenPacienteWhatsApp {
 export interface BloqueoCentro {
     fecha: string; // YYYY-MM-DD
     motivo: string | null;
-    origen: string | null; // 'api' (feriados automáticos) o manual
+    origen: string | null; // 'api' (feriado automático), 'anulado' (feriado en que se atiende igual) o manual
 }
 
 export type WhatsAppTipoMensaje = 'texto' | 'imagen' | 'audio' | 'video' | 'documento' | 'sticker';

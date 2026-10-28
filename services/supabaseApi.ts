@@ -2610,9 +2610,34 @@ async function agregarBloqueoCentro(fecha: string, motivo: string): Promise<void
   if (error) handleSupabaseError(error);
 }
 
-async function eliminarBloqueoCentro(fecha: string): Promise<void> {
-  const { error } = await supabase.from('bloqueos_centro').delete().eq('fecha', fecha);
+// Un feriado cargado automáticamente no se borra (el bot lo volvería a cargar a la mañana siguiente): se marca como
+// anulado y el bot ofrece turnos ese día. Los cierres manuales sí se borran.
+async function eliminarBloqueoCentro(fecha: string, origen?: string | null): Promise<void> {
+  const { error } = origen === 'api'
+    ? await supabase.from('bloqueos_centro').update({ origen: 'anulado' }).eq('fecha', fecha)
+    : await supabase.from('bloqueos_centro').delete().eq('fecha', fecha);
   if (error) handleSupabaseError(error);
+}
+
+async function restaurarFeriado(fecha: string): Promise<void> {
+  const { error } = await supabase.from('bloqueos_centro').update({ origen: 'api' }).eq('fecha', fecha);
+  if (error) handleSupabaseError(error);
+}
+
+// Bloquea o desbloquea un día puntual de un profesional (config_turnos.diasBloqueados, YYYY-MM-DD).
+// Es lo mismo que "Días bloqueados" en Configuración → Horarios; el bot no ofrece turnos ese día.
+async function setDiaBloqueadoProfesional(profesionalEmail: string, fecha: string, bloquear: boolean): Promise<void> {
+  const { data, error } = await supabase
+    .from('profesionales').select('config_turnos').eq('email', profesionalEmail).single();
+  if (error) handleSupabaseError(error);
+  const config = data?.config_turnos ?? {};
+  const actuales: string[] = config.diasBloqueados ?? [];
+  const diasBloqueados = bloquear
+    ? [...new Set([...actuales, fecha])].sort()
+    : actuales.filter(d => d !== fecha);
+  const { error: upErr } = await supabase
+    .from('profesionales').update({ config_turnos: { ...config, diasBloqueados } }).eq('email', profesionalEmail);
+  if (upErr) handleSupabaseError(upErr);
 }
 
 // Marca qué bloques horarios ofrece el bot como cupo de primera consulta (config_turnos.horarios[].primeraVezBot).
@@ -2783,6 +2808,8 @@ export const api = {
   getBloqueosCentro,
   agregarBloqueoCentro,
   eliminarBloqueoCentro,
+  restaurarFeriado,
+  setDiaBloqueadoProfesional,
   setCupoPrimeraVezBot,
   setBloqueVirtualBot,
   setNoContactarProspecto,

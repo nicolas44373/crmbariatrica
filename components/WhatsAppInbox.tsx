@@ -881,6 +881,9 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
                             {convActual.modo === 'bot' && ventana.abierta && (
                                 <p className="px-4 pb-2 -mt-1 text-[11px] text-slate-400">Al enviar, la conversación pasa a modo humano y el bot deja de responder.</p>
                             )}
+                            {convActual.modo === 'humano' && (
+                                <p className="px-4 pb-2 -mt-1 text-[11px] text-slate-400">Si el chat queda 2 horas sin mensajes, vuelve solo al bot. Para devolverlo antes usá "Devolver al bot".</p>
+                            )}
                         </div>
                     </>
                 )}
