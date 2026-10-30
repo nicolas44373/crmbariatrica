@@ -536,6 +536,16 @@ export interface TurnoSinConfirmar {
     recordatorioEnviado: boolean;
 }
 
+// Paciente encontrado en el buscador del módulo WhatsApp, para iniciar un chat aunque nunca haya escrito.
+export interface PacienteChat {
+  idPaciente: string;
+  nombres: string;
+  apellido: string;
+  dni: string;
+  telefono: string | null;
+  waId: string | null;  // 549 + área + número; null si el celular cargado no es válido
+}
+
 export interface ResumenPacienteWhatsApp {
     idPaciente: string;
     nombres: string;

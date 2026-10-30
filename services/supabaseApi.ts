@@ -3,6 +3,7 @@ import { supabase, supabaseSignUpClient } from './supabaseClient';
 import { format, isToday } from 'date-fns';
 import {
   PacienteFiliatorio,
+  PacienteChat,
   HistoriaClinicaEstatica,
   EvolucionClinica,
   Turno,
@@ -2377,6 +2378,96 @@ async function enviarMensajeWhatsApp(
   }
 }
 
+// ─── Iniciar chat con un paciente ────────────────────────────────────────────
+
+// Plantilla aprobada en Meta para escribirle primero a un paciente (fuera de la ventana de 24 h). {{1}} = nombre.
+export const PLANTILLA_INICIO_CHAT = 'plenus_inicio_secretaria';
+export const textoPlantillaInicio = (nombre: string) =>
+  `Hola, ${nombre}. Te escribimos desde la secretaría de Plenus por tu atención en el centro. Respondé este mensaje para continuar la conversación.\n\nEl equipo de Plenus`;
+
+// Celular argentino → wa_id de Meta (549 + área + número, 10 dígitos nacionales). Misma lógica que el bot de n8n.
+const AREAS_3 = new Set(['220', '221', '223', '230', '236', '237', '249', '260', '261', '263', '264', '266', '280', '291', '294', '297', '298', '299', '341', '342', '343', '345', '348', '351', '353', '358', '362', '364', '370', '376', '379', '380', '381', '383', '385', '387', '388']);
+export function telefonoAWaId(tel: string | null | undefined): string | null {
+  let d = String(tel ?? '').replace(/\D/g, '');
+  if (d.startsWith('00')) d = d.slice(2);
+  if (d.startsWith('549')) d = d.slice(3);
+  else if (d.startsWith('54')) d = d.slice(2);
+  if (d.startsWith('0')) d = d.slice(1);
+  if (d.length === 12) {
+    const corte = d.startsWith('11') ? 2 : AREAS_3.has(d.slice(0, 3)) ? 3 : 4;
+    if (d.slice(corte).startsWith('15')) d = d.slice(0, corte) + d.slice(corte + 2);
+  }
+  return d.length === 10 ? `549${d}` : null;
+}
+
+// Busca pacientes por nombre, apellido, DNI o teléfono (mínimo 3 caracteres).
+async function buscarPacientesParaChat(q: string): Promise<PacienteChat[]> {
+  const limpio = q.trim().replace(/[,()*%\\]/g, ' ').replace(/\s+/g, ' ');
+  if (limpio.length < 3) return [];
+  const digitos = limpio.replace(/\D/g, '');
+  const palabras = limpio.split(' ').filter(p => p.length >= 2 && !/^\d+$/.test(p));
+  let query = supabase.from('pacientes').select('id_paciente,nombres,apellido,dni,telefono').limit(15);
+  if (digitos.length >= 3 && palabras.length === 0) {
+    query = query.or(`dni.ilike.%${digitos}%,telefono.ilike.%${digitos}%`);
+  } else {
+    // Cada palabra tiene que aparecer en el nombre o en el apellido ("rosanna ledesma", "ledesma ros").
+    palabras.forEach(p => { query = query.or(`nombres.ilike.%${p}%,apellido.ilike.%${p}%`); });
+  }
+  const { data, error } = await query.order('apellido');
+  if (error) handleSupabaseError(error);
+  return (data ?? []).map((p: any) => ({
+    idPaciente: String(p.id_paciente),
+    nombres: p.nombres ?? '',
+    apellido: p.apellido ?? '',
+    dni: p.dni ?? '',
+    telefono: p.telefono ?? null,
+    waId: telefonoAWaId(p.telefono),
+  }));
+}
+
+// Crea (o asocia) la conversación de un paciente para poder escribirle desde el CRM. Devuelve el teléfono de la conversación.
+async function iniciarConversacionWhatsApp(p: PacienteChat): Promise<string> {
+  if (!p.waId) throw new Error('El paciente no tiene un celular válido cargado en su ficha.');
+  const { data: existente, error: errSel } = await supabase
+    .from('whatsapp_conversaciones').select('telefono,id_paciente').eq('telefono', p.waId).maybeSingle();
+  if (errSel) handleSupabaseError(errSel);
+  if (existente) {
+    if (!existente.id_paciente) {
+      const { error } = await supabase.from('whatsapp_conversaciones')
+        .update({ id_paciente: p.idPaciente, tipo_contacto: 'paciente' }).eq('telefono', p.waId);
+      if (error) handleSupabaseError(error);
+    }
+    return p.waId;
+  }
+  const { error } = await supabase.from('whatsapp_conversaciones').insert({
+    telefono: p.waId,
+    id_paciente: p.idPaciente,
+    tipo_contacto: 'paciente',
+    nombre_contacto: `${p.nombres} ${p.apellido}`.trim() || null,
+    modo: 'humano',
+    estado: 'abierta',
+  });
+  if (error) handleSupabaseError(error);
+  return p.waId;
+}
+
+// Primer mensaje a un paciente fuera de la ventana de 24 h: va por plantilla aprobada (n8n la envía y la registra).
+async function enviarPlantillaInicioWhatsApp(telefono: string, nombre: string, emailSecretaria: string): Promise<void> {
+  const nombreSeguro = nombre.trim() || 'paciente';
+  try {
+    await postN8n(N8N_WHATSAPP_SEND_URL, {
+      telefono,
+      tipo: 'plantilla',
+      plantilla: PLANTILLA_INICIO_CHAT,
+      parametros: [nombreSeguro],
+      texto: textoPlantillaInicio(nombreSeguro),
+      email_secretaria: emailSecretaria,
+    });
+  } catch (e: any) {
+    throw new Error(`No se pudo enviar el mensaje de inicio: ${e.message}`);
+  }
+}
+
 // ─── Bot v4: prospectos, pre-reservas, cupos y cierres del centro ────────────
 
 const PROSPECTO_BOT_COLS_BASE = 'id_contacto,nombres,apellido,dni,fecha_nacimiento,obra_social,nro_afiliado,estado,motivo_consulta,contacto_nombre,contacto_vinculo,telefono,id_turno_prereserva,ultimo_mensaje_at,estado_previo,estado_cambiado_at';
@@ -2795,6 +2886,9 @@ export const api = {
   getWhatsAppPendientes,
   getWhatsAppMensajes,
   enviarMensajeWhatsApp,
+  buscarPacientesParaChat,
+  iniciarConversacionWhatsApp,
+  enviarPlantillaInicioWhatsApp,
   tomarConversacionWhatsApp,
   marcarConversacionWhatsAppAtendida,
   asignarConversacionWhatsApp,

@@ -1,7 +1,7 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AuthContext } from '../App';
-import { api } from '../services/supabaseApi';
-import { MessageTemplate, PreReserva, Profesional, ProspectoBot, ResumenPacienteWhatsApp, TurnoSinConfirmar, VinculoWhatsApp, WhatsAppConversacion, WhatsAppMensaje } from '../types';
+import { api, textoPlantillaInicio } from '../services/supabaseApi';
+import { MessageTemplate, PacienteChat, PreReserva, Profesional, ProspectoBot, ResumenPacienteWhatsApp, TurnoSinConfirmar, VinculoWhatsApp, WhatsAppConversacion, WhatsAppMensaje } from '../types';
 import {
     CLASE_ESTADO_PROSPECTO, DATOS_PROSPECTO, ETAPAS_RESCATE, HORARIO_SECRETARIA_TEXTO, PanelConfigBot, PanelPreReservas,
     PanelSinConfirmar, TarjetaPreReserva, VirtualChip, esDerivacionArchivo, fmtFechaCorta, fmtTurno, infoDerivacion, secretariaAbierta,
@@ -260,6 +260,10 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
     const [resumenPaciente, setResumenPaciente] = useState<ResumenPacienteWhatsApp | null>(null);
     const [vinculo, setVinculo] = useState<VinculoWhatsApp | null>(null);
     const [confirmandoTurno, setConfirmandoTurno] = useState<string | null>(null);
+    const [pacientesBuscados, setPacientesBuscados] = useState<PacienteChat[]>([]);
+    const [buscandoPacientes, setBuscandoPacientes] = useState(false);
+    const [iniciandoChat, setIniciandoChat] = useState<string | null>(null);
+    const [enviandoInicio, setEnviandoInicio] = useState(false);
 
     const seleccionadaRef = useRef<string | null>(null);
     seleccionadaRef.current = seleccionada;
@@ -430,10 +434,50 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
         });
     }, [conversaciones, filtro, busqueda, email]);
 
+    // Pacientes que coinciden con la búsqueda (aunque nunca hayan escrito): permiten iniciar un chat.
+    useEffect(() => {
+        const q = busqueda.trim();
+        if (q.length < 3) { setPacientesBuscados([]); return; }
+        let cancelado = false;
+        setBuscandoPacientes(true);
+        const id = setTimeout(() => {
+            api.buscarPacientesParaChat(q)
+                .then(r => { if (!cancelado) setPacientesBuscados(r); })
+                .catch(() => { if (!cancelado) setPacientesBuscados([]); })
+                .finally(() => { if (!cancelado) setBuscandoPacientes(false); });
+        }, 300);
+        return () => { cancelado = true; clearTimeout(id); };
+    }, [busqueda]);
+
+    // Se ocultan los pacientes que ya tienen chat en la lista de arriba.
+    const pacientesSinChat = useMemo(() => {
+        const enLista = new Set(conversacionesFiltradas.map(c => c.telefono));
+        return pacientesBuscados.filter(p => !(p.waId && enLista.has(p.waId)));
+    }, [pacientesBuscados, conversacionesFiltradas]);
+
+    const abrirChatPaciente = async (p: PacienteChat) => {
+        if (!p.waId) return;
+        const existente = conversacionDe(p.waId);
+        if (existente) { handleSeleccionar(existente); return; }
+        setIniciandoChat(p.idPaciente);
+        setError(null);
+        try {
+            const tel = await api.iniciarConversacionWhatsApp(p);
+            await cargarConversaciones();
+            setBusqueda('');
+            handleSeleccionar(tel);
+        } catch (e: any) {
+            setError(e?.message ?? 'No se pudo iniciar el chat.');
+        } finally {
+            setIniciandoChat(null);
+        }
+    };
+
     // WhatsApp solo permite mensajes libres dentro de las 24 h desde el último mensaje del paciente.
+    // Si el paciente nunca escribió, la ventana está cerrada: el primer mensaje tiene que ser una plantilla.
     const ventana = useMemo(() => {
         const ultimo = [...mensajes].reverse().find(m => m.remitente === 'paciente');
-        if (!ultimo) return { abierta: mensajes.length === 0, restanteMs: 0 };
+        if (!ultimo) return { abierta: false, restanteMs: 0 };
         const restante = new Date(ultimo.fecha).getTime() + VENTANA_MS - Date.now();
         return { abierta: restante > 0, restanteMs: restante };
     }, [mensajes]);
@@ -518,6 +562,25 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
         finally { setConfirmandoTurno(null); }
     };
 
+    // Nombre de pila para la plantilla de inicio: el de la ficha si está identificado, si no el del perfil de WhatsApp.
+    const nombreParaPlantilla = (resumenPaciente?.nombres || convActual?.nombreContacto || '').trim().split(/\s+/)[0] ?? '';
+    const enviarInicio = async () => {
+        if (!seleccionada || enviandoInicio) return;
+        const nombre = nombreParaPlantilla || 'paciente';
+        if (!window.confirm(`Se le envía este mensaje (plantilla aprobada por WhatsApp):\n\n${textoPlantillaInicio(nombre)}\n\nCuando responda, vas a poder escribirle libremente durante 24 h. ¿Enviar?`)) return;
+        setEnviandoInicio(true);
+        setError(null);
+        try {
+            await api.enviarPlantillaInicioWhatsApp(seleccionada, nombre, email);
+            pegadoAbajoRef.current = true;
+            await Promise.all([cargarMensajes(seleccionada), cargarConversaciones()]);
+        } catch (e: any) {
+            setError(e?.message ?? 'No se pudo enviar el mensaje de inicio.');
+        } finally {
+            setEnviandoInicio(false);
+        }
+    };
+
     const atendidoPor = equipo.find(p => p.email === convActual?.atendidoPorEmail);
     const puedeEnviar = (!!borrador.trim() || !!archivo) && !enviando && ventana.abierta;
 
@@ -580,7 +643,7 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
                             type="text"
                             value={busqueda}
                             onChange={e => setBusqueda(e.target.value)}
-                            placeholder="Buscar nombre, teléfono o mensaje  (Ctrl+K)"
+                            placeholder="Buscar chat o paciente: nombre, DNI o teléfono  (Ctrl+K)"
                             className="w-full pl-9 pr-3 py-2 text-sm rounded-lg bg-slate-100 border border-transparent focus:bg-white focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
                         />
                     </div>
@@ -607,9 +670,10 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
                             <div className="flex-grow space-y-2 py-1"><div className="h-3 bg-slate-200 rounded w-1/2" /><div className="h-3 bg-slate-100 rounded w-3/4" /></div>
                         </div>
                     ))}
-                    {!cargandoLista && conversacionesFiltradas.length === 0 && (
+                    {!cargandoLista && conversacionesFiltradas.length === 0 && (busqueda.trim().length < 3 || (!buscandoPacientes && pacientesSinChat.length === 0)) && (
                         <div className="p-8 text-center text-sm text-slate-400">
                             {busqueda ? 'Sin resultados para la búsqueda.' : 'No hay conversaciones en este filtro.'}
+                            {!busqueda && <p className="mt-2 text-xs">Para escribirle a un paciente, buscalo por nombre, DNI o teléfono.</p>}
                         </div>
                     )}
                     {conversacionesFiltradas.map(c => {
@@ -647,6 +711,40 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
                             </button>
                         );
                     })}
+
+                    {/* Pacientes sin chat que coinciden con la búsqueda: se puede iniciar la conversación */}
+                    {busqueda.trim().length >= 3 && (buscandoPacientes || pacientesSinChat.length > 0) && (
+                        <div className="border-t border-slate-200">
+                            <p className="px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                                Pacientes · iniciar chat {buscandoPacientes && <span className="normal-case font-normal">(buscando…)</span>}
+                            </p>
+                            {pacientesSinChat.map(p => {
+                                const nombre = `${p.apellido}, ${p.nombres}`.replace(/^, |, $/g, '');
+                                return (
+                                    <button key={p.idPaciente} onClick={() => abrirChatPaciente(p)}
+                                        disabled={!p.waId || iniciandoChat === p.idPaciente}
+                                        title={p.waId ? 'Abrir chat con este paciente' : 'El celular cargado en la ficha no es válido: corregilo para poder escribirle.'}
+                                        className="w-full text-left px-4 py-2.5 flex gap-3 items-center hover:bg-slate-50 disabled:hover:bg-transparent disabled:cursor-not-allowed">
+                                        <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold text-white flex-shrink-0 ${p.waId ? colorAvatar(p.idPaciente) : 'bg-slate-300'}`}>
+                                            {iniciales(`${p.nombres} ${p.apellido}`)}
+                                        </div>
+                                        <div className="flex-grow min-w-0">
+                                            <p className={`text-sm truncate ${p.waId ? 'text-slate-800 font-medium' : 'text-slate-400'}`}>{nombre}</p>
+                                            <p className="text-[12px] text-slate-500 truncate">
+                                                {p.dni ? `DNI ${p.dni} · ` : ''}
+                                                {p.waId ? formatTelefono(p.waId) : <span className="text-red-500">{p.telefono ? `Celular inválido (${p.telefono})` : 'Sin celular cargado'}</span>}
+                                            </p>
+                                        </div>
+                                        {p.waId && (
+                                            <span className="text-[11px] font-semibold text-emerald-700 flex-shrink-0">
+                                                {iniciandoChat === p.idPaciente ? 'Abriendo…' : 'Escribir'}
+                                            </span>
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
             </aside>
 
@@ -767,7 +865,15 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
                             {!ventana.abierta && (
                                 <div className="px-4 py-2 text-xs text-amber-900 bg-amber-50 border-b border-amber-200 flex items-center gap-2">
                                     <Svg d={I.clock} className="w-4 h-4 flex-shrink-0" />
-                                    Pasaron más de 24 h desde el último mensaje del paciente. WhatsApp no permite escribirle hasta que vuelva a escribir (o por plantilla aprobada).
+                                    <span className="flex-grow">
+                                        {mensajes.some(m => m.remitente === 'paciente')
+                                            ? 'Pasaron más de 24 h desde el último mensaje del paciente. WhatsApp solo permite escribirle con un mensaje de inicio aprobado.'
+                                            : 'Este contacto todavía no te escribió. WhatsApp solo permite empezar la conversación con un mensaje de inicio aprobado.'}
+                                    </span>
+                                    <button onClick={enviarInicio} disabled={enviandoInicio}
+                                        className="flex-shrink-0 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 rounded-md px-3 py-1.5">
+                                        {enviandoInicio ? 'Enviando…' : 'Enviar mensaje de inicio'}
+                                    </button>
                                 </div>
                             )}
                             {ventana.abierta && ventana.restanteMs > 0 && ventana.restanteMs < 3 * 3600 * 1000 && (
