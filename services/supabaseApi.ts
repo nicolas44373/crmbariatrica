@@ -2464,7 +2464,12 @@ async function enviarPlantillaInicioWhatsApp(telefono: string, nombre: string, e
       email_secretaria: emailSecretaria,
     });
   } catch (e: any) {
-    throw new Error(`No se pudo enviar el mensaje de inicio: ${e.message}`);
+    const msg = String(e?.message ?? '');
+    // 132001: la plantilla todavía no está aprobada por Meta (o no existe en es_AR)
+    if (/132001|does not exist in the translation/i.test(msg)) {
+      throw new Error('El mensaje de inicio todavía no está aprobado por WhatsApp. Cuando Meta lo apruebe vas a poder usarlo; mientras tanto, comunicate por teléfono.');
+    }
+    throw new Error(`No se pudo enviar el mensaje de inicio: ${msg}`);
   }
 }
 
