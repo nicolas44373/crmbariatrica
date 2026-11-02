@@ -844,7 +844,21 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
                                                         </p>
                                                     )}
                                                     <Adjunto m={m} onAbrirImagen={setLightbox} />
-                                                    {m.texto && <p className="whitespace-pre-wrap break-words"><TextoConLinks texto={m.texto} /></p>}
+                                                    {(() => {
+                                                        // En las plantillas, una línea "[Confirmo]" es un botón que el paciente ve debajo del mensaje.
+                                                        const botones = esSistema ? [...m.texto.matchAll(/^\[([^\]\n]{1,25})\]\s*$/gm)].map(x => x[1]) : [];
+                                                        const texto = botones.length ? m.texto.replace(/^\[[^\]\n]{1,25}\]\s*$\n?/gm, '').replace(/\n{3,}/g, '\n\n').trim() : m.texto;
+                                                        return (
+                                                            <>
+                                                                {texto && <p className="whitespace-pre-wrap break-words"><TextoConLinks texto={texto} /></p>}
+                                                                {botones.map(b => (
+                                                                    <div key={b} className="mt-2 -mx-1 py-1.5 text-center text-[13.5px] font-medium text-sky-600 border-t border-violet-200" title="Botón de respuesta rápida que el paciente ve en WhatsApp">
+                                                                        ↩ {b}
+                                                                    </div>
+                                                                ))}
+                                                            </>
+                                                        );
+                                                    })()}
                                                     <p className="text-[10.5px] text-slate-400 text-right mt-0.5 leading-none">{formatHora(m.fecha)}</p>
                                                 </div>
                                             </div>

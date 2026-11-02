@@ -2388,6 +2388,12 @@ export const textoPlantillaInicio = (nombre: string) =>
 // Celular argentino → wa_id de Meta (549 + área + número, 10 dígitos nacionales). Misma lógica que el bot de n8n.
 const AREAS_3 = new Set(['220', '221', '223', '230', '236', '237', '249', '260', '261', '263', '264', '266', '280', '291', '294', '297', '298', '299', '341', '342', '343', '345', '348', '351', '353', '358', '362', '364', '370', '376', '379', '380', '381', '383', '385', '387', '388']);
 export function telefonoAWaId(tel: string | null | undefined): string | null {
+  // Ficha con dos números ("3816661354 / 3816662005"): se usa el primero que sea un celular válido.
+  const partes = String(tel ?? '').split(/\s*[\/,;|]\s*|\s+[yo]\s+|\s+-\s+/i).filter(Boolean);
+  if (partes.length > 1) {
+    for (const p of partes) { const w = telefonoAWaId(p); if (w) return w; }
+    return null;
+  }
   let d = String(tel ?? '').replace(/\D/g, '');
   if (d.startsWith('00')) d = d.slice(2);
   if (d.startsWith('549')) d = d.slice(3);
