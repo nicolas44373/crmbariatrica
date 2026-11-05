@@ -2788,6 +2788,15 @@ async function asignarConversacionWhatsApp(
   if (error) handleSupabaseError(error);
 }
 
+// Nombre con el que se ve el chat. Vacío = se muestra el teléfono hasta que el contacto vuelva a escribir.
+async function setNombreContactoWhatsApp(telefono: string, nombre: string): Promise<void> {
+  const { error } = await supabase
+    .from('whatsapp_conversaciones')
+    .update({ nombre_contacto: nombre.trim().slice(0, 80) || null })
+    .eq('telefono', telefono);
+  if (error) handleSupabaseError(error);
+}
+
 async function marcarConversacionWhatsAppLeida(telefono: string): Promise<void> {
   const { error } = await supabase
     .from('whatsapp_conversaciones')
@@ -2903,6 +2912,7 @@ export const api = {
   tomarConversacionWhatsApp,
   marcarConversacionWhatsAppAtendida,
   asignarConversacionWhatsApp,
+  setNombreContactoWhatsApp,
   marcarConversacionWhatsAppLeida,
   getProspectoBot,
   getResumenPacienteWhatsApp,

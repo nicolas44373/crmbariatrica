@@ -41,6 +41,7 @@ const I = {
     bot: 'M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Z',
     check: 'm4.5 12.75 6 6 9-13.5',
     clock: 'M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
+    pencil: 'm16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Z',
 };
 const SendIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
@@ -547,6 +548,12 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
     const tomar = () => seleccionada && accion(() => api.tomarConversacionWhatsApp(seleccionada, email), 'No se pudo tomar la conversación.');
     const atendida = (devolverAlBot: boolean) => seleccionada && accion(() => api.marcarConversacionWhatsAppAtendida(seleccionada, devolverAlBot), 'No se pudo marcar como atendida.');
     const asignar = (e: string) => seleccionada && accion(() => api.asignarConversacionWhatsApp(seleccionada, e || null), 'No se pudo asignar la conversación.');
+    const editarNombre = () => {
+        if (!seleccionada) return;
+        const nombre = window.prompt('Nombre del contacto:', convActual?.nombreContacto ?? '');
+        if (nombre === null) return;
+        accion(() => api.setNombreContactoWhatsApp(seleccionada, nombre), 'No se pudo cambiar el nombre.');
+    };
     const destrabarBot = () => seleccionada && accion(() => api.reiniciarIntentosBotWhatsApp(seleccionada), 'No se pudo reiniciar el bot.');
     const cambiarBaja = async (noContactar: boolean) => {
         if (!prospecto) return;
@@ -780,6 +787,9 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
                                 </p>
                             </button>
                             <div className="flex items-center gap-2 flex-shrink-0">
+                                <button onClick={editarNombre} className={`p-1 text-slate-400 hover:text-sky-600 ${panelInfo ? 'lg:hidden' : ''}`} title="Editar nombre">
+                                    <Svg d={I.pencil} className="w-4 h-4" />
+                                </button>
                                 {convActual.modo === 'bot' ? (
                                     <button onClick={tomar} className="text-sm font-medium text-white bg-indigo-600 px-3 py-1.5 rounded-lg hover:bg-indigo-700 flex items-center gap-1.5">
                                         <Svg d={I.user} className="w-4 h-4" /><span className="hidden sm:inline">Tomar</span>
@@ -1014,7 +1024,12 @@ export default function WhatsAppInbox({ onSelectPatient }: Props) {
                 <aside className="hidden lg:flex w-72 xl:w-80 flex-shrink-0 border-l border-slate-200 flex-col overflow-y-auto bg-white">
                     <div className="p-5 flex flex-col items-center text-center border-b border-slate-100">
                         <Avatar c={convActual} size="w-20 h-20 text-2xl" />
-                        <p className="mt-3 text-base font-semibold text-slate-800">{nombreDe(convActual)}</p>
+                        <p className="mt-3 text-base font-semibold text-slate-800 flex items-center gap-1.5">
+                            {nombreDe(convActual)}
+                            <button onClick={editarNombre} className="text-slate-400 hover:text-sky-600" title="Editar nombre">
+                                <Svg d={I.pencil} className="w-3.5 h-3.5" />
+                            </button>
+                        </p>
                         <a href={`tel:+${convActual.telefono}`} className="text-sm text-slate-500 hover:text-sky-600">{formatTelefono(convActual.telefono)}</a>
                         <div className="mt-2 flex gap-1.5 items-center">
                             <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${convActual.canal === 'instagram' ? 'bg-pink-100 text-pink-700' : 'bg-emerald-100 text-emerald-700'}`}>
