@@ -165,7 +165,7 @@ export default function AdminAgendaView({ onSelectPatient }: AdminAgendaViewProp
                 </button>
             </div>
             
-            {isLoading && <div className="text-center text-slate-500 py-10">Cargando agenda...</div>}
+            {isLoading && <div className="text-center text-slate-500 py-10">Cargando agenda....</div>}
             {error && <div className="text-center text-red-500 py-10">{error}</div>}
             {!isLoading && !error && !selectedProfesionalEmail && <div className="text-center text-slate-500 py-10">Por favor, seleccione un profesional para ver su agenda.</div>}
             
